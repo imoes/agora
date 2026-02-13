@@ -59,9 +59,9 @@ import { AuthService } from '@core/services/auth.service';
         <!-- Side strip with participants -->
         <div class="presentation-sidebar">
           <!-- Local video (small) -->
-          <div class="video-tile small" [class.audio-tile]="audioOnly || !videoEnabled">
-            <video *ngIf="!audioOnly && videoEnabled" #localVideo autoplay muted playsinline></video>
-            <div *ngIf="audioOnly || !videoEnabled" class="audio-avatar small">
+          <div class="video-tile small" [class.audio-tile]="!videoEnabled">
+            <video #localVideo autoplay muted playsinline [hidden]="!videoEnabled"></video>
+            <div *ngIf="!videoEnabled" class="audio-avatar small">
               <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
             </div>
             <div class="video-label">Du</div>
@@ -80,12 +80,11 @@ import { AuthService } from '@core/services/auth.service';
 
       <!-- Normal Video Grid (no presentation) -->
       <ng-template #normalGrid>
-        <div class="video-grid" [class.single]="participants.size === 0"
-             [class.audio-only]="audioOnly">
+        <div class="video-grid" [class.single]="participants.size === 0">
           <!-- Local Video -->
-          <div class="video-tile local" [class.audio-tile]="audioOnly || !videoEnabled">
-            <video *ngIf="!audioOnly" #localVideo autoplay muted playsinline></video>
-            <div *ngIf="audioOnly || !videoEnabled" class="audio-avatar">
+          <div class="video-tile local" [class.audio-tile]="!videoEnabled">
+            <video #localVideo autoplay muted playsinline [hidden]="!videoEnabled"></video>
+            <div *ngIf="!videoEnabled" class="audio-avatar">
               <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
               <span>Du</span>
             </div>
@@ -152,8 +151,7 @@ import { AuthService } from '@core/services/auth.service';
           <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
         </button>
         <button mat-fab [color]="videoEnabled ? 'primary' : 'warn'"
-                (click)="toggleVideo()" matTooltip="Kamera"
-                *ngIf="!audioOnly">
+                (click)="toggleVideo()" matTooltip="Kamera">
           <mat-icon>{{ videoEnabled ? 'videocam' : 'videocam_off' }}</mat-icon>
         </button>
         <button mat-fab

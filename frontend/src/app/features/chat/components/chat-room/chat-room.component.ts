@@ -416,6 +416,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private mentionQuery = '';
 
   private wsSubscription?: Subscription;
+  private paramSubscription?: Subscription;
   private typingTimeout: any;
   private shouldScroll = true;
 
@@ -430,13 +431,27 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
-    this.channelId = this.route.snapshot.paramMap.get('channelId') || '';
 
-    this.loadChannel();
-    this.loadMessages();
-    this.loadFiles();
-    this.loadChannelMembers();
-    this.connectWebSocket();
+    // Subscribe to route param changes so navigating between chats works
+    this.paramSubscription = this.route.paramMap.subscribe((params) => {
+      const newId = params.get('channelId') || '';
+      if (newId && newId !== this.channelId) {
+        // Disconnect previous channel WS if switching
+        if (this.channelId) {
+          this.wsSubscription?.unsubscribe();
+          this.wsService.disconnect(this.channelId);
+        }
+        this.channelId = newId;
+        this.messages = [];
+        this.files = [];
+        this.typingUsers = [];
+        this.loadChannel();
+        this.loadMessages();
+        this.loadFiles();
+        this.loadChannelMembers();
+        this.connectWebSocket();
+      }
+    });
   }
 
   ngAfterViewChecked(): void {
@@ -446,6 +461,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   ngOnDestroy(): void {
+    this.paramSubscription?.unsubscribe();
     this.wsSubscription?.unsubscribe();
     this.wsService.disconnect(this.channelId);
   }

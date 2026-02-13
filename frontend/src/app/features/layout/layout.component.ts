@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet, NavigationEnd } from '@angular/router';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -19,7 +20,7 @@ import { WebSocketService } from '@services/websocket.service';
   selector: 'app-layout',
   standalone: true,
   imports: [
-    CommonModule, RouterOutlet, RouterLink, RouterLinkActive,
+    CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive,
     MatSidenavModule, MatToolbarModule, MatListModule, MatIconModule,
     MatBadgeModule, MatButtonModule, MatMenuModule, MatDividerModule,
   ],
@@ -82,7 +83,36 @@ import { WebSocketService } from '@services/websocket.service';
       <aside class="chat-sidebar">
         <div class="chat-sidebar-header">
           <span>Chats</span>
+          <button mat-icon-button (click)="showCallSearch = !showCallSearch" class="call-search-btn"
+                  [class.active]="showCallSearch">
+            <mat-icon>add_call</mat-icon>
+          </button>
         </div>
+
+        <!-- User search for calling -->
+        <div class="call-search-panel" *ngIf="showCallSearch">
+          <input class="call-search-input" [(ngModel)]="callSearchQuery"
+                 (input)="onCallSearch()" placeholder="Benutzer suchen...">
+          <div class="call-search-results">
+            <div *ngFor="let u of callSearchResults" class="call-search-item">
+              <div class="call-search-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
+              <div class="call-search-info">
+                <span class="call-search-name">{{ u.display_name }}</span>
+                <span class="call-search-username">{{'@' + u.username}}</span>
+              </div>
+              <button mat-icon-button (click)="callUser(u, false)" matTooltip="Videoanruf" class="call-action-btn">
+                <mat-icon>videocam</mat-icon>
+              </button>
+              <button mat-icon-button (click)="callUser(u, true)" matTooltip="Audioanruf" class="call-action-btn">
+                <mat-icon>call</mat-icon>
+              </button>
+            </div>
+            <div *ngIf="callSearchQuery && callSearchResults.length === 0" class="call-search-empty">
+              Keine Benutzer gefunden
+            </div>
+          </div>
+        </div>
+
         <div class="chat-sidebar-list">
           <div *ngFor="let ch of chatChannels"
                class="chat-sidebar-item"
@@ -287,6 +317,87 @@ import { WebSocketService } from '@services/websocket.service';
       color: #999;
       font-size: 13px;
     }
+    /* Call search */
+    .chat-sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .call-search-btn { color: #666; }
+    .call-search-btn.active { color: var(--primary); }
+    .call-search-panel {
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+    }
+    .call-search-input {
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      outline: none;
+      background: transparent;
+      box-sizing: border-box;
+    }
+    .call-search-results {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .call-search-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+    }
+    .call-search-item:hover {
+      background: var(--hover);
+    }
+    .call-search-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .call-search-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .call-search-name {
+      display: block;
+      font-size: 13px;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .call-search-username {
+      font-size: 11px;
+      color: #999;
+    }
+    .call-action-btn {
+      color: #666 !important;
+      width: 32px !important;
+      height: 32px !important;
+      line-height: 32px !important;
+    }
+    .call-action-btn mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+    .call-search-empty {
+      padding: 12px 16px;
+      text-align: center;
+      color: #999;
+      font-size: 12px;
+    }
     .content {
       flex: 1;
       overflow: hidden;
@@ -388,6 +499,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
   chatChannels: any[] = [];
   activeChannelId: string | null = null;
+  showCallSearch = false;
+  callSearchQuery = '';
+  callSearchResults: any[] = [];
   private subscriptions: Subscription[] = [];
   private ringAudio: HTMLAudioElement | null = null;
   private ringBlobUrl: string | null = null;
@@ -490,6 +604,27 @@ export class LayoutComponent implements OnInit, OnDestroy {
   loadChatChannels(): void {
     this.apiService.getChannels().subscribe((channels) => {
       this.chatChannels = channels;
+    });
+  }
+
+  onCallSearch(): void {
+    const q = this.callSearchQuery.trim();
+    if (!q) {
+      this.callSearchResults = [];
+      return;
+    }
+    this.apiService.searchUsers(q).subscribe((users) => {
+      this.callSearchResults = users.filter((u: any) => u.id !== this.currentUser?.id);
+    });
+  }
+
+  callUser(user: any, audioOnly: boolean): void {
+    this.apiService.findOrCreateDirectChat(user.id).subscribe((channel) => {
+      this.showCallSearch = false;
+      this.callSearchQuery = '';
+      this.callSearchResults = [];
+      const queryParams = audioOnly ? { audio: 'true' } : {};
+      this.router.navigate(['/video', channel.id], { queryParams });
     });
   }
 
