@@ -79,6 +79,8 @@ services:
       dockerfile: Dockerfile
     expose:
       - "80"
+    volumes:
+      - ./frontend/dist/agora/browser:/app/public
     depends_on:
       - backend
 
