@@ -5,10 +5,14 @@ from dataclasses import dataclass, field
 from fastapi import WebSocket
 
 
+VALID_STATUSES = {"online", "busy", "away", "dnd", "offline"}
+
+
 @dataclass
 class ConnectionManager:
     active_connections: dict[str, dict[str, WebSocket]] = field(default_factory=dict)
     user_channels: dict[str, set[str]] = field(default_factory=dict)
+    user_statuses: dict[str, str] = field(default_factory=dict)
 
     async def connect(self, websocket: WebSocket, user_id: str, channel_id: str):
         await websocket.accept()
@@ -20,6 +24,9 @@ class ConnectionManager:
             self.user_channels[user_id] = set()
         self.user_channels[user_id].add(channel_id)
 
+        if user_id not in self.user_statuses:
+            self.user_statuses[user_id] = "online"
+
     def disconnect(self, user_id: str, channel_id: str):
         if channel_id in self.active_connections:
             self.active_connections[channel_id].pop(user_id, None)
@@ -29,6 +36,20 @@ class ConnectionManager:
             self.user_channels[user_id].discard(channel_id)
             if not self.user_channels[user_id]:
                 del self.user_channels[user_id]
+                self.user_statuses.pop(user_id, None)
+
+    async def set_user_status(self, user_id: str, status: str):
+        if status not in VALID_STATUSES:
+            return
+        self.user_statuses[user_id] = status
+        await self.broadcast_to_user_channels(user_id, {
+            "type": "status_change",
+            "user_id": user_id,
+            "status": status,
+        })
+
+    def get_user_status(self, user_id: str) -> str:
+        return self.user_statuses.get(user_id, "offline")
 
     async def send_to_channel(self, channel_id: str, message: dict, exclude_user: str | None = None):
         if channel_id not in self.active_connections:
@@ -58,6 +79,14 @@ class ConnectionManager:
         if channel_id not in self.active_connections:
             return []
         return list(self.active_connections[channel_id].keys())
+
+    def get_channel_user_statuses(self, channel_id: str) -> dict[str, str]:
+        if channel_id not in self.active_connections:
+            return {}
+        return {
+            uid: self.get_user_status(uid)
+            for uid in self.active_connections[channel_id]
+        }
 
 
 manager = ConnectionManager()
