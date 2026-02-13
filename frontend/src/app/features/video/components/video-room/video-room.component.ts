@@ -4,14 +4,17 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription } from 'rxjs';
 import { WebRTCService, Participant } from '@services/webrtc.service';
+import { WebSocketService } from '@services/websocket.service';
 import { ApiService } from '@services/api.service';
+import { AuthService } from '@core/services/auth.service';
 
 @Component({
   selector: 'app-video-room',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule],
+  imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule, MatSnackBarModule],
   template: `
     <div class="video-room">
       <!-- Video Grid -->
@@ -43,6 +46,32 @@ import { ApiService } from '@services/api.service';
         </div>
       </div>
 
+      <!-- Invite Panel -->
+      <div class="invite-panel" *ngIf="showInvitePanel">
+        <div class="invite-panel-header">
+          <span>Benutzer anrufen</span>
+          <button mat-icon-button (click)="showInvitePanel = false">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <div class="invite-panel-list">
+          <div *ngFor="let m of callableMembers" class="invite-member-item">
+            <div class="invite-member-avatar">{{ m.display_name?.charAt(0)?.toUpperCase() }}</div>
+            <div class="invite-member-info">
+              <span class="invite-member-name">{{ m.display_name }}</span>
+              <span class="invite-member-username">{{'@' + m.username}}</span>
+            </div>
+            <button mat-icon-button
+                    [matTooltip]="invitedUserIds.has(m.id) ? 'Eingeladen' : 'Anrufen'"
+                    (click)="inviteToCall(m)"
+                    [disabled]="invitedUserIds.has(m.id)">
+              <mat-icon>{{ invitedUserIds.has(m.id) ? 'check_circle' : 'call' }}</mat-icon>
+            </button>
+          </div>
+          <p *ngIf="callableMembers.length === 0" class="no-members">Keine weiteren Mitglieder</p>
+        </div>
+      </div>
+
       <!-- Controls -->
       <div class="video-controls">
         <button mat-fab [color]="audioEnabled ? 'primary' : 'warn'"
@@ -53,6 +82,10 @@ import { ApiService } from '@services/api.service';
                 (click)="toggleVideo()" matTooltip="Kamera"
                 *ngIf="!audioOnly">
           <mat-icon>{{ videoEnabled ? 'videocam' : 'videocam_off' }}</mat-icon>
+        </button>
+        <button mat-fab (click)="toggleInvitePanel()" matTooltip="Benutzer anrufen"
+                [color]="showInvitePanel ? 'accent' : undefined">
+          <mat-icon>person_add</mat-icon>
         </button>
         <button mat-fab color="warn" (click)="endCall()" matTooltip="Auflegen">
           <mat-icon>call_end</mat-icon>
@@ -141,6 +174,61 @@ import { ApiService } from '@services/api.service';
       height: 14px;
       color: #ff5252;
     }
+    .invite-panel {
+      position: absolute;
+      right: 16px;
+      bottom: 100px;
+      width: 280px;
+      background: #333;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 10;
+      overflow: hidden;
+    }
+    .invite-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #3a3a3a;
+      color: white;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .invite-panel-header button { color: #aaa; }
+    .invite-panel-list {
+      max-height: 250px;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .invite-member-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+    }
+    .invite-member-item:hover {
+      background: #3d3d3d;
+    }
+    .invite-member-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #6200ee;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .invite-member-info { flex: 1; }
+    .invite-member-name { color: white; font-size: 13px; font-weight: 500; display: block; }
+    .invite-member-username { color: #aaa; font-size: 11px; }
+    .invite-member-item button { color: #76ff03; }
+    .invite-member-item button[disabled] { color: #666; }
+    .no-members { color: #888; text-align: center; padding: 16px; font-size: 13px; }
     .video-controls {
       display: flex;
       justify-content: center;
@@ -159,22 +247,33 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
   participantList: Participant[] = [];
   audioEnabled = true;
   videoEnabled = true;
+  showInvitePanel = false;
+  channelMembers: any[] = [];
+  callableMembers: any[] = [];
+  invitedUserIds = new Set<string>();
+  private currentUserId = '';
   private subscriptions: Subscription[] = [];
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private webrtcService: WebRTCService,
+    private wsService: WebSocketService,
     private apiService: ApiService,
+    private authService: AuthService,
+    private snackBar: MatSnackBar,
   ) {}
 
   ngOnInit(): void {
     this.channelId = this.route.snapshot.paramMap.get('channelId') || '';
     this.audioOnly = this.route.snapshot.queryParamMap.get('audio') === 'true';
+    this.currentUserId = this.authService.getCurrentUser()?.id || '';
 
     if (this.audioOnly) {
       this.videoEnabled = false;
     }
+
+    this.loadChannelMembers();
 
     // Create or get existing room, then join
     this.apiService.createVideoRoom(this.channelId).subscribe({
@@ -203,6 +302,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
       this.webrtcService.participants$.subscribe((participants) => {
         this.participants = participants;
         this.participantList = Array.from(participants.values());
+        this.updateCallableMembers();
 
         setTimeout(() => {
           this.participantList.forEach((p) => {
@@ -228,6 +328,38 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
 
   toggleVideo(): void {
     this.videoEnabled = this.webrtcService.toggleVideo();
+  }
+
+  loadChannelMembers(): void {
+    this.apiService.getChannelMembers(this.channelId).subscribe((members) => {
+      this.channelMembers = members;
+      this.updateCallableMembers();
+    });
+  }
+
+  private updateCallableMembers(): void {
+    const inCallIds = new Set(this.participantList.map((p) => p.userId));
+    inCallIds.add(this.currentUserId);
+    this.callableMembers = this.channelMembers
+      .map((m: any) => m.user || m)
+      .filter((u: any) => !inCallIds.has(u.id));
+  }
+
+  toggleInvitePanel(): void {
+    this.showInvitePanel = !this.showInvitePanel;
+    if (this.showInvitePanel) {
+      this.updateCallableMembers();
+    }
+  }
+
+  inviteToCall(user: any): void {
+    this.wsService.send(this.channelId, {
+      type: 'video_call_invite',
+      target_user_id: user.id,
+      audio_only: this.audioOnly,
+    });
+    this.invitedUserIds.add(user.id);
+    this.snackBar.open(`${user.display_name} wurde angerufen`, 'OK', { duration: 3000 });
   }
 
   endCall(): void {
