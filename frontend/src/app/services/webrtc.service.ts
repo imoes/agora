@@ -81,6 +81,11 @@ export class WebRTCService {
       this.handleSignaling(msg);
     });
 
+    // Wait for WebSocket to be open before announcing – the chat page
+    // closes its WebSocket on navigation, so a fresh connection is created
+    // which may still be CONNECTING at this point.
+    await this.wsService.waitForOpen(channelId);
+
     // Announce call start
     this.wsService.send(channelId, { type: 'video_call_start' });
   }

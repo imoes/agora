@@ -7,6 +7,8 @@ import { environment } from '@env/environment';
 export class WebSocketService {
   private sockets: Map<string, WebSocket> = new Map();
   private messageSubjects: Map<string, Subject<any>> = new Map();
+  private sendBuffers: Map<string, string[]> = new Map();
+  private openPromises: Map<string, Promise<void>> = new Map();
 
   constructor(private authService: AuthService) {}
 
@@ -17,9 +19,22 @@ export class WebSocketService {
 
     const subject = new Subject<any>();
     this.messageSubjects.set(channelId, subject);
+    this.sendBuffers.set(channelId, []);
 
     const token = this.authService.getToken();
     const ws = new WebSocket(`${environment.wsUrl}/${channelId}?token=${token}`);
+
+    // Track when the WebSocket is actually open
+    const openPromise = new Promise<void>((resolve) => {
+      ws.onopen = () => {
+        // Flush any buffered messages
+        const buffer = this.sendBuffers.get(channelId) || [];
+        buffer.forEach((msg) => ws.send(msg));
+        this.sendBuffers.set(channelId, []);
+        resolve();
+      };
+    });
+    this.openPromises.set(channelId, openPromise);
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -33,6 +48,8 @@ export class WebSocketService {
     ws.onclose = () => {
       this.sockets.delete(channelId);
       this.messageSubjects.delete(channelId);
+      this.sendBuffers.delete(channelId);
+      this.openPromises.delete(channelId);
       subject.complete();
     };
 
@@ -40,10 +57,28 @@ export class WebSocketService {
     return subject.asObservable();
   }
 
-  send(channelId: string, data: any): void {
+  /** Returns a promise that resolves when the WebSocket for channelId is open. */
+  waitForOpen(channelId: string): Promise<void> {
     const ws = this.sockets.get(channelId);
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(data));
+      return Promise.resolve();
+    }
+    return this.openPromises.get(channelId) || Promise.resolve();
+  }
+
+  send(channelId: string, data: any): void {
+    const ws = this.sockets.get(channelId);
+    if (!ws) return;
+
+    const msg = JSON.stringify(data);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    } else if (ws.readyState === WebSocket.CONNECTING) {
+      // Buffer the message – it will be flushed when the socket opens
+      const buffer = this.sendBuffers.get(channelId);
+      if (buffer) {
+        buffer.push(msg);
+      }
     }
   }
 
@@ -53,11 +88,13 @@ export class WebSocketService {
       ws.close();
       this.sockets.delete(channelId);
       this.messageSubjects.delete(channelId);
+      this.sendBuffers.delete(channelId);
+      this.openPromises.delete(channelId);
     }
   }
 
   broadcastStatus(status: string): void {
-    this.sockets.forEach((ws, channelId) => {
+    this.sockets.forEach((ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'status_change', status }));
       }
@@ -68,5 +105,7 @@ export class WebSocketService {
     this.sockets.forEach((ws) => ws.close());
     this.sockets.clear();
     this.messageSubjects.clear();
+    this.sendBuffers.clear();
+    this.openPromises.clear();
   }
 }
