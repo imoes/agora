@@ -10,6 +10,10 @@ export class WebSocketService {
   private sendBuffers: Map<string, string[]> = new Map();
   private openPromises: Map<string, Promise<void>> = new Map();
 
+  /** Emits messages from ALL channels – useful for global notifications like incoming calls. */
+  private globalMessageSubject = new Subject<any>();
+  globalMessages$ = this.globalMessageSubject.asObservable();
+
   constructor(private authService: AuthService) {}
 
   connect(channelId: string): Observable<any> {
@@ -39,6 +43,7 @@ export class WebSocketService {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       subject.next(data);
+      this.globalMessageSubject.next(data);
     };
 
     ws.onerror = () => {

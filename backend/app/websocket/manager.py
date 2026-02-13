@@ -1,6 +1,7 @@
 import json
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from fastapi import WebSocket
 
@@ -13,6 +14,8 @@ class ConnectionManager:
     active_connections: dict[str, dict[str, WebSocket]] = field(default_factory=dict)
     user_channels: dict[str, set[str]] = field(default_factory=dict)
     user_statuses: dict[str, str] = field(default_factory=dict)
+    # Track active calls per channel: channel_id -> {"start_time": datetime, "participants": set}
+    active_calls: dict[str, dict] = field(default_factory=dict)
 
     async def connect(self, websocket: WebSocket, user_id: str, channel_id: str):
         await websocket.accept()
@@ -87,6 +90,29 @@ class ConnectionManager:
             uid: self.get_user_status(uid)
             for uid in self.active_connections[channel_id]
         }
+
+    def join_call(self, channel_id: str, user_id: str) -> bool:
+        """Add a user to an active call. Returns True if this is the first participant (call started)."""
+        if channel_id not in self.active_calls:
+            self.active_calls[channel_id] = {
+                "start_time": datetime.now(timezone.utc),
+                "participants": set(),
+            }
+        is_first = len(self.active_calls[channel_id]["participants"]) == 0
+        self.active_calls[channel_id]["participants"].add(user_id)
+        return is_first
+
+    def leave_call(self, channel_id: str, user_id: str) -> int | None:
+        """Remove a user from an active call. Returns call duration in seconds if call is now empty, else None."""
+        if channel_id not in self.active_calls:
+            return None
+        call = self.active_calls[channel_id]
+        call["participants"].discard(user_id)
+        if len(call["participants"]) == 0:
+            duration = int((datetime.now(timezone.utc) - call["start_time"]).total_seconds())
+            del self.active_calls[channel_id]
+            return duration
+        return None
 
 
 manager = ConnectionManager()

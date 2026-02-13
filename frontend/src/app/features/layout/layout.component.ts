@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatListModule } from '@angular/material/list';
@@ -82,6 +82,27 @@ import { WebSocketService } from '@services/websocket.service';
       <main class="content">
         <router-outlet></router-outlet>
       </main>
+
+      <!-- Incoming Call Overlay -->
+      <div class="incoming-call-overlay" *ngIf="incomingCall">
+        <div class="incoming-call-card">
+          <div class="incoming-call-avatar">
+            {{ incomingCall.displayName?.charAt(0)?.toUpperCase() || '?' }}
+          </div>
+          <div class="incoming-call-info">
+            <span class="incoming-call-name">{{ incomingCall.displayName }}</span>
+            <span class="incoming-call-label">{{ incomingCall.audioOnly ? 'Audioanruf' : 'Videoanruf' }}...</span>
+          </div>
+          <div class="incoming-call-actions">
+            <button mat-fab color="primary" (click)="acceptCall()" class="call-btn accept">
+              <mat-icon>call</mat-icon>
+            </button>
+            <button mat-fab color="warn" (click)="rejectCall()" class="call-btn reject">
+              <mat-icon>call_end</mat-icon>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -175,18 +196,91 @@ import { WebSocketService } from '@services/websocket.service';
     .status-icon-away { color: var(--away) !important; }
     .status-icon-dnd { color: var(--busy) !important; }
     .status-icon-offline { color: var(--offline) !important; }
+    /* Incoming call overlay */
+    .incoming-call-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    .incoming-call-card {
+      background: #292929;
+      border-radius: 16px;
+      padding: 32px 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+      animation: pulse 2s ease-in-out infinite;
+      min-width: 280px;
+    }
+    .incoming-call-avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: #6264a7;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .incoming-call-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .incoming-call-name {
+      color: white;
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .incoming-call-label {
+      color: #aaa;
+      font-size: 14px;
+    }
+    .incoming-call-actions {
+      display: flex;
+      gap: 24px;
+      margin-top: 8px;
+    }
+    .call-btn { width: 56px !important; height: 56px !important; }
+    .call-btn.accept { background: #4caf50 !important; }
   `],
 })
 export class LayoutComponent implements OnInit, OnDestroy {
   currentUser: User | null = null;
   unreadCount = 0;
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
+  incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
   private subscriptions: Subscription[] = [];
+  private ringOscillator: OscillatorNode | null = null;
+  private ringContext: AudioContext | null = null;
+  private ringTimeout: any = null;
 
   constructor(
     private authService: AuthService,
     private apiService: ApiService,
     private wsService: WebSocketService,
+    private router: Router,
   ) {
     const allStatuses: UserStatus[] = ['online', 'busy', 'away', 'dnd', 'offline'];
     this.statusOptions = allStatuses.map((s) => ({
@@ -216,10 +310,28 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.apiService.getUnreadCount().subscribe((res) => {
       this.unreadCount = res.unread_count;
     });
+
+    // Listen for incoming call invites from ANY WebSocket connection
+    this.subscriptions.push(
+      this.wsService.globalMessages$.subscribe((msg) => {
+        if (msg.type === 'video_call_invite' && !this.incomingCall) {
+          this.incomingCall = {
+            displayName: msg.display_name,
+            channelId: msg.channel_id,
+            audioOnly: msg.audio_only,
+            fromUserId: msg.from_user_id,
+          };
+          this.startRinging();
+          // Auto-dismiss after 30 seconds
+          this.ringTimeout = setTimeout(() => this.rejectCall(), 30000);
+        }
+      })
+    );
   }
 
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
+    this.stopRinging();
   }
 
   setStatus(status: UserStatus): void {
@@ -228,6 +340,68 @@ export class LayoutComponent implements OnInit, OnDestroy {
     });
     // Also broadcast via any open WS connections
     this.wsService.broadcastStatus(status);
+  }
+
+  acceptCall(): void {
+    if (!this.incomingCall) return;
+    const { channelId, audioOnly } = this.incomingCall;
+    this.stopRinging();
+    this.incomingCall = null;
+    const queryParams = audioOnly ? { audio: 'true' } : {};
+    this.router.navigate(['/video', channelId], { queryParams });
+  }
+
+  rejectCall(): void {
+    this.stopRinging();
+    this.incomingCall = null;
+  }
+
+  private startRinging(): void {
+    try {
+      this.ringContext = new AudioContext();
+      this.playRingTone();
+    } catch {
+      // Audio not available
+    }
+  }
+
+  private playRingTone(): void {
+    if (!this.ringContext || !this.incomingCall) return;
+    const ctx = this.ringContext;
+
+    // Two-tone ring: 440Hz + 480Hz for 1s, silence 2s, repeat
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.frequency.value = 440;
+    osc2.frequency.value = 480;
+    gain.gain.value = 0.15;
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start();
+    osc2.start();
+
+    // Ring for 1 second
+    osc1.stop(ctx.currentTime + 1);
+    osc2.stop(ctx.currentTime + 1);
+
+    // Schedule next ring after 3 seconds total (1s ring + 2s silence)
+    this.ringOscillator = osc1;
+    setTimeout(() => this.playRingTone(), 3000);
+  }
+
+  private stopRinging(): void {
+    clearTimeout(this.ringTimeout);
+    this.ringTimeout = null;
+    this.ringOscillator = null;
+    if (this.ringContext) {
+      this.ringContext.close().catch(() => {});
+      this.ringContext = null;
+    }
   }
 
   logout(): void {
