@@ -56,6 +56,7 @@ async def create_channel(
         team_id=channel.team_id,
         created_at=channel.created_at,
         member_count=1 + len(data.member_ids),
+        invite_token=channel.invite_token,
     )
 
 
@@ -105,6 +106,7 @@ async def list_channels(
                 created_at=ch.created_at,
                 member_count=member_count,
                 unread_count=unread or 0,
+                invite_token=ch.invite_token,
             )
         )
 
@@ -146,6 +148,7 @@ async def get_channel(
         team_id=channel.team_id,
         created_at=channel.created_at,
         member_count=count,
+        invite_token=channel.invite_token,
     )
 
 

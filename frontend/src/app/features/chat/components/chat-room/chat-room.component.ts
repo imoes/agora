@@ -9,10 +9,12 @@ import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
 import { AuthService, User } from '@core/services/auth.service';
+import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component';
 
 @Component({
   selector: 'app-chat-room',
@@ -20,7 +22,7 @@ import { AuthService, User } from '@core/services/auth.service';
   imports: [
     CommonModule, FormsModule, MatIconModule, MatButtonModule,
     MatFormFieldModule, MatInputModule, MatMenuModule, MatTooltipModule,
-    MatProgressSpinnerModule,
+    MatProgressSpinnerModule, MatDialogModule,
   ],
   template: `
     <div class="chat-room">
@@ -34,6 +36,9 @@ import { AuthService, User } from '@core/services/auth.service';
           <span class="member-count">{{ channel?.member_count }} Mitglieder</span>
         </div>
         <div class="header-actions">
+          <button mat-icon-button matTooltip="Einladen" (click)="openInviteDialog()">
+            <mat-icon>person_add</mat-icon>
+          </button>
           <button mat-icon-button matTooltip="Videoanruf starten" (click)="startVideoCall()">
             <mat-icon>videocam</mat-icon>
           </button>
@@ -310,6 +315,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     private apiService: ApiService,
     private wsService: WebSocketService,
     private authService: AuthService,
+    private dialog: MatDialog,
   ) {}
 
   ngOnInit(): void {
@@ -410,6 +416,16 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         file_reference_id: ref.id,
       });
       this.loadFiles();
+    });
+  }
+
+  openInviteDialog(): void {
+    this.dialog.open(InviteDialogComponent, {
+      width: '500px',
+      data: {
+        channelId: this.channelId,
+        inviteToken: this.channel?.invite_token || '',
+      },
     });
   }
 

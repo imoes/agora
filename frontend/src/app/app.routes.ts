@@ -17,6 +17,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'invite/:token',
+    loadComponent: () =>
+      import('./features/invite/components/invite-accept/invite-accept.component').then(
+        (m) => m.InviteAcceptComponent
+      ),
+  },
+  {
     path: '',
     loadComponent: () =>
       import('./features/layout/layout.component').then(

@@ -114,4 +114,29 @@ export class ApiService {
   leaveVideoRoom(channelId: string): Observable<any> {
     return this.http.post(`${this.baseUrl}/video/rooms/${channelId}/leave`, null);
   }
+
+  // Invitations
+  sendInvitation(channelId: string, data: { email: string; message?: string }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/invitations/channel/${channelId}`, data);
+  }
+
+  getChannelInvitations(channelId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/invitations/channel/${channelId}`);
+  }
+
+  acceptInvitation(inviteToken: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/invitations/accept/${inviteToken}`);
+  }
+
+  revokeInvitation(invitationId: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/invitations/${invitationId}`);
+  }
+
+  regenerateInviteToken(channelId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/invitations/channel/${channelId}/regenerate-token`, null);
+  }
+
+  getInvitationIcsUrl(channelId: string, invitationId: string): string {
+    return `${this.baseUrl}/invitations/channel/${channelId}/ics/${invitationId}`;
+  }
 }

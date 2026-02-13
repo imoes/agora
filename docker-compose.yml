@@ -40,6 +40,13 @@ services:
       JANUS_URL: http://janus:8088/janus
       UPLOAD_DIR: /data/uploads
       CHAT_DB_DIR: /data/chats
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@agora.local}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
     volumes:
       - chat_data:/data/chats
       - upload_data:/data/uploads
@@ -59,6 +66,12 @@ services:
       - "10000-10100:10000-10100/udp"
     environment:
       JANUS_API_SECRET: janus-api-secret
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 
   frontend:
     build:

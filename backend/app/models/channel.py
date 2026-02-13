@@ -1,10 +1,15 @@
+import secrets
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKey, UUIDType
+
+
+def _generate_invite_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 class Channel(Base, UUIDPrimaryKey, TimestampMixin):
@@ -21,12 +26,18 @@ class Channel(Base, UUIDPrimaryKey, TimestampMixin):
         nullable=True,
     )
     sqlite_db_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    invite_token: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, default=_generate_invite_token
+    )
 
     team = relationship("Team", back_populates="channels")
     members = relationship(
         "ChannelMember", back_populates="channel", cascade="all, delete-orphan"
     )
     file_references = relationship("FileReference", back_populates="channel")
+    invitations = relationship(
+        "Invitation", back_populates="channel", cascade="all, delete-orphan"
+    )
 
 
 class ChannelMember(Base, TimestampMixin):

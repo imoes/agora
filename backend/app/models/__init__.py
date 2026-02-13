@@ -3,6 +3,7 @@ from app.models.team import Team, TeamMember
 from app.models.channel import Channel, ChannelMember
 from app.models.file import File, FileReference
 from app.models.feed import FeedEvent
+from app.models.invitation import Invitation
 
 __all__ = [
     "User",
@@ -13,4 +14,5 @@ __all__ = [
     "File",
     "FileReference",
     "FeedEvent",
+    "Invitation",
 ]

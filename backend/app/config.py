@@ -13,6 +13,17 @@ class Settings(BaseSettings):
     chat_db_dir: str = "/data/chats"
     max_upload_size: int = 104857600  # 100MB
 
+    # SMTP settings for email invitations
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@agora.local"
+    smtp_use_tls: bool = True
+
+    # Frontend URL for invitation links
+    frontend_url: str = "http://localhost:4200"
+
     model_config = {"env_file": ".env"}
 
 

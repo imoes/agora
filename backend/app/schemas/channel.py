@@ -35,6 +35,7 @@ class ChannelOut(BaseModel):
     created_at: datetime
     member_count: int = 0
     unread_count: int = 0
+    invite_token: str | None = None
 
     model_config = {"from_attributes": True}
 
