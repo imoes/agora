@@ -82,6 +82,20 @@ def main():
 
     users = create_users(args.base_url, args.count, args.prefix, args.password)
 
+    # Testbenutzer in test_user.txt schreiben
+    outfile = "test_user.txt"
+    with open(outfile, "w") as f:
+        f.write(f"# Agora Testbenutzer (Passwort: {args.password})\n")
+        f.write(f"# {'Username':<20} {'E-Mail':<35} {'Display Name':<25} {'ID'}\n")
+        f.write(f"# {'-'*20} {'-'*35} {'-'*25} {'-'*36}\n")
+        for u in users:
+            f.write(
+                f"{u['username']:<20} {u['email']:<35} "
+                f"{u['display_name']:<25} {u['id']}\n"
+            )
+    print()
+    print(f"Benutzerliste geschrieben: {outfile}")
+
     print()
     print(f"Fertig: {len(users)} Benutzer erfolgreich erstellt.")
     if users:
