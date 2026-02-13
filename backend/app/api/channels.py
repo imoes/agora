@@ -97,6 +97,14 @@ async def list_channels(
         )
         unread = unread_result.scalar()
 
+        # Get last activity timestamp (latest feed event in this channel)
+        activity_result = await db.execute(
+            select(func.max(FeedEvent.created_at)).where(
+                FeedEvent.channel_id == ch.id,
+            )
+        )
+        last_activity = activity_result.scalar()
+
         channels.append(
             ChannelOut(
                 id=ch.id,
@@ -108,9 +116,12 @@ async def list_channels(
                 member_count=member_count,
                 unread_count=unread or 0,
                 invite_token=ch.invite_token,
+                last_activity_at=last_activity or ch.created_at,
             )
         )
 
+    # Sort by last activity (most recent first)
+    channels.sort(key=lambda c: c.last_activity_at or c.created_at, reverse=True)
     return channels
 
 

@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet, NavigationEnd } from '@angular/router';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatListModule } from '@angular/material/list';
@@ -10,7 +10,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDividerModule } from '@angular/material/divider';
 import { Subscription, interval } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { switchMap, filter } from 'rxjs/operators';
 import { AuthService, User, UserStatus, STATUS_LABELS, STATUS_ICONS } from '@core/services/auth.service';
 import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
@@ -77,6 +77,33 @@ import { WebSocketService } from '@services/websocket.service';
           </mat-menu>
         </div>
       </nav>
+
+      <!-- Chat Sidebar -->
+      <aside class="chat-sidebar">
+        <div class="chat-sidebar-header">
+          <span>Chats</span>
+        </div>
+        <div class="chat-sidebar-list">
+          <div *ngFor="let ch of chatChannels"
+               class="chat-sidebar-item"
+               [class.active]="activeChannelId === ch.id"
+               [class.unread]="ch.unread_count > 0"
+               (click)="openChat(ch.id)">
+            <div class="chat-sidebar-avatar" [class.team]="ch.channel_type === 'team'">
+              <mat-icon *ngIf="ch.channel_type === 'team'">tag</mat-icon>
+              <span *ngIf="ch.channel_type !== 'team'">{{ ch.name?.charAt(0)?.toUpperCase() }}</span>
+            </div>
+            <div class="chat-sidebar-info">
+              <span class="chat-sidebar-name">{{ ch.name }}</span>
+              <span class="chat-sidebar-meta">{{ ch.member_count }} Mitglieder</span>
+            </div>
+            <span *ngIf="ch.unread_count > 0" class="chat-unread-badge">{{ ch.unread_count }}</span>
+          </div>
+          <div *ngIf="chatChannels.length === 0" class="chat-sidebar-empty">
+            Keine Chats
+          </div>
+        </div>
+      </aside>
 
       <!-- Main Content -->
       <main class="content">
@@ -172,6 +199,94 @@ import { WebSocketService } from '@services/websocket.service';
     .status-dot.away { background: var(--away); }
     .status-dot.dnd { background: var(--busy); }
     .status-dot.offline { background: var(--offline); }
+    /* Chat sidebar */
+    .chat-sidebar {
+      width: 260px;
+      background: #fff;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .chat-sidebar-header {
+      padding: 16px 16px 12px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+      border-bottom: 1px solid var(--border);
+    }
+    .chat-sidebar-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .chat-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .chat-sidebar-item:hover {
+      background: var(--hover);
+    }
+    .chat-sidebar-item.active {
+      background: rgba(98, 0, 238, 0.08);
+      border-left: 3px solid var(--primary);
+    }
+    .chat-sidebar-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .chat-sidebar-avatar.team {
+      border-radius: 4px;
+    }
+    .chat-sidebar-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-sidebar-name {
+      display: block;
+      font-size: 13px;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-sidebar-item.unread .chat-sidebar-name {
+      font-weight: 700;
+      color: #000;
+    }
+    .chat-sidebar-meta {
+      display: block;
+      font-size: 11px;
+      color: #999;
+    }
+    .chat-unread-badge {
+      background: var(--primary);
+      color: white;
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .chat-sidebar-empty {
+      padding: 24px 16px;
+      text-align: center;
+      color: #999;
+      font-size: 13px;
+    }
     .content {
       flex: 1;
       overflow: hidden;
@@ -271,6 +386,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   unreadCount = 0;
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
+  chatChannels: any[] = [];
+  activeChannelId: string | null = null;
   private subscriptions: Subscription[] = [];
   private ringAudio: HTMLAudioElement | null = null;
   private ringBlobUrl: string | null = null;
@@ -311,6 +428,28 @@ export class LayoutComponent implements OnInit, OnDestroy {
       this.unreadCount = res.unread_count;
     });
 
+    // Load chat channels for sidebar
+    this.loadChatChannels();
+
+    // Refresh chat list every 30 seconds
+    this.subscriptions.push(
+      interval(30000).pipe(
+        switchMap(() => this.apiService.getChannels())
+      ).subscribe((channels) => {
+        this.chatChannels = channels;
+      })
+    );
+
+    // Track active channel from URL
+    this.subscriptions.push(
+      this.router.events.pipe(
+        filter((e): e is NavigationEnd => e instanceof NavigationEnd)
+      ).subscribe((e) => {
+        const match = e.urlAfterRedirects.match(/\/chat\/([^?/]+)/);
+        this.activeChannelId = match ? match[1] : null;
+      })
+    );
+
     // Connect persistent notification WebSocket (for call invites even when no chat is open)
     this.wsService.connectNotifications();
 
@@ -333,8 +472,22 @@ export class LayoutComponent implements OnInit, OnDestroy {
           this.stopRinging();
           this.incomingCall = null;
         }
+        // Refresh chat sidebar on new messages
+        if (msg.type === 'new_message') {
+          this.loadChatChannels();
+        }
       })
     );
+  }
+
+  loadChatChannels(): void {
+    this.apiService.getChannels().subscribe((channels) => {
+      this.chatChannels = channels;
+    });
+  }
+
+  openChat(channelId: string): void {
+    this.router.navigate(['/chat', channelId]);
   }
 
   ngOnDestroy(): void {
