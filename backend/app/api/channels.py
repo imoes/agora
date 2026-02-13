@@ -12,6 +12,7 @@ from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
 from app.schemas.user import UserOut
 from app.services.auth import get_current_user
 from app.services.chat_db import init_chat_db
+from app.websocket.manager import manager
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
@@ -194,7 +195,32 @@ async def add_channel_member(
     member = ChannelMember(channel_id=channel_id, user_id=user_id)
     db.add(member)
     await db.flush()
-    return {"status": "ok"}
+
+    # Get updated member count
+    count_result = await db.execute(
+        select(func.count(ChannelMember.id)).where(
+            ChannelMember.channel_id == channel_id
+        )
+    )
+    new_count = count_result.scalar() or 0
+
+    # Get the added user's info
+    added_user = await db.execute(select(User).where(User.id == user_id))
+    added = added_user.scalar_one_or_none()
+
+    # Broadcast member_added event via WebSocket
+    await manager.send_to_channel(
+        str(channel_id),
+        {
+            "type": "member_added",
+            "user_id": str(user_id),
+            "display_name": added.display_name if added else "",
+            "username": added.username if added else "",
+            "member_count": new_count,
+        },
+    )
+
+    return {"status": "ok", "member_count": new_count}
 
 
 from pydantic import BaseModel as _BaseModel

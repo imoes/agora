@@ -456,6 +456,12 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
             }, 3000);
           }
           break;
+        case 'member_added':
+          if (this.channel) {
+            this.channel.member_count = msg.member_count;
+          }
+          this.loadChannelMembers();
+          break;
         case 'user_joined':
         case 'user_left':
           break;
@@ -579,12 +585,16 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   openInviteDialog(): void {
-    this.dialog.open(InviteDialogComponent, {
+    const dialogRef = this.dialog.open(InviteDialogComponent, {
       width: '500px',
       data: {
         channelId: this.channelId,
         inviteToken: this.channel?.invite_token || '',
       },
+    });
+    dialogRef.afterClosed().subscribe(() => {
+      this.loadChannel();
+      this.loadChannelMembers();
     });
   }
 
