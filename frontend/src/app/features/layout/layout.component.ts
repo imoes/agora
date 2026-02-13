@@ -272,10 +272,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
   private subscriptions: Subscription[] = [];
-  private ringContext: AudioContext | null = null;
+  private ringAudio: HTMLAudioElement | null = null;
+  private ringBlobUrl: string | null = null;
   private ringTimeout: any = null;
-  private ringInterval: any = null;
-  private initAudioHandler = () => this.initAudioContext();
 
   constructor(
     private authService: AuthService,
@@ -312,10 +311,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
       this.unreadCount = res.unread_count;
     });
 
-    // Pre-initialize AudioContext on first user gesture (required by browsers)
-    document.addEventListener('click', this.initAudioHandler, { once: true });
-    document.addEventListener('keydown', this.initAudioHandler, { once: true });
-
     // Listen for incoming call invites from ANY WebSocket connection
     this.subscriptions.push(
       this.wsService.globalMessages$.subscribe((msg) => {
@@ -337,8 +332,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.stopRinging();
-    document.removeEventListener('click', this.initAudioHandler);
-    document.removeEventListener('keydown', this.initAudioHandler);
   }
 
   setStatus(status: UserStatus): void {
@@ -363,62 +356,70 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.incomingCall = null;
   }
 
-  private initAudioContext(): void {
-    if (!this.ringContext) {
-      try {
-        this.ringContext = new AudioContext();
-      } catch {
-        // Audio not available
-      }
-    }
-  }
-
   private startRinging(): void {
-    // Only play audio if user has already interacted with the page
-    // (AudioContext must be created/resumed from a user gesture).
-    // The visual overlay is always shown regardless.
-    if (!this.ringContext) return;
-
-    this.ringContext.resume().then(() => {
-      this.playRingTone();
-    }).catch(() => {});
-  }
-
-  private playRingTone(): void {
-    if (!this.ringContext || this.ringContext.state === 'closed' || !this.incomingCall) return;
-    const ctx = this.ringContext;
-
-    // Two-tone ring: 440Hz + 480Hz for 1s, silence 2s, repeat
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc1.frequency.value = 440;
-    osc2.frequency.value = 480;
-    gain.gain.value = 0.15;
-
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc1.start();
-    osc2.stop(ctx.currentTime + 1);
-    osc2.start();
-    osc1.stop(ctx.currentTime + 1);
-
-    // Schedule next ring after 3 seconds total (1s ring + 2s silence)
-    this.ringInterval = setTimeout(() => this.playRingTone(), 3000);
+    try {
+      const blob = this.createRingtoneWav();
+      this.ringBlobUrl = URL.createObjectURL(blob);
+      this.ringAudio = new Audio(this.ringBlobUrl);
+      this.ringAudio.loop = true;
+      this.ringAudio.play().catch(() => {
+        // Autoplay blocked – visual overlay is still shown
+      });
+    } catch {
+      // Audio not available
+    }
   }
 
   private stopRinging(): void {
     clearTimeout(this.ringTimeout);
-    clearTimeout(this.ringInterval);
     this.ringTimeout = null;
-    this.ringInterval = null;
-    // Suspend instead of close so we can reuse the context for future calls
-    if (this.ringContext && this.ringContext.state === 'running') {
-      this.ringContext.suspend().catch(() => {});
+    if (this.ringAudio) {
+      this.ringAudio.pause();
+      this.ringAudio = null;
     }
+    if (this.ringBlobUrl) {
+      URL.revokeObjectURL(this.ringBlobUrl);
+      this.ringBlobUrl = null;
+    }
+  }
+
+  /** Generate a 3-second WAV (1s dual-tone ring + 2s silence) as a Blob. */
+  private createRingtoneWav(): Blob {
+    const sampleRate = 44100;
+    const duration = 3;
+    const numSamples = sampleRate * duration;
+    const dataSize = numSamples * 2;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(buffer);
+
+    const writeStr = (off: number, s: string) => {
+      for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i));
+    };
+
+    writeStr(0, 'RIFF');
+    v.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, sampleRate, true);
+    v.setUint32(28, sampleRate * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    v.setUint32(40, dataSize, true);
+
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      let sample = 0;
+      if (t < 1.0) {
+        sample = 0.15 * (Math.sin(2 * Math.PI * 440 * t) + Math.sin(2 * Math.PI * 480 * t));
+      }
+      v.setInt16(44 + i * 2, sample * 32767, true);
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
   }
 
   logout(): void {

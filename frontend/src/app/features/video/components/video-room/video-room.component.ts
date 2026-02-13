@@ -119,15 +119,19 @@ import { AuthService } from '@core/services/auth.service';
         </div>
         <div class="invite-panel-list">
           <div *ngFor="let m of callableMembers" class="invite-member-item">
-            <div class="invite-member-avatar">{{ m.display_name?.charAt(0)?.toUpperCase() }}</div>
+            <div class="invite-avatar-wrapper">
+              <div class="invite-member-avatar">{{ m.display_name?.charAt(0)?.toUpperCase() }}</div>
+              <span class="invite-status-dot" [class]="m.status || 'offline'"></span>
+            </div>
             <div class="invite-member-info">
               <span class="invite-member-name">{{ m.display_name }}</span>
               <span class="invite-member-username">{{'@' + m.username}}</span>
             </div>
             <button mat-icon-button
-                    [matTooltip]="invitedUserIds.has(m.id) ? 'Eingeladen' : 'Anrufen'"
+                    [matTooltip]="invitedUserIds.has(m.id) ? 'Eingeladen' : (m.status === 'offline' ? 'Offline' : 'Anrufen')"
                     (click)="inviteToCall(m)"
-                    [disabled]="invitedUserIds.has(m.id)">
+                    [disabled]="invitedUserIds.has(m.id) || m.status === 'offline'"
+                    [class.call-online]="m.status && m.status !== 'offline'">
               <mat-icon>{{ invitedUserIds.has(m.id) ? 'check_circle' : 'call' }}</mat-icon>
             </button>
           </div>
@@ -363,6 +367,10 @@ import { AuthService } from '@core/services/auth.service';
     .invite-member-item:hover {
       background: #3d3d3d;
     }
+    .invite-avatar-wrapper {
+      position: relative;
+      flex-shrink: 0;
+    }
     .invite-member-avatar {
       width: 32px;
       height: 32px;
@@ -374,13 +382,27 @@ import { AuthService } from '@core/services/auth.service';
       justify-content: center;
       font-size: 13px;
       font-weight: 500;
-      flex-shrink: 0;
     }
+    .invite-status-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid #333;
+    }
+    .invite-status-dot.online { background: #92c353; }
+    .invite-status-dot.busy { background: #c4314b; }
+    .invite-status-dot.away { background: #fcba12; }
+    .invite-status-dot.dnd { background: #c4314b; }
+    .invite-status-dot.offline { background: #8a8886; }
     .invite-member-info { flex: 1; }
     .invite-member-name { color: white; font-size: 13px; font-weight: 500; display: block; }
     .invite-member-username { color: #aaa; font-size: 11px; }
-    .invite-member-item button { color: #76ff03; }
-    .invite-member-item button[disabled] { color: #666; }
+    .invite-member-item button { color: #666; }
+    .invite-member-item button.call-online { color: #76ff03; }
+    .invite-member-item button[disabled] { color: #555; }
     .no-members { color: #888; text-align: center; padding: 16px; font-size: 13px; }
     .video-controls {
       display: flex;
@@ -598,6 +620,8 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
     this.invitedUserIds.add(user.id);
     this.snackBar.open(`${user.display_name} wurde angerufen`, 'OK', { duration: 3000 });
+    // Reset after 30s so user can be re-invited
+    setTimeout(() => this.invitedUserIds.delete(user.id), 30000);
   }
 
   endCall(): void {
