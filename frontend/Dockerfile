@@ -6,9 +6,10 @@ RUN npm install
 COPY . .
 RUN npm run build -- --configuration=production
 
-# Production stage – plain HTTP, SSL is handled by the nginx reverse-proxy
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist/agora/browser /usr/share/nginx/html
+# Production stage – lightweight static file server, no nginx
+# SSL and proxying are handled by the nginx reverse-proxy container
+FROM node:20-alpine
+RUN npm install -g serve@14
+COPY --from=build /app/dist/agora/browser /app/public
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["serve", "-s", "/app/public", "-l", "80"]

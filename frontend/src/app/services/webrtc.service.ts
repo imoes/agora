@@ -102,7 +102,7 @@ export class WebRTCService {
         break;
 
       case 'offer':
-        await this.handleOffer(msg);
+        await this.handleOffer(msg, currentUser.id);
         break;
 
       case 'answer':
@@ -147,8 +147,22 @@ export class WebRTCService {
     });
   }
 
-  private async handleOffer(msg: any): Promise<void> {
+  private async handleOffer(msg: any, localUserId: string): Promise<void> {
     const pc = this.createPeerConnection(msg.from_user_id, msg.display_name);
+
+    // Polite-peer glare resolution: when both sides sent offers
+    // simultaneously, the peer connection is in "have-local-offer".
+    // The "polite" peer (lower ID) rolls back its own offer and accepts
+    // the incoming one. The "impolite" peer (higher ID) ignores it —
+    // the polite peer's answer to *its* offer will arrive shortly.
+    if (pc.signalingState === 'have-local-offer') {
+      const isPolite = localUserId < msg.from_user_id;
+      if (!isPolite) {
+        return; // impolite peer: ignore the colliding offer
+      }
+      // polite peer: rollback own offer, accept the remote one
+      await pc.setLocalDescription({ type: 'rollback' });
+    }
 
     await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
     const answer = await pc.createAnswer();
@@ -312,10 +326,9 @@ export class WebRTCService {
   stopScreenShare(): void {
     if (!this.channelId || !this.screenStream) return;
 
-    // Stop screen tracks
-    this.screenStream.getTracks().forEach((t) => t.stop());
-
-    // Restore original video track in all peer connections
+    // Restore original video track BEFORE stopping screen tracks,
+    // so the sender still holds a reference to the screen track
+    // and can be found via sender.track?.kind === 'video'.
     if (this.originalVideoTrack) {
       this.peerConnections.forEach((pc) => {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
@@ -324,6 +337,9 @@ export class WebRTCService {
         }
       });
     }
+
+    // Now stop screen tracks
+    this.screenStream.getTracks().forEach((t) => t.stop());
 
     this.screenStream = null;
     this.screenSharingSubject.next(false);
