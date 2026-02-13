@@ -9,19 +9,31 @@ export interface Participant {
   stream: MediaStream | null;
   audioEnabled: boolean;
   videoEnabled: boolean;
+  isScreenShare?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
 export class WebRTCService {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
+  private screenStream: MediaStream | null = null;
   private channelId: string | null = null;
+  private originalVideoTrack: MediaStreamTrack | null = null;
 
   private participantsSubject = new BehaviorSubject<Map<string, Participant>>(new Map());
   participants$ = this.participantsSubject.asObservable();
 
   private localStreamSubject = new BehaviorSubject<MediaStream | null>(null);
   localStream$ = this.localStreamSubject.asObservable();
+
+  private screenShareSubject = new BehaviorSubject<MediaStream | null>(null);
+  screenShare$ = this.screenShareSubject.asObservable();
+
+  private screenSharingSubject = new BehaviorSubject<boolean>(false);
+  isScreenSharing$ = this.screenSharingSubject.asObservable();
+
+  private presenterSubject = new BehaviorSubject<{ userId: string; displayName: string } | null>(null);
+  presenter$ = this.presenterSubject.asObservable();
 
   private rtcConfig: RTCConfiguration = {
     iceServers: [
@@ -79,6 +91,21 @@ export class WebRTCService {
 
       case 'video_call_end':
         this.removePeer(msg.user_id);
+        break;
+
+      case 'screen_share_start':
+        if (msg.user_id !== currentUser.id) {
+          this.presenterSubject.next({
+            userId: msg.user_id,
+            displayName: msg.display_name,
+          });
+        }
+        break;
+
+      case 'screen_share_stop':
+        if (this.presenterSubject.value?.userId === msg.user_id) {
+          this.presenterSubject.next(null);
+        }
         break;
     }
   }
@@ -176,6 +203,10 @@ export class WebRTCService {
     const participants = this.participantsSubject.value;
     participants.delete(userId);
     this.participantsSubject.next(new Map(participants));
+    // Clear presenter if the presenter left
+    if (this.presenterSubject.value?.userId === userId) {
+      this.presenterSubject.next(null);
+    }
   }
 
   toggleAudio(): boolean {
@@ -200,7 +231,85 @@ export class WebRTCService {
     return false;
   }
 
+  async startScreenShare(): Promise<MediaStream | null> {
+    if (!this.channelId) return null;
+
+    try {
+      this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+      const screenTrack = this.screenStream.getVideoTracks()[0];
+
+      // Save original video track
+      if (this.localStream) {
+        this.originalVideoTrack = this.localStream.getVideoTracks()[0] || null;
+      }
+
+      // Replace the video track in all peer connections with screen track
+      this.peerConnections.forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(screenTrack);
+        } else {
+          // No video sender exists (audio-only call) — add screen track
+          pc.addTrack(screenTrack, this.screenStream!);
+        }
+      });
+
+      this.screenSharingSubject.next(true);
+      this.screenShareSubject.next(this.screenStream);
+
+      // Notify others
+      this.wsService.send(this.channelId, { type: 'screen_share_start' });
+
+      // Handle user stopping screen share via browser UI
+      screenTrack.onended = () => {
+        this.stopScreenShare();
+      };
+
+      return this.screenStream;
+    } catch {
+      return null;
+    }
+  }
+
+  stopScreenShare(): void {
+    if (!this.channelId || !this.screenStream) return;
+
+    // Stop screen tracks
+    this.screenStream.getTracks().forEach((t) => t.stop());
+
+    // Restore original video track in all peer connections
+    if (this.originalVideoTrack) {
+      this.peerConnections.forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(this.originalVideoTrack);
+        }
+      });
+    }
+
+    this.screenStream = null;
+    this.screenSharingSubject.next(false);
+    this.screenShareSubject.next(null);
+
+    // Notify others
+    this.wsService.send(this.channelId, { type: 'screen_share_stop' });
+  }
+
   endCall(): void {
+    // Stop screen share if active
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop());
+      this.screenStream = null;
+      this.screenSharingSubject.next(false);
+      this.screenShareSubject.next(null);
+    }
+    this.presenterSubject.next(null);
+    this.originalVideoTrack = null;
+
     if (this.channelId) {
       this.wsService.send(this.channelId, { type: 'video_call_end' });
     }

@@ -56,6 +56,14 @@ export class WebSocketService {
     }
   }
 
+  broadcastStatus(status: string): void {
+    this.sockets.forEach((ws, channelId) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'status_change', status }));
+      }
+    });
+  }
+
   disconnectAll(): void {
     this.sockets.forEach((ws) => ws.close());
     this.sockets.clear();

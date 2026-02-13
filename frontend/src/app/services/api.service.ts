@@ -97,6 +97,11 @@ export class ApiService {
     return this.http.get(`${this.baseUrl}/feed/unread-count`);
   }
 
+  // Profile
+  updateProfile(data: { display_name?: string; status?: string; status_message?: string }): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/auth/me`, data);
+  }
+
   // Users
   searchUsers(query: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.baseUrl}/users/`, { params: { search: query } });

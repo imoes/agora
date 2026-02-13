@@ -17,34 +17,87 @@ import { AuthService } from '@core/services/auth.service';
   imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule, MatSnackBarModule],
   template: `
     <div class="video-room">
-      <!-- Video Grid -->
-      <div class="video-grid" [class.single]="participants.size === 0"
-           [class.audio-only]="audioOnly">
-        <!-- Local Video -->
-        <div class="video-tile local" [class.audio-tile]="audioOnly || !videoEnabled">
-          <video *ngIf="!audioOnly" #localVideo autoplay muted playsinline></video>
-          <div *ngIf="audioOnly || !videoEnabled" class="audio-avatar">
-            <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
-            <span>Du</span>
+      <!-- Presenter banner -->
+      <div class="presenter-banner" *ngIf="presenter || isScreenSharing">
+        <mat-icon>present_to_all</mat-icon>
+        <span *ngIf="isScreenSharing">Du praesentierst deinen Bildschirm</span>
+        <span *ngIf="!isScreenSharing && presenter">{{ presenter.displayName }} praesentiert</span>
+      </div>
+
+      <!-- Presentation Layout (when someone is sharing screen) -->
+      <div class="presentation-layout" *ngIf="presenter || isScreenSharing; else normalGrid">
+        <!-- Main presentation area -->
+        <div class="presentation-main">
+          <!-- Screen share preview (local) -->
+          <div class="presentation-video" *ngIf="isScreenSharing">
+            <video #screenVideo autoplay playsinline></video>
+            <div class="video-label">
+              <mat-icon>screen_share</mat-icon>
+              Dein Bildschirm
+            </div>
           </div>
-          <div class="video-label">Du
-            <mat-icon *ngIf="!audioEnabled" class="status-icon">mic_off</mat-icon>
+          <!-- Remote presenter's stream -->
+          <div class="presentation-video" *ngIf="!isScreenSharing && presenter">
+            <video [id]="'video-' + presenter.userId" autoplay playsinline></video>
+            <div class="video-label">
+              <mat-icon>screen_share</mat-icon>
+              {{ presenter.displayName }}
+            </div>
           </div>
         </div>
 
-        <!-- Remote Videos -->
-        <div *ngFor="let p of participantList" class="video-tile"
-             [class.audio-tile]="!p.videoEnabled">
-          <video [id]="'video-' + p.userId" autoplay playsinline></video>
-          <div *ngIf="!p.videoEnabled" class="audio-avatar">
-            <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
-            <span>{{ p.displayName }}</span>
+        <!-- Side strip with participants -->
+        <div class="presentation-sidebar">
+          <!-- Local video (small) -->
+          <div class="video-tile small" [class.audio-tile]="audioOnly || !videoEnabled">
+            <video *ngIf="!audioOnly && videoEnabled" #localVideo autoplay muted playsinline></video>
+            <div *ngIf="audioOnly || !videoEnabled" class="audio-avatar small">
+              <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
+            </div>
+            <div class="video-label">Du</div>
           </div>
-          <div class="video-label">{{ p.displayName }}
-            <mat-icon *ngIf="!p.audioEnabled" class="status-icon">mic_off</mat-icon>
+          <!-- Remote videos (small) -->
+          <div *ngFor="let p of participantList" class="video-tile small"
+               [class.audio-tile]="!p.videoEnabled">
+            <video [id]="'video-' + p.userId" autoplay playsinline></video>
+            <div *ngIf="!p.videoEnabled" class="audio-avatar small">
+              <mat-icon>person</mat-icon>
+            </div>
+            <div class="video-label">{{ p.displayName }}</div>
           </div>
         </div>
       </div>
+
+      <!-- Normal Video Grid (no presentation) -->
+      <ng-template #normalGrid>
+        <div class="video-grid" [class.single]="participants.size === 0"
+             [class.audio-only]="audioOnly">
+          <!-- Local Video -->
+          <div class="video-tile local" [class.audio-tile]="audioOnly || !videoEnabled">
+            <video *ngIf="!audioOnly" #localVideo autoplay muted playsinline></video>
+            <div *ngIf="audioOnly || !videoEnabled" class="audio-avatar">
+              <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
+              <span>Du</span>
+            </div>
+            <div class="video-label">Du
+              <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
+            </div>
+          </div>
+
+          <!-- Remote Videos -->
+          <div *ngFor="let p of participantList" class="video-tile"
+               [class.audio-tile]="!p.videoEnabled">
+            <video [id]="'video-' + p.userId" autoplay playsinline></video>
+            <div *ngIf="!p.videoEnabled" class="audio-avatar">
+              <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
+              <span>{{ p.displayName }}</span>
+            </div>
+            <div class="video-label">{{ p.displayName }}
+              <mat-icon *ngIf="!p.audioEnabled" class="mute-icon">mic_off</mat-icon>
+            </div>
+          </div>
+        </div>
+      </ng-template>
 
       <!-- Invite Panel -->
       <div class="invite-panel" *ngIf="showInvitePanel">
@@ -83,6 +136,12 @@ import { AuthService } from '@core/services/auth.service';
                 *ngIf="!audioOnly">
           <mat-icon>{{ videoEnabled ? 'videocam' : 'videocam_off' }}</mat-icon>
         </button>
+        <button mat-fab
+                [color]="isScreenSharing ? 'accent' : undefined"
+                (click)="toggleScreenShare()"
+                [matTooltip]="isScreenSharing ? 'Freigabe beenden' : 'Bildschirm freigeben'">
+          <mat-icon>{{ isScreenSharing ? 'stop_screen_share' : 'screen_share' }}</mat-icon>
+        </button>
         <button mat-fab (click)="toggleInvitePanel()" matTooltip="Benutzer anrufen"
                 [color]="showInvitePanel ? 'accent' : undefined">
           <mat-icon>person_add</mat-icon>
@@ -100,6 +159,72 @@ import { AuthService } from '@core/services/auth.service';
       flex-direction: column;
       background: #1a1a1a;
     }
+    /* Presenter banner */
+    .presenter-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #6264a7;
+      color: white;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .presenter-banner mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+    /* Presentation layout */
+    .presentation-layout {
+      flex: 1;
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      overflow: hidden;
+    }
+    .presentation-main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .presentation-video {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      background: #2d2d2d;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .presentation-video video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .presentation-sidebar {
+      width: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .video-tile.small {
+      aspect-ratio: 16/9;
+      max-width: 200px;
+    }
+    .video-tile.small .audio-avatar {
+      gap: 4px;
+    }
+    .video-tile.small .audio-avatar mat-icon {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+      padding: 8px;
+    }
+    /* Normal grid */
     .video-grid {
       flex: 1;
       display: grid;
@@ -168,7 +293,7 @@ import { AuthService } from '@core/services/auth.service';
       align-items: center;
       gap: 4px;
     }
-    .status-icon {
+    .mute-icon {
       font-size: 14px;
       width: 14px;
       height: 14px;
@@ -240,6 +365,7 @@ import { AuthService } from '@core/services/auth.service';
 })
 export class VideoRoomComponent implements OnInit, OnDestroy {
   @ViewChild('localVideo') localVideo!: ElementRef<HTMLVideoElement>;
+  @ViewChild('screenVideo') screenVideo!: ElementRef<HTMLVideoElement>;
 
   channelId = '';
   audioOnly = false;
@@ -247,6 +373,8 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
   participantList: Participant[] = [];
   audioEnabled = true;
   videoEnabled = true;
+  isScreenSharing = false;
+  presenter: { userId: string; displayName: string } | null = null;
   showInvitePanel = false;
   channelMembers: any[] = [];
   callableMembers: any[] = [];
@@ -314,6 +442,34 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
         }, 100);
       })
     );
+
+    // Subscribe to screen sharing state
+    this.subscriptions.push(
+      this.webrtcService.isScreenSharing$.subscribe((sharing) => {
+        this.isScreenSharing = sharing;
+      })
+    );
+
+    // Subscribe to screen share stream (for local preview)
+    this.subscriptions.push(
+      this.webrtcService.screenShare$.subscribe((stream) => {
+        setTimeout(() => {
+          if (stream && this.screenVideo?.nativeElement) {
+            this.screenVideo.nativeElement.srcObject = stream;
+          }
+        }, 100);
+      })
+    );
+
+    // Subscribe to remote presenter
+    this.subscriptions.push(
+      this.webrtcService.presenter$.subscribe((presenter) => {
+        this.presenter = presenter;
+        if (presenter) {
+          this.snackBar.open(`${presenter.displayName} praesentiert den Bildschirm`, 'OK', { duration: 3000 });
+        }
+      })
+    );
   }
 
   ngOnDestroy(): void {
@@ -328,6 +484,17 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
 
   toggleVideo(): void {
     this.videoEnabled = this.webrtcService.toggleVideo();
+  }
+
+  async toggleScreenShare(): Promise<void> {
+    if (this.isScreenSharing) {
+      this.webrtcService.stopScreenShare();
+    } else {
+      const stream = await this.webrtcService.startScreenShare();
+      if (!stream) {
+        this.snackBar.open('Bildschirmfreigabe wurde abgebrochen', 'OK', { duration: 2000 });
+      }
+    }
   }
 
   loadChannelMembers(): void {

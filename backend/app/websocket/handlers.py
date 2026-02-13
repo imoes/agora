@@ -60,17 +60,25 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
 
     await manager.connect(websocket, user_id, channel_id)
 
-    # Notify others
+    # Notify others including user statuses
     await manager.send_to_channel(
         channel_id,
         {
             "type": "user_joined",
             "user_id": user_id,
             "display_name": user.display_name,
+            "status": manager.get_user_status(user_id),
             "online_users": manager.get_online_users(channel_id),
+            "user_statuses": manager.get_channel_user_statuses(channel_id),
         },
         exclude_user=user_id,
     )
+
+    # Send current statuses to the joining user
+    await websocket.send_json({
+        "type": "user_statuses",
+        "user_statuses": manager.get_channel_user_statuses(channel_id),
+    })
 
     try:
         while True:
@@ -142,6 +150,19 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     exclude_user=user_id,
                 )
 
+            elif msg_type == "status_change":
+                new_status = data.get("status", "online")
+                await manager.set_user_status(user_id, new_status)
+                # Persist to DB
+                async with async_session() as db:
+                    result = await db.execute(
+                        select(User).where(User.id == user.id)
+                    )
+                    db_user = result.scalar_one_or_none()
+                    if db_user:
+                        db_user.status = new_status
+                        await db.commit()
+
             # WebRTC signaling
             elif msg_type in ("offer", "answer", "ice-candidate"):
                 target_user = data.get("target_user_id")
@@ -158,6 +179,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         pass
 
             elif msg_type == "video_call_start":
+                await manager.set_user_status(user_id, "busy")
                 await manager.send_to_channel(
                     channel_id,
                     {
@@ -184,6 +206,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         pass
 
             elif msg_type == "video_call_end":
+                await manager.set_user_status(user_id, "online")
                 await manager.send_to_channel(
                     channel_id,
                     {
@@ -192,13 +215,43 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     },
                 )
 
+            elif msg_type == "screen_share_start":
+                await manager.send_to_channel(
+                    channel_id,
+                    {
+                        "type": "screen_share_start",
+                        "user_id": user_id,
+                        "display_name": user.display_name,
+                    },
+                )
+
+            elif msg_type == "screen_share_stop":
+                await manager.send_to_channel(
+                    channel_id,
+                    {
+                        "type": "screen_share_stop",
+                        "user_id": user_id,
+                    },
+                )
+
     except WebSocketDisconnect:
         manager.disconnect(user_id, channel_id)
+        # Broadcast offline if no more connections
+        if user_id not in manager.user_channels:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(User).where(User.id == user.id)
+                )
+                db_user = result.scalar_one_or_none()
+                if db_user:
+                    db_user.status = "offline"
+                    await db.commit()
         await manager.send_to_channel(
             channel_id,
             {
                 "type": "user_left",
                 "user_id": user_id,
+                "status": manager.get_user_status(user_id),
                 "online_users": manager.get_online_users(channel_id),
             },
         )

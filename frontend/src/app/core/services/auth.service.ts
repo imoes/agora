@@ -4,13 +4,31 @@ import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { Router } from '@angular/router';
 import { environment } from '@env/environment';
 
+export type UserStatus = 'online' | 'busy' | 'away' | 'dnd' | 'offline';
+
+export const STATUS_LABELS: Record<UserStatus, string> = {
+  online: 'Verfuegbar',
+  busy: 'Beschaeftigt',
+  away: 'Abwesend',
+  dnd: 'Nicht stoeren',
+  offline: 'Offline',
+};
+
+export const STATUS_ICONS: Record<UserStatus, string> = {
+  online: 'check_circle',
+  busy: 'do_not_disturb_on',
+  away: 'schedule',
+  dnd: 'remove_circle',
+  offline: 'circle',
+};
+
 export interface User {
   id: string;
   username: string;
   email: string;
   display_name: string;
   avatar_path: string | null;
-  status: string;
+  status: UserStatus;
   status_message: string | null;
   created_at: string;
 }
@@ -62,6 +80,15 @@ export class AuthService {
 
   getCurrentUser(): User | null {
     return this.currentUserSubject.value;
+  }
+
+  updateLocalUser(updates: Partial<User>): void {
+    const current = this.currentUserSubject.value;
+    if (current) {
+      const updated = { ...current, ...updates };
+      localStorage.setItem('current_user', JSON.stringify(updated));
+      this.currentUserSubject.next(updated);
+    }
   }
 
   private handleAuth(res: AuthResponse): void {
