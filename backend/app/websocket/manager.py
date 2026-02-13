@@ -85,16 +85,15 @@ class ConnectionManager:
                     pass
 
     async def send_to_user(self, user_id: str, message: dict):
-        sent_via_notification = False
-        # Prefer notification connection (always available)
+        # Prefer notification connection to avoid duplicate delivery
         nws = self.notification_connections.get(user_id)
         if nws:
             try:
                 await nws.send_json(message)
-                sent_via_notification = True
+                return  # Delivered via notification – skip channel connections
             except Exception:
                 pass
-        # Also send via channel connections (for redundancy / channel-specific listeners)
+        # Fallback: send via channel connections if no notification connection
         for channel_id in self.user_channels.get(user_id, set()):
             if channel_id in self.active_connections:
                 ws = self.active_connections[channel_id].get(user_id)
