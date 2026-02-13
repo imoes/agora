@@ -33,7 +33,9 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         </button>
         <div class="channel-info">
           <h3>{{ channel?.name }}</h3>
-          <span class="member-count">{{ channel?.member_count }} Mitglieder</span>
+          <span class="member-count" matTooltip="{{ memberNames }}">
+            {{ memberNamesShort }} ({{ channel?.member_count }})
+          </span>
         </div>
         <div class="header-actions">
           <button mat-icon-button matTooltip="Mitglied hinzufuegen" (click)="openInviteDialog()">
@@ -163,6 +165,12 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     .member-count {
       font-size: 12px;
       color: var(--text-secondary);
+      cursor: default;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 300px;
+      display: block;
     }
     .header-actions {
       display: flex;
@@ -373,6 +381,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   mentionResults: any[] = [];
   mentionSelectedIndex = 0;
   channelMembers: any[] = [];
+  memberNames = '';
+  memberNamesShort = '';
   private mentionQuery = '';
 
   private wsSubscription?: Subscription;
@@ -437,7 +447,22 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   loadChannelMembers(): void {
     this.apiService.getChannelMembers(this.channelId).subscribe((members) => {
       this.channelMembers = members;
+      this.updateMemberNames();
     });
+  }
+
+  private updateMemberNames(): void {
+    const names = this.channelMembers.map((m: any) => {
+      const user = m.user || m;
+      return user.display_name || user.username;
+    });
+    this.memberNames = names.join(', ');
+    const maxShow = 3;
+    if (names.length <= maxShow) {
+      this.memberNamesShort = names.join(', ');
+    } else {
+      this.memberNamesShort = names.slice(0, maxShow).join(', ') + ` +${names.length - maxShow}`;
+    }
   }
 
   connectWebSocket(): void {

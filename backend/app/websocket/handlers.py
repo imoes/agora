@@ -168,6 +168,21 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     exclude_user=user_id,
                 )
 
+            elif msg_type == "video_call_invite":
+                target_user = data.get("target_user_id")
+                if target_user and target_user in manager.active_connections.get(channel_id, {}):
+                    ws = manager.active_connections[channel_id][target_user]
+                    try:
+                        await ws.send_json({
+                            "type": "video_call_invite",
+                            "from_user_id": user_id,
+                            "display_name": user.display_name,
+                            "channel_id": channel_id,
+                            "audio_only": data.get("audio_only", False),
+                        })
+                    except Exception:
+                        pass
+
             elif msg_type == "video_call_end":
                 await manager.send_to_channel(
                     channel_id,
