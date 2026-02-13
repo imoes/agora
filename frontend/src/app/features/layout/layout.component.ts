@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet, NavigationEnd } from '@angular/router';
@@ -82,15 +82,15 @@ import { WebSocketService } from '@services/websocket.service';
       <!-- Chat Sidebar -->
       <aside class="chat-sidebar">
         <div class="chat-sidebar-header">
-          <span>Chats</span>
-          <button mat-icon-button (click)="showCallSearch = !showCallSearch" class="call-search-btn"
+          <span>{{ sidebarMode === 'teams' ? 'Teams' : 'Chats' }}</span>
+          <button mat-icon-button (click)="toggleCallSearch($event)" class="call-search-btn"
                   [class.active]="showCallSearch">
             <mat-icon>add_call</mat-icon>
           </button>
         </div>
 
         <!-- User search for calling -->
-        <div class="call-search-panel" *ngIf="showCallSearch">
+        <div class="call-search-panel" *ngIf="showCallSearch" #callSearchPanel>
           <input class="call-search-input" [(ngModel)]="callSearchQuery"
                  (input)="onCallSearch()" placeholder="Benutzer suchen...">
           <div class="call-search-results">
@@ -114,7 +114,7 @@ import { WebSocketService } from '@services/websocket.service';
         </div>
 
         <div class="chat-sidebar-list">
-          <div *ngFor="let ch of chatChannels"
+          <div *ngFor="let ch of filteredChannels"
                class="chat-sidebar-item"
                [class.active]="activeChannelId === ch.id"
                [class.unread]="ch.unread_count > 0"
@@ -124,13 +124,13 @@ import { WebSocketService } from '@services/websocket.service';
               <span *ngIf="ch.channel_type !== 'team'">{{ ch.name?.charAt(0)?.toUpperCase() }}</span>
             </div>
             <div class="chat-sidebar-info">
-              <span class="chat-sidebar-name">{{ ch.name }}</span>
+              <span class="chat-sidebar-name">{{ ch.team_name ? ch.team_name + ' / ' : '' }}{{ ch.name }}</span>
               <span class="chat-sidebar-meta">{{ ch.member_count }} Mitglieder</span>
             </div>
             <span *ngIf="ch.unread_count > 0" class="chat-unread-badge">{{ ch.unread_count }}</span>
           </div>
-          <div *ngIf="chatChannels.length === 0" class="chat-sidebar-empty">
-            Keine Chats
+          <div *ngIf="filteredChannels.length === 0" class="chat-sidebar-empty">
+            {{ sidebarMode === 'teams' ? 'Keine Team-Chats' : 'Keine Chats' }}
           </div>
         </div>
       </aside>
@@ -498,10 +498,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
   chatChannels: any[] = [];
+  filteredChannels: any[] = [];
   activeChannelId: string | null = null;
+  sidebarMode: 'chats' | 'teams' = 'chats';
   showCallSearch = false;
   callSearchQuery = '';
   callSearchResults: any[] = [];
+  @ViewChild('callSearchPanel') callSearchPanel!: ElementRef;
   private subscriptions: Subscription[] = [];
   private ringAudio: HTMLAudioElement | null = null;
   private ringBlobUrl: string | null = null;
@@ -558,18 +561,30 @@ export class LayoutComponent implements OnInit, OnDestroy {
         switchMap(() => this.apiService.getChannels())
       ).subscribe((channels) => {
         this.chatChannels = channels;
+        this.updateFilteredChannels();
       })
     );
 
-    // Track active channel from URL
+    // Track active channel and sidebar mode from URL
     this.subscriptions.push(
       this.router.events.pipe(
         filter((e): e is NavigationEnd => e instanceof NavigationEnd)
       ).subscribe((e) => {
-        const match = e.urlAfterRedirects.match(/\/chat\/([^?/]+)/);
+        const url = e.urlAfterRedirects;
+        const match = url.match(/\/chat\/([^?/]+)/);
         this.activeChannelId = match ? match[1] : null;
+        if (url.startsWith('/teams')) {
+          this.sidebarMode = 'teams';
+        } else {
+          this.sidebarMode = 'chats';
+        }
+        this.updateFilteredChannels();
       })
     );
+    // Set initial sidebar mode from current URL
+    if (this.router.url.startsWith('/teams')) {
+      this.sidebarMode = 'teams';
+    }
 
     // Connect persistent notification WebSocket (for call invites even when no chat is open)
     this.wsService.connectNotifications();
@@ -601,10 +616,42 @@ export class LayoutComponent implements OnInit, OnDestroy {
     );
   }
 
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (!this.showCallSearch) return;
+    const target = event.target as HTMLElement;
+    // Close if click is outside the call search panel and its toggle button
+    if (this.callSearchPanel?.nativeElement &&
+        !this.callSearchPanel.nativeElement.contains(target) &&
+        !target.closest('.call-search-btn')) {
+      this.showCallSearch = false;
+      this.callSearchQuery = '';
+      this.callSearchResults = [];
+    }
+  }
+
   loadChatChannels(): void {
     this.apiService.getChannels().subscribe((channels) => {
       this.chatChannels = channels;
+      this.updateFilteredChannels();
     });
+  }
+
+  private updateFilteredChannels(): void {
+    if (this.sidebarMode === 'teams') {
+      this.filteredChannels = this.chatChannels.filter((ch) => ch.channel_type === 'team');
+    } else {
+      this.filteredChannels = this.chatChannels.filter((ch) => ch.channel_type !== 'team');
+    }
+  }
+
+  toggleCallSearch(event: MouseEvent): void {
+    event.stopPropagation();
+    this.showCallSearch = !this.showCallSearch;
+    if (!this.showCallSearch) {
+      this.callSearchQuery = '';
+      this.callSearchResults = [];
+    }
   }
 
   onCallSearch(): void {
