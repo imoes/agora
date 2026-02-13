@@ -21,4 +21,4 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     team_memberships = relationship("TeamMember", back_populates="user")
     channel_memberships = relationship("ChannelMember", back_populates="user")
     file_references = relationship("FileReference", back_populates="uploader")
-    feed_events = relationship("FeedEvent", back_populates="user")
+    feed_events = relationship("FeedEvent", back_populates="user", foreign_keys="[FeedEvent.user_id]")

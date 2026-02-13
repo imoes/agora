@@ -2,10 +2,9 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDPrimaryKey
+from app.models.base import Base, TimestampMixin, UUIDPrimaryKey, UUIDType
 
 
 class Channel(Base, UUIDPrimaryKey, TimestampMixin):
@@ -17,7 +16,7 @@ class Channel(Base, UUIDPrimaryKey, TimestampMixin):
         String(20), nullable=False, server_default="group"
     )  # 'direct', 'group', 'team'
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDType(),
         ForeignKey("teams.id", ondelete="CASCADE"),
         nullable=True,
     )
@@ -36,12 +35,12 @@ class ChannelMember(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     channel_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDType(),
         ForeignKey("channels.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+        UUIDType(), ForeignKey("users.id"), nullable=False
     )
     last_read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

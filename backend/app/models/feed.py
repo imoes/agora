@@ -1,23 +1,22 @@
 import uuid
 
 from sqlalchemy import ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDPrimaryKey
+from app.models.base import Base, TimestampMixin, UUIDPrimaryKey, UUIDType
 
 
 class FeedEvent(Base, UUIDPrimaryKey, TimestampMixin):
     __tablename__ = "feed_events"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUIDType(), ForeignKey("users.id"), nullable=False, index=True
     )
     channel_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("channels.id"), nullable=False
+        UUIDType(), ForeignKey("channels.id"), nullable=False
     )
     sender_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+        UUIDType(), ForeignKey("users.id"), nullable=False
     )
     event_type: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="message"
