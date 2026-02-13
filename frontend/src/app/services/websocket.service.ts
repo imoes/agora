@@ -14,6 +14,10 @@ export class WebSocketService {
   private globalMessageSubject = new Subject<any>();
   globalMessages$ = this.globalMessageSubject.asObservable();
 
+  /** Persistent notification WebSocket for user-level events (call invites etc.). */
+  private notificationSocket: WebSocket | null = null;
+  private notificationPingInterval: any = null;
+
   constructor(private authService: AuthService) {}
 
   connect(channelId: string): Observable<any> {
@@ -98,7 +102,59 @@ export class WebSocketService {
     }
   }
 
+  /** Connect the persistent notification WebSocket (call from LayoutComponent). */
+  connectNotifications(): void {
+    if (this.notificationSocket) return;
+
+    const token = this.authService.getToken();
+    const ws = new WebSocket(`${environment.wsUrl}/notifications?token=${token}`);
+
+    ws.onopen = () => {
+      // Heartbeat every 25s to keep connection alive and detect disconnects
+      this.notificationPingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type !== 'pong') {
+        this.globalMessageSubject.next(data);
+      }
+    };
+
+    ws.onclose = () => {
+      this.notificationSocket = null;
+      clearInterval(this.notificationPingInterval);
+      this.notificationPingInterval = null;
+      // Reconnect after 3s if still authenticated
+      if (this.authService.getToken()) {
+        setTimeout(() => this.connectNotifications(), 3000);
+      }
+    };
+
+    ws.onerror = () => {};
+
+    this.notificationSocket = ws;
+  }
+
+  disconnectNotifications(): void {
+    clearInterval(this.notificationPingInterval);
+    this.notificationPingInterval = null;
+    if (this.notificationSocket) {
+      this.notificationSocket.close();
+      this.notificationSocket = null;
+    }
+  }
+
   broadcastStatus(status: string): void {
+    // Send via notification socket
+    if (this.notificationSocket?.readyState === WebSocket.OPEN) {
+      this.notificationSocket.send(JSON.stringify({ type: 'status_change', status }));
+    }
+    // Also send via channel sockets
     this.sockets.forEach((ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'status_change', status }));
@@ -107,6 +163,7 @@ export class WebSocketService {
   }
 
   disconnectAll(): void {
+    this.disconnectNotifications();
     this.sockets.forEach((ws) => ws.close());
     this.sockets.clear();
     this.messageSubjects.clear();

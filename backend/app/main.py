@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, channels, feed, files, invitations, messages, teams, users, video
 from app.database import engine
 from app.models.base import Base
-from app.websocket.handlers import websocket_endpoint
+from app.websocket.handlers import notification_ws_endpoint, websocket_endpoint
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ app.include_router(video.router)
 app.include_router(invitations.router)
 
 # WebSocket
+app.websocket("/ws/notifications")(notification_ws_endpoint)
 app.websocket("/ws/{channel_id}")(websocket_endpoint)
 
 

@@ -127,12 +127,18 @@ import { AuthService } from '@core/services/auth.service';
               <span class="invite-member-name">{{ m.display_name }}</span>
               <span class="invite-member-username">{{'@' + m.username}}</span>
             </div>
-            <button mat-icon-button
-                    [matTooltip]="invitedUserIds.has(m.id) ? 'Eingeladen' : (m.status === 'offline' ? 'Offline' : 'Anrufen')"
+            <button mat-icon-button *ngIf="!invitedUserIds.has(m.id)"
+                    [matTooltip]="m.status === 'offline' ? 'Offline' : 'Anrufen'"
                     (click)="inviteToCall(m)"
-                    [disabled]="invitedUserIds.has(m.id) || m.status === 'offline'"
+                    [disabled]="m.status === 'offline'"
                     [class.call-online]="m.status && m.status !== 'offline'">
-              <mat-icon>{{ invitedUserIds.has(m.id) ? 'check_circle' : 'call' }}</mat-icon>
+              <mat-icon>call</mat-icon>
+            </button>
+            <button mat-icon-button *ngIf="invitedUserIds.has(m.id)"
+                    matTooltip="Anruf abbrechen"
+                    (click)="cancelInvite(m)"
+                    class="call-cancel">
+              <mat-icon>call_end</mat-icon>
             </button>
           </div>
           <p *ngIf="callableMembers.length === 0" class="no-members">Keine weiteren Mitglieder</p>
@@ -402,6 +408,7 @@ import { AuthService } from '@core/services/auth.service';
     .invite-member-username { color: #aaa; font-size: 11px; }
     .invite-member-item button { color: #666; }
     .invite-member-item button.call-online { color: #76ff03; }
+    .invite-member-item button.call-cancel { color: #ff5252; }
     .invite-member-item button[disabled] { color: #555; }
     .no-members { color: #888; text-align: center; padding: 16px; font-size: 13px; }
     .video-controls {
@@ -620,8 +627,17 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
     this.invitedUserIds.add(user.id);
     this.snackBar.open(`${user.display_name} wurde angerufen`, 'OK', { duration: 3000 });
-    // Reset after 30s so user can be re-invited
+    // Auto-reset after 30s (call timeout)
     setTimeout(() => this.invitedUserIds.delete(user.id), 30000);
+  }
+
+  cancelInvite(user: any): void {
+    this.wsService.send(this.channelId, {
+      type: 'video_call_cancel',
+      target_user_id: user.id,
+    });
+    this.invitedUserIds.delete(user.id);
+    this.snackBar.open('Anruf abgebrochen', 'OK', { duration: 2000 });
   }
 
   endCall(): void {

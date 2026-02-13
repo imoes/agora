@@ -311,6 +311,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
       this.unreadCount = res.unread_count;
     });
 
+    // Connect persistent notification WebSocket (for call invites even when no chat is open)
+    this.wsService.connectNotifications();
+
     // Listen for incoming call invites from ANY WebSocket connection
     this.subscriptions.push(
       this.wsService.globalMessages$.subscribe((msg) => {
@@ -325,6 +328,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
           // Auto-dismiss after 30 seconds
           this.ringTimeout = setTimeout(() => this.rejectCall(), 30000);
         }
+        // Caller cancelled the invite
+        if (msg.type === 'video_call_cancel' && this.incomingCall?.fromUserId === msg.from_user_id) {
+          this.stopRinging();
+          this.incomingCall = null;
+        }
       })
     );
   }
@@ -332,6 +340,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.stopRinging();
+    this.wsService.disconnectNotifications();
   }
 
   setStatus(status: UserStatus): void {
