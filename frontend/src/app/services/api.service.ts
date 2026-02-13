@@ -124,6 +124,11 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/video/rooms/${channelId}/leave`, null);
   }
 
+  // Channel members
+  addChannelMember(channelId: string, userId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/channels/${channelId}/members/${userId}`, null);
+  }
+
   // Invitations
   sendInvitation(channelId: string, data: { email: string; message?: string }): Observable<any> {
     return this.http.post(`${this.baseUrl}/invitations/channel/${channelId}`, data);

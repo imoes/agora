@@ -22,8 +22,39 @@ import { ApiService } from '@services/api.service';
     MatListModule, MatChipsModule, MatProgressSpinnerModule, MatTooltipModule,
   ],
   template: `
-    <h2 mat-dialog-title>Einladung senden</h2>
+    <h2 mat-dialog-title>Benutzer einladen</h2>
     <mat-dialog-content>
+      <!-- Internal user search + add -->
+      <div class="invite-section">
+        <h4>Benutzer hinzufuegen</h4>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Name, Benutzername oder E-Mail</mat-label>
+          <input matInput [(ngModel)]="userSearch" (ngModelChange)="onUserSearch($event)"
+                 placeholder="Suche...">
+          <mat-icon matPrefix>search</mat-icon>
+        </mat-form-field>
+        <div *ngIf="userSearchResults.length > 0" class="user-results">
+          <div *ngFor="let user of userSearchResults" class="user-result-item"
+               (click)="addMember(user)">
+            <div class="user-result-avatar">{{ user.display_name?.charAt(0)?.toUpperCase() }}</div>
+            <div class="user-result-info">
+              <span class="user-result-name">{{ user.display_name }}</span>
+              <span class="user-result-username">{{'@' + user.username}}</span>
+            </div>
+            <mat-icon class="add-icon">person_add</mat-icon>
+          </div>
+        </div>
+        <div *ngIf="addedMembers.length > 0" class="added-list">
+          <mat-chip-set>
+            <mat-chip *ngFor="let u of addedMembers" highlighted>
+              <mat-icon matChipAvatar>check_circle</mat-icon>
+              {{ u.display_name }}
+            </mat-chip>
+          </mat-chip-set>
+        </div>
+      </div>
+
+      <!-- Email invitation -->
       <div class="invite-section">
         <h4>Per E-Mail einladen</h4>
         <mat-form-field appearance="outline" class="full-width">
@@ -116,6 +147,41 @@ import { ApiService } from '@services/api.service';
     .inv-status.declined { background: #fce4ec; color: #c62828; }
     .inv-status.expired { background: #f5f5f5; color: #757575; }
     .inv-actions { display: flex; }
+    .user-results {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      max-height: 180px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+    .user-result-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .user-result-item:hover {
+      background: #f0f0ff;
+    }
+    .user-result-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #6200ee;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .user-result-info { flex: 1; }
+    .user-result-name { font-size: 13px; font-weight: 500; }
+    .user-result-username { font-size: 11px; color: #888; margin-left: 6px; }
+    .add-icon { color: #6200ee; }
+    .added-list { margin-top: 8px; }
   `],
 })
 export class InviteDialogComponent {
@@ -125,6 +191,12 @@ export class InviteDialogComponent {
   invitations: any[] = [];
   inviteUrl = '';
 
+  // Internal user search
+  userSearch = '';
+  userSearchResults: any[] = [];
+  addedMembers: any[] = [];
+  private existingMemberIds = new Set<string>();
+
   constructor(
     private dialogRef: MatDialogRef<InviteDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: { channelId: string; inviteToken: string },
@@ -133,6 +205,42 @@ export class InviteDialogComponent {
   ) {
     this.inviteUrl = `${window.location.origin}/invite/${data.inviteToken}`;
     this.loadInvitations();
+    this.loadExistingMembers();
+  }
+
+  loadExistingMembers(): void {
+    this.apiService.getChannelMembers(this.data.channelId).subscribe((members) => {
+      this.existingMemberIds = new Set(members.map((m: any) => m.user?.id || m.id));
+    });
+  }
+
+  onUserSearch(query: string): void {
+    if (query.length < 2) {
+      this.userSearchResults = [];
+      return;
+    }
+    this.apiService.searchUsers(query).subscribe((users) => {
+      // Filter out existing members and already-added users
+      this.userSearchResults = users.filter((u: any) =>
+        !this.existingMemberIds.has(u.id) &&
+        !this.addedMembers.find((a) => a.id === u.id)
+      );
+    });
+  }
+
+  addMember(user: any): void {
+    this.apiService.addChannelMember(this.data.channelId, user.id).subscribe({
+      next: () => {
+        this.addedMembers.push(user);
+        this.existingMemberIds.add(user.id);
+        this.userSearchResults = this.userSearchResults.filter((u) => u.id !== user.id);
+        this.snackBar.open(`${user.display_name} hinzugefuegt!`, 'OK', { duration: 2000 });
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Hinzufuegen';
+        this.snackBar.open(detail, 'OK', { duration: 3000 });
+      },
+    });
   }
 
   loadInvitations(): void {

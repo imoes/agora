@@ -176,10 +176,14 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
       this.videoEnabled = false;
     }
 
-    // Start the call
-    this.apiService.joinVideoRoom(this.channelId).subscribe({
+    // Create or get existing room, then join
+    this.apiService.createVideoRoom(this.channelId).subscribe({
+      next: () => {
+        this.apiService.joinVideoRoom(this.channelId).subscribe();
+      },
       error: () => {
-        this.apiService.createVideoRoom(this.channelId).subscribe();
+        // Room may already exist, try joining directly
+        this.apiService.joinVideoRoom(this.channelId).subscribe();
       },
     });
 
