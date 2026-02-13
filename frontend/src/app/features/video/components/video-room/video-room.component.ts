@@ -17,6 +17,15 @@ import { AuthService } from '@core/services/auth.service';
   imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule, MatSnackBarModule],
   template: `
     <div class="video-room">
+      <!-- Error banner -->
+      <div class="error-banner" *ngIf="mediaError">
+        <mat-icon>warning</mat-icon>
+        <span>{{ mediaError }}</span>
+        <button mat-icon-button (click)="endCall()">
+          <mat-icon>arrow_back</mat-icon>
+        </button>
+      </div>
+
       <!-- Presenter banner -->
       <div class="presenter-banner" *ngIf="presenter || isScreenSharing">
         <mat-icon>present_to_all</mat-icon>
@@ -159,6 +168,24 @@ import { AuthService } from '@core/services/auth.service';
       flex-direction: column;
       background: #1a1a1a;
     }
+    /* Error banner */
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      background: #c4314b;
+      color: white;
+      font-size: 14px;
+    }
+    .error-banner mat-icon:first-child {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .error-banner span { flex: 1; }
+    .error-banner button { color: white; }
     /* Presenter banner */
     .presenter-banner {
       display: flex;
@@ -375,6 +402,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
   videoEnabled = true;
   isScreenSharing = false;
   presenter: { userId: string; displayName: string } | null = null;
+  mediaError: string | null = null;
   showInvitePanel = false;
   channelMembers: any[] = [];
   callableMembers: any[] = [];
@@ -468,6 +496,13 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
         if (presenter) {
           this.snackBar.open(`${presenter.displayName} praesentiert den Bildschirm`, 'OK', { duration: 3000 });
         }
+      })
+    );
+
+    // Subscribe to errors (e.g. insecure context)
+    this.subscriptions.push(
+      this.webrtcService.error$.subscribe((error) => {
+        this.mediaError = error;
       })
     );
   }

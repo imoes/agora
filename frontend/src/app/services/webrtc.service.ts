@@ -47,15 +47,33 @@ export class WebRTCService {
     private authService: AuthService
   ) {}
 
+  private errorSubject = new Subject<string>();
+  error$ = this.errorSubject.asObservable();
+
   async startCall(channelId: string, audioOnly: boolean = false): Promise<void> {
     this.channelId = channelId;
 
-    const constraints: MediaStreamConstraints = audioOnly
-      ? { audio: true, video: false }
-      : { video: true, audio: true };
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.errorSubject.next(
+        'Kamera/Mikrofon nicht verfuegbar. Videoanrufe erfordern HTTPS. ' +
+        'Bitte greife ueber https:// oder localhost auf die App zu.'
+      );
+      return;
+    }
 
-    this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    this.localStreamSubject.next(this.localStream);
+    try {
+      const constraints: MediaStreamConstraints = audioOnly
+        ? { audio: true, video: false }
+        : { video: true, audio: true };
+
+      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.localStreamSubject.next(this.localStream);
+    } catch (err: any) {
+      this.errorSubject.next(
+        'Zugriff auf Kamera/Mikrofon verweigert: ' + (err?.message || 'Unbekannter Fehler')
+      );
+      return;
+    }
 
     // Listen for WebRTC signaling via WebSocket
     this.wsService.connect(channelId).subscribe((msg) => {
@@ -233,6 +251,10 @@ export class WebRTCService {
 
   async startScreenShare(): Promise<MediaStream | null> {
     if (!this.channelId) return null;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      this.errorSubject.next('Bildschirmfreigabe erfordert HTTPS.');
+      return null;
+    }
 
     try {
       this.screenStream = await navigator.mediaDevices.getDisplayMedia({
