@@ -16,6 +16,8 @@ class ConnectionManager:
     user_statuses: dict[str, str] = field(default_factory=dict)
     # Track active calls per channel: channel_id -> {"start_time": datetime, "participants": set}
     active_calls: dict[str, dict] = field(default_factory=dict)
+    # Persistent notification connections: user_id -> WebSocket
+    notification_connections: dict[str, WebSocket] = field(default_factory=dict)
 
     async def connect(self, websocket: WebSocket, user_id: str, channel_id: str):
         await websocket.accept()
@@ -30,6 +32,18 @@ class ConnectionManager:
         if user_id not in self.user_statuses:
             self.user_statuses[user_id] = "online"
 
+    async def connect_notification(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        self.notification_connections[user_id] = websocket
+        if user_id not in self.user_statuses:
+            self.user_statuses[user_id] = "online"
+
+    def disconnect_notification(self, user_id: str):
+        self.notification_connections.pop(user_id, None)
+        # If user has no channel connections either, they are truly offline
+        if user_id not in self.user_channels:
+            self.user_statuses.pop(user_id, None)
+
     def disconnect(self, user_id: str, channel_id: str):
         if channel_id in self.active_connections:
             self.active_connections[channel_id].pop(user_id, None)
@@ -39,7 +53,13 @@ class ConnectionManager:
             self.user_channels[user_id].discard(channel_id)
             if not self.user_channels[user_id]:
                 del self.user_channels[user_id]
-                self.user_statuses.pop(user_id, None)
+                # Only remove status if no notification connection either
+                if user_id not in self.notification_connections:
+                    self.user_statuses.pop(user_id, None)
+
+    def is_user_connected(self, user_id: str) -> bool:
+        """Check if user has any active connection (notification or channel)."""
+        return user_id in self.notification_connections or user_id in self.user_channels
 
     async def set_user_status(self, user_id: str, status: str):
         if status not in VALID_STATUSES:
@@ -65,6 +85,16 @@ class ConnectionManager:
                     pass
 
     async def send_to_user(self, user_id: str, message: dict):
+        sent_via_notification = False
+        # Prefer notification connection (always available)
+        nws = self.notification_connections.get(user_id)
+        if nws:
+            try:
+                await nws.send_json(message)
+                sent_via_notification = True
+            except Exception:
+                pass
+        # Also send via channel connections (for redundancy / channel-specific listeners)
         for channel_id in self.user_channels.get(user_id, set()):
             if channel_id in self.active_connections:
                 ws = self.active_connections[channel_id].get(user_id)

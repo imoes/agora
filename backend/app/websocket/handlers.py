@@ -36,6 +36,67 @@ async def authenticate_ws(websocket: WebSocket) -> User | None:
         return None
 
 
+async def notification_ws_endpoint(websocket: WebSocket):
+    """Persistent notification WebSocket – stays open for the user's entire session.
+    Receives global messages (call invites, call cancels) and handles heartbeat."""
+    user = await authenticate_ws(websocket)
+    if not user:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    user_id = str(user.id)
+    await manager.connect_notification(websocket, user_id)
+
+    # Set user online in DB
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.id == user.id))
+        db_user = result.scalar_one_or_none()
+        if db_user and db_user.status == "offline":
+            db_user.status = "online"
+            await db.commit()
+    await manager.set_user_status(user_id, "online")
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+
+            elif msg_type == "status_change":
+                new_status = data.get("status", "online")
+                await manager.set_user_status(user_id, new_status)
+                async with async_session() as db:
+                    result = await db.execute(
+                        select(User).where(User.id == user.id)
+                    )
+                    db_user = result.scalar_one_or_none()
+                    if db_user:
+                        db_user.status = new_status
+                        await db.commit()
+
+    except WebSocketDisconnect:
+        manager.disconnect_notification(user_id)
+        # If user has no remaining connections, set offline in DB
+        if not manager.is_user_connected(user_id):
+            async with async_session() as db:
+                result = await db.execute(
+                    select(User).where(User.id == user.id)
+                )
+                db_user = result.scalar_one_or_none()
+                if db_user:
+                    db_user.status = "offline"
+                    await db.commit()
+            await manager.broadcast_to_user_channels(user_id, {
+                "type": "status_change",
+                "user_id": user_id,
+                "status": "offline",
+            })
+    except Exception:
+        manager.disconnect_notification(user_id)
+
+
 async def websocket_endpoint(websocket: WebSocket, channel_id: str):
     user = await authenticate_ws(websocket)
     if not user:
@@ -298,8 +359,8 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                 {"type": "new_message", "message": sys_msg},
             )
         manager.disconnect(user_id, channel_id)
-        # Broadcast offline if no more connections
-        if user_id not in manager.user_channels:
+        # Broadcast offline if no more connections (channel + notification)
+        if not manager.is_user_connected(user_id):
             async with async_session() as db:
                 result = await db.execute(
                     select(User).where(User.id == user.id)
