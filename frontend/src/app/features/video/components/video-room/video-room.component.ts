@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild, ChangeDetectorRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -390,7 +390,7 @@ import { AuthService } from '@core/services/auth.service';
     }
   `],
 })
-export class VideoRoomComponent implements OnInit, OnDestroy {
+export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('localVideo') localVideo!: ElementRef<HTMLVideoElement>;
   @ViewChild('screenVideo') screenVideo!: ElementRef<HTMLVideoElement>;
 
@@ -409,6 +409,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
   invitedUserIds = new Set<string>();
   private currentUserId = '';
   private subscriptions: Subscription[] = [];
+  private pendingStreamAttach = false;
 
   constructor(
     private route: ActivatedRoute,
@@ -418,6 +419,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
     private apiService: ApiService,
     private authService: AuthService,
     private snackBar: MatSnackBar,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
@@ -459,15 +461,8 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
         this.participants = participants;
         this.participantList = Array.from(participants.values());
         this.updateCallableMembers();
-
-        setTimeout(() => {
-          this.participantList.forEach((p) => {
-            const el = document.getElementById('video-' + p.userId) as HTMLVideoElement;
-            if (el && p.stream) {
-              el.srcObject = p.stream;
-            }
-          });
-        }, 100);
+        this.pendingStreamAttach = true;
+        this.cdr.detectChanges();
       })
     );
 
@@ -505,6 +500,22 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
         this.mediaError = error;
       })
     );
+  }
+
+  ngAfterViewChecked(): void {
+    if (this.pendingStreamAttach) {
+      this.pendingStreamAttach = false;
+      this.attachRemoteStreams();
+    }
+  }
+
+  private attachRemoteStreams(): void {
+    this.participantList.forEach((p) => {
+      const el = document.getElementById('video-' + p.userId) as HTMLVideoElement;
+      if (el && p.stream && el.srcObject !== p.stream) {
+        el.srcObject = p.stream;
+      }
+    });
   }
 
   ngOnDestroy(): void {
