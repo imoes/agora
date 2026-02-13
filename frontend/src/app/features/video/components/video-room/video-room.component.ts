@@ -47,7 +47,7 @@ import { AuthService } from '@core/services/auth.service';
           </div>
           <!-- Remote presenter's stream -->
           <div class="presentation-video" *ngIf="!isScreenSharing && presenter">
-            <video [id]="'video-' + presenter.userId" autoplay playsinline></video>
+            <video [id]="'presenter-video-' + presenter.userId" autoplay playsinline></video>
             <div class="video-label">
               <mat-icon>screen_share</mat-icon>
               {{ presenter.displayName }}
@@ -466,10 +466,13 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       })
     );
 
-    // Subscribe to screen sharing state
+    // Subscribe to screen sharing state – layout switches from normalGrid
+    // to presentation-layout, destroying/recreating video DOM elements.
     this.subscriptions.push(
       this.webrtcService.isScreenSharing$.subscribe((sharing) => {
         this.isScreenSharing = sharing;
+        this.pendingStreamAttach = true;
+        this.cdr.detectChanges();
       })
     );
 
@@ -484,10 +487,12 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       })
     );
 
-    // Subscribe to remote presenter
+    // Subscribe to remote presenter – also triggers layout switch
     this.subscriptions.push(
       this.webrtcService.presenter$.subscribe((presenter) => {
         this.presenter = presenter;
+        this.pendingStreamAttach = true;
+        this.cdr.detectChanges();
         if (presenter) {
           this.snackBar.open(`${presenter.displayName} praesentiert den Bildschirm`, 'OK', { duration: 3000 });
         }
@@ -511,11 +516,28 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private attachRemoteStreams(): void {
     this.participantList.forEach((p) => {
+      // Sidebar / normal-grid video element
       const el = document.getElementById('video-' + p.userId) as HTMLVideoElement;
       if (el && p.stream && el.srcObject !== p.stream) {
         el.srcObject = p.stream;
       }
+      // Presentation main area (uses a separate ID to avoid duplicate IDs)
+      const presEl = document.getElementById('presenter-video-' + p.userId) as HTMLVideoElement;
+      if (presEl && p.stream && presEl.srcObject !== p.stream) {
+        presEl.srcObject = p.stream;
+      }
     });
+
+    // Also re-attach localVideo after layout switches (the #localVideo
+    // ViewChild may point to a destroyed element after *ngIf toggles)
+    if (this.localVideo?.nativeElement) {
+      const localStream = this.webrtcService.localStream$.subscribe((stream) => {
+        if (stream && this.localVideo?.nativeElement && this.localVideo.nativeElement.srcObject !== stream) {
+          this.localVideo.nativeElement.srcObject = stream;
+        }
+        localStream.unsubscribe();
+      });
+    }
   }
 
   ngOnDestroy(): void {
