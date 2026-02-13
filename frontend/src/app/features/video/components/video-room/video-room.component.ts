@@ -216,6 +216,7 @@ import { AuthService } from '@core/services/auth.service';
     /* Presentation layout */
     .presentation-layout {
       flex: 1;
+      min-height: 0;
       display: flex;
       gap: 8px;
       padding: 8px;
@@ -265,6 +266,8 @@ import { AuthService } from '@core/services/auth.service';
     /* Normal grid */
     .video-grid {
       flex: 1;
+      min-height: 0;
+      overflow: auto;
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 8px;
@@ -417,6 +420,7 @@ import { AuthService } from '@core/services/auth.service';
       gap: 16px;
       padding: 20px;
       background: #292929;
+      flex-shrink: 0;
     }
   `],
 })
