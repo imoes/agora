@@ -98,11 +98,34 @@ async def close_room(
 @router.post("/rooms/{channel_id}/join")
 async def join_room(
     channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     channel_str = str(channel_id)
+
+    # Auto-create room if it doesn't exist yet
     if channel_str not in active_rooms:
-        raise HTTPException(status_code=404, detail="No active room")
+        membership = await db.execute(
+            select(ChannelMember).where(
+                and_(
+                    ChannelMember.channel_id == channel_id,
+                    ChannelMember.user_id == current_user.id,
+                )
+            )
+        )
+        if not membership.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Not a channel member")
+
+        room_id = abs(hash(channel_str)) % 1000000
+        active_rooms[channel_str] = {
+            "room_id": room_id,
+            "channel_id": channel_str,
+            "janus_url": None,
+            "signaling": "websocket",
+            "created_by": str(current_user.id),
+            "participants": [],
+            "note": "Janus unavailable, using P2P WebRTC signaling",
+        }
 
     user_id = str(current_user.id)
     if user_id not in active_rooms[channel_str]["participants"]:
