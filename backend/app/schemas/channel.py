@@ -32,6 +32,7 @@ class ChannelOut(BaseModel):
     description: str | None = None
     channel_type: str
     team_id: uuid.UUID | None = None
+    team_name: str | None = None
     created_at: datetime
     member_count: int = 0
     unread_count: int = 0

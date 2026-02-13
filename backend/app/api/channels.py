@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.channel import Channel, ChannelMember
 from app.models.feed import FeedEvent
+from app.models.team import Team
 from app.models.user import User
 from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
 from app.schemas.user import UserOut
@@ -83,6 +84,15 @@ async def list_channels(
     result = await db.execute(query)
     rows = result.all()
 
+    # Collect all team_ids to batch-fetch team names
+    team_ids = {ch.team_id for ch, _ in rows if ch.team_id}
+    team_names: dict = {}
+    if team_ids:
+        team_result = await db.execute(
+            select(Team.id, Team.name).where(Team.id.in_(team_ids))
+        )
+        team_names = {tid: tname for tid, tname in team_result.all()}
+
     channels = []
     for ch, member_count in rows:
         # Calculate unread count
@@ -112,6 +122,7 @@ async def list_channels(
                 description=ch.description,
                 channel_type=ch.channel_type,
                 team_id=ch.team_id,
+                team_name=team_names.get(ch.team_id) if ch.team_id else None,
                 created_at=ch.created_at,
                 member_count=member_count,
                 unread_count=unread or 0,
