@@ -195,3 +195,95 @@ async def add_channel_member(
     db.add(member)
     await db.flush()
     return {"status": "ok"}
+
+
+from pydantic import BaseModel as _BaseModel
+
+
+class DirectChatRequest(_BaseModel):
+    user_id: uuid.UUID
+
+
+@router.post("/direct", response_model=ChannelOut, status_code=status.HTTP_200_OK)
+async def find_or_create_direct_chat(
+    data: DirectChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Findet einen bestehenden Direktchat oder erstellt einen neuen."""
+    target_user = await db.execute(select(User).where(User.id == data.user_id))
+    target = target_user.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User nicht gefunden")
+
+    # Suche nach einem bestehenden direct-Channel zwischen den beiden Usern
+    my_directs = (
+        select(ChannelMember.channel_id)
+        .join(Channel, ChannelMember.channel_id == Channel.id)
+        .where(
+            and_(
+                ChannelMember.user_id == current_user.id,
+                Channel.channel_type == "direct",
+            )
+        )
+    )
+    target_directs = (
+        select(ChannelMember.channel_id)
+        .where(ChannelMember.user_id == data.user_id)
+    )
+
+    # Gemeinsame direct-Channels
+    result = await db.execute(
+        select(Channel)
+        .where(
+            and_(
+                Channel.id.in_(my_directs),
+                Channel.id.in_(target_directs),
+                Channel.channel_type == "direct",
+            )
+        )
+    )
+    existing_channel = result.scalar_one_or_none()
+
+    if existing_channel:
+        count_result = await db.execute(
+            select(func.count()).where(ChannelMember.channel_id == existing_channel.id)
+        )
+        count = count_result.scalar()
+        return ChannelOut(
+            id=existing_channel.id,
+            name=existing_channel.name,
+            description=existing_channel.description,
+            channel_type=existing_channel.channel_type,
+            team_id=existing_channel.team_id,
+            created_at=existing_channel.created_at,
+            member_count=count,
+            invite_token=existing_channel.invite_token,
+        )
+
+    # Neuen direct-Channel erstellen
+    channel = Channel(
+        name=f"{current_user.display_name}, {target.display_name}",
+        channel_type="direct",
+        sqlite_db_path="",
+    )
+    db.add(channel)
+    await db.flush()
+    channel.sqlite_db_path = f"{channel.id}.db"
+
+    db.add(ChannelMember(channel_id=channel.id, user_id=current_user.id))
+    db.add(ChannelMember(channel_id=channel.id, user_id=data.user_id))
+    await db.flush()
+    await init_chat_db(str(channel.id))
+    await db.refresh(channel)
+
+    return ChannelOut(
+        id=channel.id,
+        name=channel.name,
+        description=channel.description,
+        channel_type=channel.channel_type,
+        team_id=channel.team_id,
+        created_at=channel.created_at,
+        member_count=2,
+        invite_token=channel.invite_token,
+    )

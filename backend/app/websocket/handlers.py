@@ -11,6 +11,7 @@ from app.models.channel import ChannelMember
 from app.models.user import User
 from app.services.chat_db import add_message
 from app.services.feed import create_feed_events
+from app.services.mentions import extract_mentions, resolve_mentions
 from app.websocket.manager import manager
 
 
@@ -91,16 +92,36 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     {"type": "new_message", "message": msg},
                 )
 
-                # Create feed events
+                # Create feed events and handle mentions
+                content = data.get("content", "")
                 async with async_session() as db:
                     await create_feed_events(
                         db,
                         uuid.UUID(channel_id),
                         user.id,
                         event_type="message",
-                        preview_text=data.get("content", "")[:200],
+                        preview_text=content[:200],
                         message_id=msg["id"],
                     )
+
+                    # Mentions verarbeiten
+                    mention_texts = extract_mentions(content)
+                    if mention_texts:
+                        mentioned_ids = await resolve_mentions(
+                            db, mention_texts, uuid.UUID(channel_id)
+                        )
+                        for uid in mentioned_ids:
+                            if uid != user.id:
+                                await create_feed_events(
+                                    db,
+                                    uuid.UUID(channel_id),
+                                    user.id,
+                                    event_type="mention",
+                                    preview_text=f"@Erwaehnung: {content[:150]}",
+                                    message_id=msg["id"],
+                                    target_user_id=uid,
+                                )
+
                     await db.commit()
 
             elif msg_type == "typing":

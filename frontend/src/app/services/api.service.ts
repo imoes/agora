@@ -102,6 +102,15 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/users/`, { params: { search: query } });
   }
 
+  getUser(userId: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/users/${userId}`);
+  }
+
+  // Direct Messages - find or create 1:1 chat
+  findOrCreateDirectChat(userId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/channels/direct`, { user_id: userId });
+  }
+
   // Video
   createVideoRoom(channelId: string): Observable<any> {
     return this.http.post(`${this.baseUrl}/video/rooms`, null, { params: { channel_id: channelId } });

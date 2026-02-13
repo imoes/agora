@@ -15,17 +15,31 @@ import { ApiService } from '@services/api.service';
   template: `
     <div class="video-room">
       <!-- Video Grid -->
-      <div class="video-grid" [class.single]="participants.size === 0">
+      <div class="video-grid" [class.single]="participants.size === 0"
+           [class.audio-only]="audioOnly">
         <!-- Local Video -->
-        <div class="video-tile local">
-          <video #localVideo autoplay muted playsinline></video>
-          <div class="video-label">Du</div>
+        <div class="video-tile local" [class.audio-tile]="audioOnly || !videoEnabled">
+          <video *ngIf="!audioOnly" #localVideo autoplay muted playsinline></video>
+          <div *ngIf="audioOnly || !videoEnabled" class="audio-avatar">
+            <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
+            <span>Du</span>
+          </div>
+          <div class="video-label">Du
+            <mat-icon *ngIf="!audioEnabled" class="status-icon">mic_off</mat-icon>
+          </div>
         </div>
 
         <!-- Remote Videos -->
-        <div *ngFor="let p of participantList" class="video-tile">
+        <div *ngFor="let p of participantList" class="video-tile"
+             [class.audio-tile]="!p.videoEnabled">
           <video [id]="'video-' + p.userId" autoplay playsinline></video>
-          <div class="video-label">{{ p.displayName }}</div>
+          <div *ngIf="!p.videoEnabled" class="audio-avatar">
+            <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
+            <span>{{ p.displayName }}</span>
+          </div>
+          <div class="video-label">{{ p.displayName }}
+            <mat-icon *ngIf="!p.audioEnabled" class="status-icon">mic_off</mat-icon>
+          </div>
         </div>
       </div>
 
@@ -36,7 +50,8 @@ import { ApiService } from '@services/api.service';
           <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
         </button>
         <button mat-fab [color]="videoEnabled ? 'primary' : 'warn'"
-                (click)="toggleVideo()" matTooltip="Kamera">
+                (click)="toggleVideo()" matTooltip="Kamera"
+                *ngIf="!audioOnly">
           <mat-icon>{{ videoEnabled ? 'videocam' : 'videocam_off' }}</mat-icon>
         </button>
         <button mat-fab color="warn" (click)="endCall()" matTooltip="Auflegen">
@@ -63,12 +78,20 @@ import { ApiService } from '@services/api.service';
     .video-grid.single {
       grid-template-columns: 1fr;
     }
+    .video-grid.audio-only {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
     .video-tile {
       position: relative;
       background: #2d2d2d;
       border-radius: 8px;
       overflow: hidden;
       aspect-ratio: 16/9;
+    }
+    .video-tile.audio-tile {
+      aspect-ratio: 1;
+      max-width: 200px;
+      justify-self: center;
     }
     .video-tile video {
       width: 100%;
@@ -77,6 +100,27 @@ import { ApiService } from '@services/api.service';
     }
     .video-tile.local video {
       transform: scaleX(-1);
+    }
+    .audio-avatar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: white;
+      gap: 8px;
+    }
+    .audio-avatar mat-icon {
+      font-size: 48px;
+      width: 48px;
+      height: 48px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 50%;
+      padding: 16px;
+      box-sizing: content-box;
+    }
+    .audio-avatar span {
+      font-size: 14px;
     }
     .video-label {
       position: absolute;
@@ -87,6 +131,15 @@ import { ApiService } from '@services/api.service';
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      color: #ff5252;
     }
     .video-controls {
       display: flex;
@@ -101,6 +154,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
   @ViewChild('localVideo') localVideo!: ElementRef<HTMLVideoElement>;
 
   channelId = '';
+  audioOnly = false;
   participants = new Map<string, Participant>();
   participantList: Participant[] = [];
   audioEnabled = true;
@@ -116,16 +170,20 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.channelId = this.route.snapshot.paramMap.get('channelId') || '';
+    this.audioOnly = this.route.snapshot.queryParamMap.get('audio') === 'true';
+
+    if (this.audioOnly) {
+      this.videoEnabled = false;
+    }
 
     // Start the call
     this.apiService.joinVideoRoom(this.channelId).subscribe({
       error: () => {
-        // Room doesn't exist, create it
         this.apiService.createVideoRoom(this.channelId).subscribe();
       },
     });
 
-    this.webrtcService.startCall(this.channelId);
+    this.webrtcService.startCall(this.channelId, this.audioOnly);
 
     // Subscribe to local stream
     this.subscriptions.push(
@@ -142,7 +200,6 @@ export class VideoRoomComponent implements OnInit, OnDestroy {
         this.participants = participants;
         this.participantList = Array.from(participants.values());
 
-        // Attach remote streams to video elements
         setTimeout(() => {
           this.participantList.forEach((p) => {
             const el = document.getElementById('video-' + p.userId) as HTMLVideoElement;

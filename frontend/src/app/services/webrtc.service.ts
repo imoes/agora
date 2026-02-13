@@ -35,13 +35,14 @@ export class WebRTCService {
     private authService: AuthService
   ) {}
 
-  async startCall(channelId: string): Promise<void> {
+  async startCall(channelId: string, audioOnly: boolean = false): Promise<void> {
     this.channelId = channelId;
 
-    this.localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
+    const constraints: MediaStreamConstraints = audioOnly
+      ? { audio: true, video: false }
+      : { video: true, audio: true };
+
+    this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
     this.localStreamSubject.next(this.localStream);
 
     // Listen for WebRTC signaling via WebSocket

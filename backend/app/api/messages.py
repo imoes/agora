@@ -19,6 +19,7 @@ from app.services.chat_db import (
     update_message,
 )
 from app.services.feed import create_feed_events
+from app.services.mentions import extract_mentions, resolve_mentions
 
 router = APIRouter(prefix="/api/channels/{channel_id}/messages", tags=["messages"])
 
@@ -91,6 +92,10 @@ async def create_message(
         data.file_reference_id,
     )
 
+    # Mentions parsen und aufloesen
+    mention_texts = extract_mentions(data.content)
+    mentioned_user_ids = await resolve_mentions(db, mention_texts, channel_id)
+
     # Create feed events for other channel members
     await create_feed_events(
         db,
@@ -101,6 +106,19 @@ async def create_message(
         message_id=msg["id"],
     )
 
+    # Zusaetzliche Mention-Feed-Events fuer erwaehnte User
+    for uid in mentioned_user_ids:
+        if uid != current_user.id:
+            await create_feed_events(
+                db,
+                channel_id,
+                current_user.id,
+                event_type="mention",
+                preview_text=f"@Erwaehnung: {data.content[:150]}",
+                message_id=msg["id"],
+                target_user_id=uid,
+            )
+
     return MessageOut(
         id=msg["id"],
         sender_id=msg["sender_id"],
@@ -108,6 +126,7 @@ async def create_message(
         content=msg["content"],
         message_type=msg["message_type"],
         file_reference_id=msg["file_reference_id"],
+        mentions=[str(uid) for uid in mentioned_user_ids],
         created_at=msg["created_at"],
         edited_at=msg["edited_at"],
     )

@@ -39,6 +39,10 @@ import { ApiService } from '@services/api.service';
             <mat-icon>groups</mat-icon>
             <span>Teams</span>
           </a>
+          <a routerLink="/search" routerLinkActive="active" class="nav-item">
+            <mat-icon>search</mat-icon>
+            <span>Suche</span>
+          </a>
         </div>
         <div class="sidebar-bottom">
           <div class="nav-item user-menu" [matMenuTriggerFor]="userMenu">

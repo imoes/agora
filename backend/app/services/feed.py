@@ -15,16 +15,22 @@ async def create_feed_events(
     event_type: str,
     preview_text: str | None,
     message_id: str | None = None,
+    target_user_id: uuid.UUID | None = None,
 ) -> list[FeedEvent]:
-    result = await db.execute(
-        select(ChannelMember.user_id).where(
-            and_(
-                ChannelMember.channel_id == channel_id,
-                ChannelMember.user_id != sender_id,
+    """Erstellt Feed-Events. Bei target_user_id wird nur fuer diesen User ein Event erstellt."""
+    if target_user_id:
+        # Gezieltes Event (z.B. @mention)
+        member_ids = [target_user_id]
+    else:
+        result = await db.execute(
+            select(ChannelMember.user_id).where(
+                and_(
+                    ChannelMember.channel_id == channel_id,
+                    ChannelMember.user_id != sender_id,
+                )
             )
         )
-    )
-    member_ids = [row[0] for row in result.all()]
+        member_ids = [row[0] for row in result.all()]
 
     events = []
     for uid in member_ids:

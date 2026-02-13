@@ -19,7 +19,9 @@ async def list_users(
     query = select(User)
     if search:
         query = query.where(
-            User.username.ilike(f"%{search}%") | User.display_name.ilike(f"%{search}%")
+            User.username.ilike(f"%{search}%")
+            | User.display_name.ilike(f"%{search}%")
+            | User.email.ilike(f"%{search}%")
         )
     query = query.order_by(User.display_name).limit(50)
     result = await db.execute(query)

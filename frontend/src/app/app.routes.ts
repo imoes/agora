@@ -73,6 +73,13 @@ export const routes: Routes = [
             (m) => m.VideoRoomComponent
           ),
       },
+      {
+        path: 'search',
+        loadComponent: () =>
+          import('./features/search/components/user-search/user-search.component').then(
+            (m) => m.UserSearchComponent
+          ),
+      },
       { path: '', redirectTo: 'feed', pathMatch: 'full' },
     ],
   },
