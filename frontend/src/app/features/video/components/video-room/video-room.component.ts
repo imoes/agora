@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription } from 'rxjs';
+import { take } from 'rxjs/operators';
 import { WebRTCService, Participant } from '@services/webrtc.service';
 import { WebSocketService } from '@services/websocket.service';
 import { ApiService } from '@services/api.service';
@@ -529,13 +530,15 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
 
     // Also re-attach localVideo after layout switches (the #localVideo
-    // ViewChild may point to a destroyed element after *ngIf toggles)
+    // ViewChild may point to a destroyed element after *ngIf toggles).
+    // Using take(1) instead of manual unsubscribe to avoid a TDZ error:
+    // BehaviorSubject fires synchronously, so the callback would run
+    // before the subscription variable is assigned.
     if (this.localVideo?.nativeElement) {
-      const localStream = this.webrtcService.localStream$.subscribe((stream) => {
+      this.webrtcService.localStream$.pipe(take(1)).subscribe((stream) => {
         if (stream && this.localVideo?.nativeElement && this.localVideo.nativeElement.srcObject !== stream) {
           this.localVideo.nativeElement.srcObject = stream;
         }
-        localStream.unsubscribe();
       });
     }
   }
