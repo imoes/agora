@@ -76,30 +76,40 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         <div *ngIf="loadingMessages" class="loading">
           <mat-spinner diameter="30"></mat-spinner>
         </div>
-        <div *ngFor="let msg of messages" class="message" [class.own]="msg.sender_id === currentUser?.id">
-          <div class="message-avatar" *ngIf="msg.sender_id !== currentUser?.id">
-            {{ msg.sender_name?.charAt(0)?.toUpperCase() || '?' }}
+        <ng-container *ngFor="let msg of messages">
+          <!-- System message (call started/ended) -->
+          <div *ngIf="msg.message_type === 'system'" class="system-message">
+            <mat-icon class="system-icon">{{ msg.content.includes('beendet') ? 'call_end' : 'call' }}</mat-icon>
+            <span>{{ msg.content }}</span>
+            <span class="message-time">{{ formatTime(msg.created_at) }}</span>
           </div>
-          <div class="message-content">
-            <div class="message-header" *ngIf="msg.sender_id !== currentUser?.id">
-              <strong>{{ msg.sender_name }}</strong>
-              <span class="message-time">{{ formatTime(msg.created_at) }}</span>
+
+          <!-- Normal message -->
+          <div *ngIf="msg.message_type !== 'system'" class="message" [class.own]="msg.sender_id === currentUser?.id">
+            <div class="message-avatar" *ngIf="msg.sender_id !== currentUser?.id">
+              {{ msg.sender_name?.charAt(0)?.toUpperCase() || '?' }}
             </div>
-            <div class="message-bubble" [class.own]="msg.sender_id === currentUser?.id">
-              <div *ngIf="msg.message_type === 'file'" class="file-message">
-                <mat-icon>attachment</mat-icon>
-                <a *ngIf="msg.file_reference_id" [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">
-                  Datei herunterladen
-                </a>
+            <div class="message-content">
+              <div class="message-header" *ngIf="msg.sender_id !== currentUser?.id">
+                <strong>{{ msg.sender_name }}</strong>
+                <span class="message-time">{{ formatTime(msg.created_at) }}</span>
               </div>
-              <span *ngIf="msg.message_type !== 'file'" [innerHTML]="highlightMentions(msg.content)"></span>
-              <span *ngIf="msg.edited_at" class="edited">(bearbeitet)</span>
+              <div class="message-bubble" [class.own]="msg.sender_id === currentUser?.id">
+                <div *ngIf="msg.message_type === 'file'" class="file-message">
+                  <mat-icon>attachment</mat-icon>
+                  <a *ngIf="msg.file_reference_id" [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">
+                    Datei herunterladen
+                  </a>
+                </div>
+                <span *ngIf="msg.message_type !== 'file'" [innerHTML]="highlightMentions(msg.content)"></span>
+                <span *ngIf="msg.edited_at" class="edited">(bearbeitet)</span>
+              </div>
+              <span class="message-time own-time" *ngIf="msg.sender_id === currentUser?.id">
+                {{ formatTime(msg.created_at) }}
+              </span>
             </div>
-            <span class="message-time own-time" *ngIf="msg.sender_id === currentUser?.id">
-              {{ formatTime(msg.created_at) }}
-            </span>
           </div>
-        </div>
+        </ng-container>
 
         <div *ngIf="typingUsers.length > 0" class="typing-indicator">
           {{ typingUsers.join(', ') }} {{ typingUsers.length === 1 ? 'tippt...' : 'tippen...' }}
@@ -294,6 +304,26 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     }
     .file-message a {
       color: var(--primary);
+    }
+    .system-message {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      align-self: center;
+      max-width: 100%;
+    }
+    .system-message .system-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      color: #6264a7;
+    }
+    .system-message .message-time {
+      margin-left: 4px;
     }
     .typing-indicator {
       font-size: 12px;

@@ -180,6 +180,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
 
             elif msg_type == "video_call_start":
                 await manager.set_user_status(user_id, "busy")
+                is_first = manager.join_call(channel_id, user_id)
                 await manager.send_to_channel(
                     channel_id,
                     {
@@ -189,24 +190,38 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     },
                     exclude_user=user_id,
                 )
+                # Create a system chat message when a call starts
+                if is_first:
+                    audio_only = data.get("audio_only", False)
+                    call_label = "Audioanruf" if audio_only else "Videoanruf"
+                    sys_msg = await add_message(
+                        channel_id,
+                        user_id,
+                        f"{user.display_name} hat einen {call_label} gestartet",
+                        "system",
+                    )
+                    sys_msg["sender_name"] = user.display_name
+                    await manager.send_to_channel(
+                        channel_id,
+                        {"type": "new_message", "message": sys_msg},
+                    )
 
             elif msg_type == "video_call_invite":
                 target_user = data.get("target_user_id")
-                if target_user and target_user in manager.active_connections.get(channel_id, {}):
-                    ws = manager.active_connections[channel_id][target_user]
-                    try:
-                        await ws.send_json({
-                            "type": "video_call_invite",
-                            "from_user_id": user_id,
-                            "display_name": user.display_name,
-                            "channel_id": channel_id,
-                            "audio_only": data.get("audio_only", False),
-                        })
-                    except Exception:
-                        pass
+                if target_user:
+                    # Send to ALL active connections of the target user
+                    # so they receive the invite regardless of which channel they are viewing
+                    await manager.send_to_user(target_user, {
+                        "type": "video_call_invite",
+                        "from_user_id": user_id,
+                        "display_name": user.display_name,
+                        "channel_id": channel_id,
+                        "audio_only": data.get("audio_only", False),
+                    })
 
             elif msg_type == "video_call_end":
                 await manager.set_user_status(user_id, "online")
+                duration_secs = manager.leave_call(channel_id, user_id)
                 await manager.send_to_channel(
                     channel_id,
                     {
@@ -214,6 +229,25 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         "user_id": user_id,
                     },
                 )
+                # If the call is now empty, create a system message with duration
+                if duration_secs is not None:
+                    mins = duration_secs // 60
+                    secs = duration_secs % 60
+                    if mins > 0:
+                        duration_str = f"{mins} Min. {secs} Sek."
+                    else:
+                        duration_str = f"{secs} Sek."
+                    sys_msg = await add_message(
+                        channel_id,
+                        user_id,
+                        f"Anruf beendet – Dauer: {duration_str}",
+                        "system",
+                    )
+                    sys_msg["sender_name"] = ""
+                    await manager.send_to_channel(
+                        channel_id,
+                        {"type": "new_message", "message": sys_msg},
+                    )
 
             elif msg_type == "screen_share_start":
                 await manager.send_to_channel(
@@ -235,6 +269,26 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                 )
 
     except WebSocketDisconnect:
+        # Clean up any active call participation
+        duration_secs = manager.leave_call(channel_id, user_id)
+        if duration_secs is not None:
+            mins = duration_secs // 60
+            secs = duration_secs % 60
+            if mins > 0:
+                duration_str = f"{mins} Min. {secs} Sek."
+            else:
+                duration_str = f"{secs} Sek."
+            sys_msg = await add_message(
+                channel_id,
+                user_id,
+                f"Anruf beendet – Dauer: {duration_str}",
+                "system",
+            )
+            sys_msg["sender_name"] = ""
+            await manager.send_to_channel(
+                channel_id,
+                {"type": "new_message", "message": sys_msg},
+            )
         manager.disconnect(user_id, channel_id)
         # Broadcast offline if no more connections
         if user_id not in manager.user_channels:
