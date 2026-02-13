@@ -272,9 +272,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
   private subscriptions: Subscription[] = [];
-  private ringOscillator: OscillatorNode | null = null;
   private ringContext: AudioContext | null = null;
   private ringTimeout: any = null;
+  private ringInterval: any = null;
+  private initAudioHandler = () => this.initAudioContext();
 
   constructor(
     private authService: AuthService,
@@ -311,6 +312,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
       this.unreadCount = res.unread_count;
     });
 
+    // Pre-initialize AudioContext on first user gesture (required by browsers)
+    document.addEventListener('click', this.initAudioHandler, { once: true });
+    document.addEventListener('keydown', this.initAudioHandler, { once: true });
+
     // Listen for incoming call invites from ANY WebSocket connection
     this.subscriptions.push(
       this.wsService.globalMessages$.subscribe((msg) => {
@@ -332,6 +337,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.stopRinging();
+    document.removeEventListener('click', this.initAudioHandler);
+    document.removeEventListener('keydown', this.initAudioHandler);
   }
 
   setStatus(status: UserStatus): void {
@@ -356,17 +363,29 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.incomingCall = null;
   }
 
-  private startRinging(): void {
-    try {
-      this.ringContext = new AudioContext();
-      this.playRingTone();
-    } catch {
-      // Audio not available
+  private initAudioContext(): void {
+    if (!this.ringContext) {
+      try {
+        this.ringContext = new AudioContext();
+      } catch {
+        // Audio not available
+      }
     }
   }
 
+  private startRinging(): void {
+    // Ensure context exists (may have been created by user gesture already)
+    this.initAudioContext();
+    if (!this.ringContext) return;
+
+    // Resume in case the context is suspended
+    this.ringContext.resume().then(() => {
+      this.playRingTone();
+    }).catch(() => {});
+  }
+
   private playRingTone(): void {
-    if (!this.ringContext || !this.incomingCall) return;
+    if (!this.ringContext || this.ringContext.state === 'closed' || !this.incomingCall) return;
     const ctx = this.ringContext;
 
     // Two-tone ring: 440Hz + 480Hz for 1s, silence 2s, repeat
@@ -383,24 +402,22 @@ export class LayoutComponent implements OnInit, OnDestroy {
     gain.connect(ctx.destination);
 
     osc1.start();
-    osc2.start();
-
-    // Ring for 1 second
-    osc1.stop(ctx.currentTime + 1);
     osc2.stop(ctx.currentTime + 1);
+    osc2.start();
+    osc1.stop(ctx.currentTime + 1);
 
     // Schedule next ring after 3 seconds total (1s ring + 2s silence)
-    this.ringOscillator = osc1;
-    setTimeout(() => this.playRingTone(), 3000);
+    this.ringInterval = setTimeout(() => this.playRingTone(), 3000);
   }
 
   private stopRinging(): void {
     clearTimeout(this.ringTimeout);
+    clearTimeout(this.ringInterval);
     this.ringTimeout = null;
-    this.ringOscillator = null;
-    if (this.ringContext) {
-      this.ringContext.close().catch(() => {});
-      this.ringContext = null;
+    this.ringInterval = null;
+    // Suspend instead of close so we can reuse the context for future calls
+    if (this.ringContext && this.ringContext.state === 'running') {
+      this.ringContext.suspend().catch(() => {});
     }
   }
 
