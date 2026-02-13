@@ -374,11 +374,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   private startRinging(): void {
-    // Ensure context exists (may have been created by user gesture already)
-    this.initAudioContext();
+    // Only play audio if user has already interacted with the page
+    // (AudioContext must be created/resumed from a user gesture).
+    // The visual overlay is always shown regardless.
     if (!this.ringContext) return;
 
-    // Resume in case the context is suspended
     this.ringContext.resume().then(() => {
       this.playRingTone();
     }).catch(() => {});
