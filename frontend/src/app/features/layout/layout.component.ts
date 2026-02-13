@@ -392,6 +392,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private ringAudio: HTMLAudioElement | null = null;
   private ringBlobUrl: string | null = null;
   private ringTimeout: any = null;
+  private audioUnlocked = false;
+  private unlockHandler = () => this.unlockAudio();
 
   constructor(
     private authService: AuthService,
@@ -427,6 +429,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.apiService.getUnreadCount().subscribe((res) => {
       this.unreadCount = res.unread_count;
     });
+
+    // Pre-create ringtone audio and unlock on first user gesture
+    this.prepareRingtone();
+    document.addEventListener('click', this.unlockHandler, { once: true });
+    document.addEventListener('keydown', this.unlockHandler, { once: true });
 
     // Load chat channels for sidebar
     this.loadChatChannels();
@@ -494,6 +501,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.stopRinging();
     this.wsService.disconnectNotifications();
+    document.removeEventListener('click', this.unlockHandler);
+    document.removeEventListener('keydown', this.unlockHandler);
+    if (this.ringBlobUrl) {
+      URL.revokeObjectURL(this.ringBlobUrl);
+    }
   }
 
   setStatus(status: UserStatus): void {
@@ -518,18 +530,36 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.incomingCall = null;
   }
 
-  private startRinging(): void {
+  /** Pre-create the ringtone Audio element so it's ready when needed. */
+  private prepareRingtone(): void {
     try {
       const blob = this.createRingtoneWav();
       this.ringBlobUrl = URL.createObjectURL(blob);
       this.ringAudio = new Audio(this.ringBlobUrl);
       this.ringAudio.loop = true;
-      this.ringAudio.play().catch(() => {
-        // Autoplay blocked – visual overlay is still shown
-      });
     } catch {
       // Audio not available
     }
+  }
+
+  /** Unlock audio playback during a user gesture (click/keydown).
+   *  Browsers require at least one play() from a gesture before allowing
+   *  programmatic playback (e.g. from a WebSocket handler). */
+  private unlockAudio(): void {
+    if (this.audioUnlocked || !this.ringAudio) return;
+    this.ringAudio.volume = 0;
+    this.ringAudio.play().then(() => {
+      this.ringAudio!.pause();
+      this.ringAudio!.currentTime = 0;
+      this.ringAudio!.volume = 1;
+      this.audioUnlocked = true;
+    }).catch(() => {});
+  }
+
+  private startRinging(): void {
+    if (!this.ringAudio) return;
+    this.ringAudio.currentTime = 0;
+    this.ringAudio.play().catch(() => {});
   }
 
   private stopRinging(): void {
@@ -537,11 +567,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.ringTimeout = null;
     if (this.ringAudio) {
       this.ringAudio.pause();
-      this.ringAudio = null;
-    }
-    if (this.ringBlobUrl) {
-      URL.revokeObjectURL(this.ringBlobUrl);
-      this.ringBlobUrl = null;
+      this.ringAudio.currentTime = 0;
     }
   }
 
