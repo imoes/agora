@@ -103,6 +103,10 @@ export class ApiService {
   }
 
   // Users
+  getUsers(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/users/`);
+  }
+
   searchUsers(query: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.baseUrl}/users/`, { params: { search: query } });
   }
