@@ -1,0 +1,3 @@
+general: {
+    admin_key = "supersecret"
+}

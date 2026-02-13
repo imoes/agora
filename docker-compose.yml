@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agora
+      POSTGRES_USER: agora
+      POSTGRES_PASSWORD: agora_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agora"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agora:agora_secret@postgres:5432/agora
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: change-me-in-production-use-a-real-secret
+      JANUS_URL: http://janus:8088/janus
+      UPLOAD_DIR: /data/uploads
+      CHAT_DB_DIR: /data/chats
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@agora.local}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
+    volumes:
+      - chat_data:/data/chats
+      - upload_data:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  janus:
+    build:
+      context: ./janus
+      dockerfile: Dockerfile
+    ports:
+      - "8088:8088"
+      - "7088:7088"
+      - "10000-10100:10000-10100/udp"
+    environment:
+      JANUS_API_SECRET: janus-api-secret
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  chat_data:
+  upload_data:

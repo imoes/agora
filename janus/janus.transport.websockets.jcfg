@@ -1,0 +1,8 @@
+general: {
+    json = "indented"
+}
+
+ws: {
+    enabled = true
+    port = 7088
+}

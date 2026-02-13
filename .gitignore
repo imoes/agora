@@ -205,3 +205,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Node / Angular
+node_modules/
+frontend/dist/
+frontend/.angular/
+.angular/
+
+# Data directories (runtime)
+data/chats/*.db
+data/uploads/*
+!data/chats/.gitkeep
+!data/uploads/.gitkeep
+
+# IDE
+.idea/
+.vscode/
