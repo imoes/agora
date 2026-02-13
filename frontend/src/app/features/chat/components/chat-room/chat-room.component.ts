@@ -112,7 +112,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
           <div class="mention-avatar">{{ user.display_name?.charAt(0)?.toUpperCase() }}</div>
           <div class="mention-info">
             <span class="mention-name">{{ user.display_name }}</span>
-            <span class="mention-username">@{{ user.username }}</span>
+            <span class="mention-username">{{'@' + (user.user || user).username}}</span>
           </div>
         </div>
       </div>

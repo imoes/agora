@@ -94,7 +94,7 @@ export class InviteAcceptComponent implements OnInit {
   ngOnInit(): void {
     const token = this.route.snapshot.paramMap.get('token') || '';
 
-    if (!this.authService.isAuthenticated()) {
+    if (!this.authService.isLoggedIn()) {
       // Redirect to login with return URL
       this.router.navigate(['/login'], {
         queryParams: { returnUrl: `/invite/${token}` },

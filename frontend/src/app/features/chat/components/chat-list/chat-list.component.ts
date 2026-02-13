@@ -53,7 +53,7 @@ import { ApiService } from '@services/api.service';
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Abbrechen</button>
       <button mat-raised-button color="primary"
-              [mat-dialog-close]="{name, member_ids: selectedUsers.map(u => u.id)}"
+              [mat-dialog-close]="getDialogResult()"
               [disabled]="!name || selectedUsers.length === 0">
         Erstellen
       </button>
@@ -89,6 +89,10 @@ export class NewChatDialogComponent {
 
   removeUser(user: any): void {
     this.selectedUsers = this.selectedUsers.filter((u) => u.id !== user.id);
+  }
+
+  getDialogResult(): any {
+    return { name: this.name, member_ids: this.selectedUsers.map((u: any) => u.id) };
   }
 }
 
