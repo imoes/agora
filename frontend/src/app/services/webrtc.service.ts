@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, NgZone } from '@angular/core';
 import { Subject, BehaviorSubject } from 'rxjs';
 import { WebSocketService } from './websocket.service';
 import { AuthService } from '@core/services/auth.service';
@@ -44,7 +44,8 @@ export class WebRTCService {
 
   constructor(
     private wsService: WebSocketService,
-    private authService: AuthService
+    private authService: AuthService,
+    private ngZone: NgZone
   ) {}
 
   private errorSubject = new Subject<string>();
@@ -184,29 +185,35 @@ export class WebRTCService {
       });
     }
 
-    // Handle ICE candidates
+    // Handle ICE candidates – also runs outside Angular zone
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.wsService.send(this.channelId!, {
-          type: 'ice-candidate',
-          target_user_id: userId,
-          candidate: event.candidate.toJSON(),
-        });
-      }
+      this.ngZone.run(() => {
+        if (event.candidate) {
+          this.wsService.send(this.channelId!, {
+            type: 'ice-candidate',
+            target_user_id: userId,
+            candidate: event.candidate.toJSON(),
+          });
+        }
+      });
     };
 
-    // Handle remote stream
+    // Handle remote stream – ontrack fires outside Angular's zone
+    // (Zone.js does not patch RTCPeerConnection callbacks), so we
+    // must re-enter the zone to trigger change detection.
     pc.ontrack = (event) => {
-      const participants = this.participantsSubject.value;
-      const existing = participants.get(userId);
-      participants.set(userId, {
-        userId,
-        displayName,
-        stream: event.streams[0] || null,
-        audioEnabled: existing?.audioEnabled ?? true,
-        videoEnabled: existing?.videoEnabled ?? true,
+      this.ngZone.run(() => {
+        const participants = this.participantsSubject.value;
+        const existing = participants.get(userId);
+        participants.set(userId, {
+          userId,
+          displayName,
+          stream: event.streams[0] || null,
+          audioEnabled: existing?.audioEnabled ?? true,
+          videoEnabled: existing?.videoEnabled ?? true,
+        });
+        this.participantsSubject.next(new Map(participants));
       });
-      this.participantsSubject.next(new Map(participants));
     };
 
     return pc;
