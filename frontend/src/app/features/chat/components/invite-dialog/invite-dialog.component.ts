@@ -22,11 +22,11 @@ import { ApiService } from '@services/api.service';
     MatListModule, MatChipsModule, MatProgressSpinnerModule, MatTooltipModule,
   ],
   template: `
-    <h2 mat-dialog-title>Benutzer einladen</h2>
+    <h2 mat-dialog-title>Mitglied hinzufuegen</h2>
     <mat-dialog-content>
       <!-- Internal user search + add -->
-      <div class="invite-section">
-        <h4>Benutzer hinzufuegen</h4>
+      <div class="invite-section primary-section">
+        <h4>Benutzer suchen und zum Chat hinzufuegen</h4>
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name, Benutzername oder E-Mail</mat-label>
           <input matInput [(ngModel)]="userSearch" (ngModelChange)="onUserSearch($event)"
@@ -114,6 +114,13 @@ import { ApiService } from '@services/api.service';
       margin-bottom: 16px;
     }
     h4 { margin: 0 0 8px; color: #555; }
+    .primary-section {
+      padding: 12px;
+      background: #f5f0ff;
+      border-radius: 8px;
+      border: 1px solid #e0d5f5;
+    }
+    .primary-section h4 { color: #6200ee; font-weight: 500; }
     .invite-link-row {
       display: flex;
       align-items: center;

@@ -36,8 +36,8 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
           <span class="member-count">{{ channel?.member_count }} Mitglieder</span>
         </div>
         <div class="header-actions">
-          <button mat-icon-button matTooltip="Einladen" (click)="openInviteDialog()">
-            <mat-icon>person_add</mat-icon>
+          <button mat-icon-button matTooltip="Mitglied hinzufuegen" (click)="openInviteDialog()">
+            <mat-icon>group_add</mat-icon>
           </button>
           <button mat-icon-button matTooltip="Audioanruf" (click)="startAudioCall()">
             <mat-icon>call</mat-icon>
