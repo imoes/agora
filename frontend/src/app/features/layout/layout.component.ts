@@ -325,6 +325,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
           // Auto-dismiss after 30 seconds
           this.ringTimeout = setTimeout(() => this.rejectCall(), 30000);
         }
+        // Caller cancelled the invite
+        if (msg.type === 'video_call_cancel' && this.incomingCall?.fromUserId === msg.from_user_id) {
+          this.stopRinging();
+          this.incomingCall = null;
+        }
       })
     );
   }

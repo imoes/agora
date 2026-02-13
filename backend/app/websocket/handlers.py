@@ -219,6 +219,14 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         "audio_only": data.get("audio_only", False),
                     })
 
+            elif msg_type == "video_call_cancel":
+                target_user = data.get("target_user_id")
+                if target_user:
+                    await manager.send_to_user(target_user, {
+                        "type": "video_call_cancel",
+                        "from_user_id": user_id,
+                    })
+
             elif msg_type == "video_call_end":
                 await manager.set_user_status(user_id, "online")
                 duration_secs = manager.leave_call(channel_id, user_id)
