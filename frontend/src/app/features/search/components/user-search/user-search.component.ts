@@ -49,7 +49,7 @@ import { ApiService } from '@services/api.service';
           </div>
           <div matListItemTitle>
             <strong>{{ user.display_name }}</strong>
-            <span class="username">@{{ user.username }}</span>
+            <span class="username">{{'@' + user.username}}</span>
           </div>
           <div matListItemLine class="user-email">{{ user.email }}</div>
           <button mat-icon-button matListItemMeta matTooltip="Chat starten">
