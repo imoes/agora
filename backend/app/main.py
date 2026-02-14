@@ -14,6 +14,22 @@ async def lifespan(app: FastAPI):
     # Create tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Backfill NULL defaults for new columns on existing rows
+        await conn.execute(
+            Base.metadata.tables["channels"].update()
+            .where(Base.metadata.tables["channels"].c.is_hidden.is_(None))
+            .values(is_hidden=False)
+        )
+        await conn.execute(
+            Base.metadata.tables["users"].update()
+            .where(Base.metadata.tables["users"].c.is_admin.is_(None))
+            .values(is_admin=False)
+        )
+        await conn.execute(
+            Base.metadata.tables["users"].update()
+            .where(Base.metadata.tables["users"].c.auth_source.is_(None))
+            .values(auth_source="local")
+        )
     yield
 
 

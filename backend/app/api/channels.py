@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, delete as sa_delete, func, select
+from sqlalchemy import and_, delete as sa_delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -77,7 +77,7 @@ async def list_channels(
         select(Channel, func.count(ChannelMember.id).label("cnt"))
         .join(ChannelMember, Channel.id == ChannelMember.channel_id)
         .where(Channel.id.in_(my_channels))
-        .where(Channel.is_hidden == False)
+        .where(or_(Channel.is_hidden == False, Channel.is_hidden.is_(None)))
     )
     if team_id:
         query = query.where(Channel.team_id == team_id)
