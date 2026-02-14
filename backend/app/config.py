@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
 
     # Frontend URL for invitation links
-    frontend_url: str = "http://localhost:4200"
+    frontend_url: str = "http://localhost"
 
     # Google OAuth2 for Calendar
     google_client_id: str = ""
