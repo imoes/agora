@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +24,8 @@ from app.config import settings
 
 import os
 import urllib.parse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -268,6 +271,12 @@ async def sync_events(
             status_code=502,
             detail=f"Calendar provider '{integration.provider}' error (HTTP {exc.status_code}): {exc.detail}",
         )
+    except Exception as exc:
+        logger.exception("Unexpected error syncing calendar provider '%s'", integration.provider)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Calendar provider '{integration.provider}' error: {exc}",
+        )
 
     imported: list[CalendarEvent] = []
     for ext in external_events:
@@ -503,8 +512,13 @@ def _parse_dt(value: str | datetime | None) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
         return value
     try:
-        return datetime.fromisoformat(str(value))
+        dt = datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except (ValueError, TypeError):
         return None
