@@ -1,71 +1,71 @@
 # Agora
 
-Agora ist eine selbst-gehostete Kollaborationsplattform mit Chat, Videokonferenzen, Dateiverwaltung und Kalenderintegration - eine Open-Source-Alternative zu Microsoft Teams.
+Agora is a self-hosted collaboration platform with chat, video conferencing, file management, and calendar integration - an open-source alternative to Microsoft Teams.
 
 ## Features
 
-- **Chat** - Echtzeit-Messaging mit Dateianhängen, Mentions und Lesebestätigungen
-- **Videokonferenzen** - WebRTC-basiert über Janus Gateway mit Mehrbenutzer-Unterstützung
-- **Dateiverwaltung** - Upload und Verwaltung von Dateien (bis zu 100 MB)
-- **Kalender** - Interner Kalender + Synchronisation mit Google Calendar, WebDAV/CalDAV und Outlook/Exchange
-- **Teams & Channels** - Organisationsstruktur mit Teams, Channels und Direktnachrichten
-- **Activity Feed** - Zentraler Feed mit ungelesenen Nachrichten und Benachrichtigungen
-- **LDAP/Active Directory** - Optionale Benutzerauthentifizierung über LDAP
-- **E-Mail-Einladungen** - Einladungen per E-Mail mit ICS-Kalenderanhang
-- **Admin-Panel** - Benutzerverwaltung und Systemstatistiken
+- **Chat** - Real-time messaging with file attachments, mentions, and read receipts
+- **Video Conferencing** - WebRTC-based via Janus Gateway with multi-user support
+- **File Management** - Upload and manage files (up to 100 MB)
+- **Calendar** - Built-in calendar + sync with Google Calendar, WebDAV/CalDAV, and Outlook/Exchange
+- **Teams & Channels** - Organizational structure with teams, channels, and direct messages
+- **Activity Feed** - Central feed with unread messages and notifications
+- **LDAP/Active Directory** - Optional user authentication via LDAP
+- **Email Invitations** - Invitations via email with ICS calendar attachment
+- **Admin Panel** - User management and system statistics
 
 ---
 
-## Schnellstart
+## Quick Start
 
-### Voraussetzungen
+### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) und [Docker Compose](https://docs.docker.com/compose/install/)
+- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 
 ### Installation
 
-1. Repository klonen:
+1. Clone the repository:
    ```bash
    git clone <repository-url>
    cd agora
    ```
 
-2. Konfiguration erstellen:
+2. Create configuration:
    ```bash
    cp .env.example .env
    ```
 
-3. `.env` anpassen - mindestens `JWT_SECRET` setzen:
+3. Edit `.env` - at minimum set `JWT_SECRET`:
    ```bash
-   # Zufaelliges Secret generieren:
+   # Generate a random secret:
    openssl rand -hex 32
    ```
 
-4. Starten:
+4. Start:
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
-5. Im Browser oeffnen: [http://localhost](http://localhost)
+5. Open in browser: [http://localhost](http://localhost)
 
-### Dienste
+### Services
 
-| Dienst   | Port  | Beschreibung                      |
+| Service  | Port  | Description                       |
 |----------|-------|-----------------------------------|
-| Nginx    | 80    | Reverse-Proxy (HTTP)              |
-| Nginx    | 443   | Reverse-Proxy (HTTPS)             |
-| Backend  | 8000  | FastAPI REST-API                  |
-| Frontend | -     | Angular SPA (ueber Nginx)         |
-| Postgres | 5432  | Datenbank                         |
-| Redis    | 6379  | Cache und Sessions                |
+| Nginx    | 80    | Reverse proxy (HTTP)              |
+| Nginx    | 443   | Reverse proxy (HTTPS)             |
+| Backend  | 8000  | FastAPI REST API                  |
+| Frontend | -     | Angular SPA (via Nginx)           |
+| Postgres | 5432  | Database                          |
+| Redis    | 6379  | Cache and sessions                |
 | Janus    | 8088  | WebRTC Gateway                    |
-| MailHog  | 8025  | E-Mail-Test-UI (nur Entwicklung)  |
+| MailHog  | 8025  | Email test UI (development only)  |
 
 ---
 
-## Architektur
+## Architecture
 
-### Uebersicht
+### Overview
 
 ```
                     ┌──────────┐
@@ -93,26 +93,26 @@ Agora ist eine selbst-gehostete Kollaborationsplattform mit Chat, Videokonferenz
 └─────┘ └─────┘ └───────┘
 ```
 
-### Verzeichnisstruktur
+### Directory Structure
 
 ```
 agora/
-├── backend/                  # Python FastAPI Backend
+├── backend/                  # Python FastAPI backend
 │   ├── app/
-│   │   ├── api/              # REST-API-Endpunkte (Router)
-│   │   │   ├── admin.py      # Admin-Panel API
-│   │   │   ├── auth.py       # Login, Register, JWT
-│   │   │   ├── calendar.py   # Kalender + Google OAuth2
-│   │   │   ├── channels.py   # Channels & Direktnachrichten
-│   │   │   ├── feed.py       # Activity Feed
-│   │   │   ├── files.py      # Datei-Upload/Download
-│   │   │   ├── invitations.py# E-Mail-Einladungen
-│   │   │   ├── messages.py   # Nachrichten
-│   │   │   ├── teams.py      # Teams-Verwaltung
-│   │   │   ├── users.py      # Benutzer-Endpunkte
-│   │   │   └── video.py      # Video-Raum-Verwaltung
-│   │   ├── models/           # SQLAlchemy ORM-Modelle
-│   │   │   ├── base.py       # Basis-Mixins (UUID, Timestamps)
+│   │   ├── api/              # REST API endpoints (routers)
+│   │   │   ├── admin.py      # Admin panel API
+│   │   │   ├── auth.py       # Login, register, JWT
+│   │   │   ├── calendar.py   # Calendar + Google OAuth2
+│   │   │   ├── channels.py   # Channels & direct messages
+│   │   │   ├── feed.py       # Activity feed
+│   │   │   ├── files.py      # File upload/download
+│   │   │   ├── invitations.py# Email invitations
+│   │   │   ├── messages.py   # Messages
+│   │   │   ├── teams.py      # Team management
+│   │   │   ├── users.py      # User endpoints
+│   │   │   └── video.py      # Video room management
+│   │   ├── models/           # SQLAlchemy ORM models
+│   │   │   ├── base.py       # Base mixins (UUID, timestamps)
 │   │   │   ├── calendar.py   # CalendarEvent, CalendarIntegration
 │   │   │   ├── channel.py    # Channel, ChannelMember
 │   │   │   ├── feed.py       # FeedEvent
@@ -120,234 +120,234 @@ agora/
 │   │   │   ├── invitation.py # Invitation
 │   │   │   ├── team.py       # Team, TeamMember
 │   │   │   └── user.py       # User
-│   │   ├── schemas/          # Pydantic Request/Response Schemas
-│   │   ├── services/         # Business-Logik
-│   │   │   ├── auth.py       # JWT-Authentifizierung
-│   │   │   ├── calendar_sync.py # Google/WebDAV/Outlook Sync
-│   │   │   ├── chat_db.py    # SQLite Chat-Speicher
-│   │   │   ├── email.py      # SMTP E-Mail-Versand
-│   │   │   ├── feed.py       # Feed-Event-Erstellung
-│   │   │   ├── file_store.py # Datei-Speicherung
-│   │   │   ├── ics.py        # ICS-Kalender-Generierung
+│   │   ├── schemas/          # Pydantic request/response schemas
+│   │   ├── services/         # Business logic
+│   │   │   ├── auth.py       # JWT authentication
+│   │   │   ├── calendar_sync.py # Google/WebDAV/Outlook sync
+│   │   │   ├── chat_db.py    # SQLite chat storage
+│   │   │   ├── email.py      # SMTP email sending
+│   │   │   ├── feed.py       # Feed event creation
+│   │   │   ├── file_store.py # File storage
+│   │   │   ├── ics.py        # ICS calendar generation
 │   │   │   ├── janus.py      # Janus WebRTC API
-│   │   │   ├── ldap_auth.py  # LDAP-Authentifizierung
-│   │   │   └── mentions.py   # @Mention-Parsing
-│   │   ├── websocket/        # WebSocket-Handler
-│   │   │   ├── handlers.py   # WS-Endpunkte
-│   │   │   └── manager.py    # Verbindungs-Manager
+│   │   │   ├── ldap_auth.py  # LDAP authentication
+│   │   │   └── mentions.py   # @mention parsing
+│   │   ├── websocket/        # WebSocket handlers
+│   │   │   ├── handlers.py   # WS endpoints
+│   │   │   └── manager.py    # Connection manager
 │   │   ├── config.py         # Pydantic Settings
 │   │   ├── database.py       # SQLAlchemy AsyncEngine
-│   │   └── main.py           # FastAPI App-Setup
-│   ├── tests/                # Pytest-Tests
-│   ├── scripts/              # Seed-Skripte
+│   │   └── main.py           # FastAPI app setup
+│   ├── tests/                # Pytest tests
+│   ├── scripts/              # Seed scripts
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/                 # Angular 17 SPA
 │   ├── src/app/
-│   │   ├── core/             # Guards, Interceptors
+│   │   ├── core/             # Guards, interceptors
 │   │   │   ├── guards/
 │   │   │   │   └── auth.guard.ts
 │   │   │   └── interceptors/
 │   │   │       └── auth.interceptor.ts
-│   │   ├── features/         # Feature-Module
-│   │   │   ├── admin/        # Admin-Panel
-│   │   │   ├── auth/         # Login, Register
-│   │   │   ├── calendar/     # Kalender-Ansicht
-│   │   │   ├── chat/         # Chat-List, Chat-Room
-│   │   │   ├── feed/         # Activity Feed
-│   │   │   ├── invite/       # Einladungs-Annahme
-│   │   │   ├── layout/       # Haupt-Layout mit Sidebar
-│   │   │   ├── teams/        # Team-List, Team-Detail
-│   │   │   └── video/        # Video-Raum
+│   │   ├── features/         # Feature modules
+│   │   │   ├── admin/        # Admin panel
+│   │   │   ├── auth/         # Login, register
+│   │   │   ├── calendar/     # Calendar view
+│   │   │   ├── chat/         # Chat list, chat room
+│   │   │   ├── feed/         # Activity feed
+│   │   │   ├── invite/       # Invitation acceptance
+│   │   │   ├── layout/       # Main layout with sidebar
+│   │   │   ├── teams/        # Team list, team detail
+│   │   │   └── video/        # Video room
 │   │   ├── services/
-│   │   │   └── api.service.ts # Zentraler API-Client
-│   │   ├── app.routes.ts     # Routing-Konfiguration
-│   │   └── app.config.ts     # Angular-Providers
-│   ├── src/environments/     # Umgebungskonfiguration
-│   ├── Dockerfile            # Produktions-Build
-│   ├── Dockerfile.dev        # Entwicklungs-Server
+│   │   │   └── api.service.ts # Central API client
+│   │   ├── app.routes.ts     # Routing configuration
+│   │   └── app.config.ts     # Angular providers
+│   ├── src/environments/     # Environment configuration
+│   ├── Dockerfile            # Production build
+│   ├── Dockerfile.dev        # Development server
 │   └── angular.json
 ├── nginx/
-│   ├── Dockerfile            # Nginx mit Self-Signed Certs
-│   └── nginx.conf            # Reverse-Proxy-Config
+│   ├── Dockerfile            # Nginx with self-signed certs
+│   └── nginx.conf            # Reverse proxy config
 ├── janus/
 │   └── Dockerfile            # Janus WebRTC Gateway
 ├── docker-compose.yml
-├── .env.example              # Konfigurations-Vorlage
+├── .env.example              # Configuration template
 └── README.md
 ```
 
 ### Backend (FastAPI / Python 3.12)
 
-**Technologie-Stack:**
-- **FastAPI** - Async REST-API Framework
-- **SQLAlchemy 2.0** - Async ORM mit PostgreSQL
-- **Pydantic v2** - Request/Response-Validierung und Settings
-- **SQLite** - Chat-Nachrichten-Speicher (eine DB pro Channel)
-- **Redis** - Caching und Pub/Sub
-- **JWT** - Token-basierte Authentifizierung
-- **httpx** - Async HTTP-Client (fuer OAuth2, WebDAV, etc.)
+**Tech Stack:**
+- **FastAPI** - Async REST API framework
+- **SQLAlchemy 2.0** - Async ORM with PostgreSQL
+- **Pydantic v2** - Request/response validation and settings
+- **SQLite** - Chat message storage (one DB per channel)
+- **Redis** - Caching and pub/sub
+- **JWT** - Token-based authentication
+- **httpx** - Async HTTP client (for OAuth2, WebDAV, etc.)
 
-**Datenbank-Design:**
-- PostgreSQL fuer Benutzer, Teams, Channels, Kalender, Feed, Dateien
-- SQLite fuer Chat-Nachrichten (isoliert pro Channel fuer Performance)
-- Tabellen werden beim Start automatisch erstellt/migriert (`main.py:_add_missing_columns`)
+**Database Design:**
+- PostgreSQL for users, teams, channels, calendar, feed, files
+- SQLite for chat messages (isolated per channel for performance)
+- Tables are auto-created/migrated on startup (`main.py:_add_missing_columns`)
 
-**API-Endpunkte:**
+**API Endpoints:**
 
-| Prefix              | Beschreibung                                |
+| Prefix              | Description                                 |
 |----------------------|---------------------------------------------|
-| `POST /api/auth`     | Login, Register, Profil                    |
-| `GET /api/users`     | Benutzer-Suche und -Details                |
-| `GET /api/teams`     | Teams erstellen, verwalten                 |
-| `GET /api/channels`  | Channels, Direktnachrichten                |
-| `GET /api/channels/{id}/messages` | Nachrichten lesen/senden      |
-| `POST /api/files`    | Datei-Upload/Download                      |
-| `GET /api/feed`      | Activity Feed mit Unread-Count             |
-| `GET /api/calendar`  | Kalender-Events und -Synchronisation       |
-| `GET /api/video`     | Video-Raum erstellen/beitreten             |
-| `POST /api/invitations` | E-Mail-Einladungen mit ICS             |
-| `GET /api/admin`     | Admin-Statistiken und Benutzerverwaltung   |
+| `POST /api/auth`     | Login, register, profile                   |
+| `GET /api/users`     | User search and details                    |
+| `GET /api/teams`     | Create and manage teams                    |
+| `GET /api/channels`  | Channels, direct messages                  |
+| `GET /api/channels/{id}/messages` | Read/send messages           |
+| `POST /api/files`    | File upload/download                       |
+| `GET /api/feed`      | Activity feed with unread count            |
+| `GET /api/calendar`  | Calendar events and synchronization        |
+| `GET /api/video`     | Create/join video rooms                    |
+| `POST /api/invitations` | Email invitations with ICS              |
+| `GET /api/admin`     | Admin statistics and user management       |
 
-**WebSocket-Endpunkte:**
-- `ws://.../ws/{channel_id}` - Echtzeit-Chat pro Channel
-- `ws://.../ws/notifications` - Globale Benachrichtigungen (neue Nachrichten, Mentions)
+**WebSocket Endpoints:**
+- `ws://.../ws/{channel_id}` - Real-time chat per channel
+- `ws://.../ws/notifications` - Global notifications (new messages, mentions)
 
 ### Frontend (Angular 17)
 
-**Technologie-Stack:**
-- **Angular 17** - Standalone Components (kein NgModule)
-- **Angular Material** - UI-Komponenten (MatIcon, MatButton, MatSnackBar, etc.)
-- **RxJS** - Reaktive Programmierung
-- **Lazy Loading** - Alle Feature-Components werden lazy geladen
+**Tech Stack:**
+- **Angular 17** - Standalone components (no NgModule)
+- **Angular Material** - UI components (MatIcon, MatButton, MatSnackBar, etc.)
+- **RxJS** - Reactive programming
+- **Lazy Loading** - All feature components are lazy loaded
 
-**Authentifizierung:**
-- JWT-Token wird in `localStorage` gespeichert
-- `authInterceptor` fuegt automatisch `Authorization: Bearer` Header hinzu
-- `authGuard` schuetzt alle Routen ausser Login/Register
+**Authentication:**
+- JWT token stored in `localStorage`
+- `authInterceptor` automatically adds `Authorization: Bearer` header
+- `authGuard` protects all routes except login/register
 
-**Routing:**
-- `/login`, `/register` - Oeffentliche Seiten
-- `/feed` - Activity Feed (Standard-Startseite)
-- `/teams`, `/teams/:teamId` - Team-Uebersicht und -Details
-- `/chat`, `/chat/:channelId` - Chat-Liste und Chat-Raum
-- `/video/:channelId` - Video-Konferenz
-- `/calendar` - Kalender mit Integration
-- `/calendar/google/callback` - Google OAuth2 Callback
-- `/admin` - Admin-Panel
+**Routes:**
+- `/login`, `/register` - Public pages
+- `/feed` - Activity feed (default home page)
+- `/teams`, `/teams/:teamId` - Team overview and details
+- `/chat`, `/chat/:channelId` - Chat list and chat room
+- `/video/:channelId` - Video conference
+- `/calendar` - Calendar with integration
+- `/calendar/google/callback` - Google OAuth2 callback
+- `/admin` - Admin panel
 
-### Infrastruktur
+### Infrastructure
 
-**Nginx** (Reverse-Proxy):
-- Port 80 (HTTP) und 443 (HTTPS) - beide dienen die App
+**Nginx** (Reverse Proxy):
+- Port 80 (HTTP) and 443 (HTTPS) - both serve the app
 - `/api/*` → Backend (FastAPI :8000)
 - `/ws/*` → Backend WebSocket
 - `/*` → Frontend (Angular)
 
 **Janus WebRTC Gateway:**
-- Verwaltet WebRTC-Signaling und Media-Relay
-- REST-API auf Port 8088
-- UDP-Ports 10000-10100 fuer Media-Streams
+- Manages WebRTC signaling and media relay
+- REST API on port 8088
+- UDP ports 10000-10100 for media streams
 
 ---
 
-## Konfiguration
+## Configuration
 
-Alle Einstellungen werden ueber Umgebungsvariablen in der `.env`-Datei gesteuert. Siehe [.env.example](.env.example) fuer alle verfuegbaren Optionen.
+All settings are controlled via environment variables in the `.env` file. See [.env.example](.env.example) for all available options.
 
-### JWT Secret (Pflicht fuer Produktion)
+### JWT Secret (required for production)
 
 ```env
-JWT_SECRET=dein-sicheres-secret-hier
+JWT_SECRET=your-secure-secret-here
 ```
 
-Generiere ein sicheres Secret mit: `openssl rand -hex 32`
+Generate a secure secret with: `openssl rand -hex 32`
 
-### E-Mail (SMTP)
+### Email (SMTP)
 
-Im Entwicklungsmodus laeuft MailHog als E-Mail-Catcher auf [http://localhost:8025](http://localhost:8025). Fuer Produktion einen echten SMTP-Server konfigurieren:
+In development mode, MailHog runs as an email catcher at [http://localhost:8025](http://localhost:8025). For production, configure a real SMTP server:
 
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=deine-email@gmail.com
-SMTP_PASSWORD=dein-app-passwort
-SMTP_FROM=noreply@deine-domain.de
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=noreply@your-domain.com
 SMTP_USE_TLS=true
 ```
 
 ### LDAP / Active Directory
 
-Fuer Benutzerauthentifizierung ueber ein bestehendes Active Directory:
+For user authentication via an existing Active Directory:
 
 ```env
 LDAP_ENABLED=true
-LDAP_SERVER=ldap://dein-dc.firma.local
+LDAP_SERVER=ldap://your-dc.company.local
 LDAP_PORT=389
-LDAP_BIND_DN=CN=ldap-reader,OU=Service,DC=firma,DC=local
-LDAP_BIND_PASSWORD=geheim
-LDAP_BASE_DN=OU=Benutzer,DC=firma,DC=local
+LDAP_BIND_DN=CN=ldap-reader,OU=Service,DC=company,DC=local
+LDAP_BIND_PASSWORD=secret
+LDAP_BASE_DN=OU=Users,DC=company,DC=local
 LDAP_USER_FILTER=(sAMAccountName={username})
 ```
 
 ---
 
-## Google Kalender einrichten
+## Google Calendar Setup
 
-Agora kann Termine mit Google Calendar synchronisieren. Dafuer werden einmalig OAuth2-Zugangsdaten benoetigt. Die Einrichtung dauert ca. 10 Minuten.
+Agora can sync events with Google Calendar. This requires a one-time setup of OAuth2 credentials (~10 minutes).
 
-> **Wichtig:** Die `FRONTEND_URL` in deiner `.env` muss die URL sein, unter der du Agora im Browser oeffnest. Fuer Docker ist das standardmaessig `http://localhost`. Die **Redirect-URI** in Google Console muss dazu passen: `{FRONTEND_URL}/calendar/google/callback`
+> **Important:** The `FRONTEND_URL` in your `.env` must be the URL where you access Agora in the browser. For Docker this is `http://localhost` by default. The **redirect URI** in Google Console must match: `{FRONTEND_URL}/calendar/google/callback`
 
-### Schritt 1: Google Cloud Projekt erstellen
+### Step 1: Create a Google Cloud Project
 
-1. Oeffne die [Google Cloud Console](https://console.cloud.google.com/)
-2. Klicke oben auf das Projekt-Dropdown und waehle **"Neues Projekt"**
-3. Name: z.B. `Agora Calendar` und klicke **"Erstellen"**
-4. Warte bis das Projekt erstellt ist und waehle es aus
+1. Open the [Google Cloud Console](https://console.cloud.google.com/)
+2. Click the project dropdown at the top and select **"New Project"**
+3. Name: e.g. `Agora Calendar`, then click **"Create"**
+4. Wait for the project to be created and select it
 
-### Schritt 2: Google Calendar API aktivieren
+### Step 2: Enable the Google Calendar API
 
-1. Gehe zu **"APIs und Dienste"** > **"Bibliothek"**
-2. Suche nach **"Google Calendar API"**
-3. Klicke auf **"Google Calendar API"** und dann **"Aktivieren"**
+1. Go to **"APIs & Services"** > **"Library"**
+2. Search for **"Google Calendar API"**
+3. Click **"Google Calendar API"** then **"Enable"**
 
-### Schritt 3: OAuth-Zustimmungsbildschirm konfigurieren
+### Step 3: Configure the OAuth Consent Screen
 
-1. Gehe zu **"APIs und Dienste"** > **"OAuth-Zustimmungsbildschirm"**
-2. Waehle **"Extern"** (oder "Intern" fuer Google Workspace Organisationen)
-3. Fuelle aus:
-   - **App-Name**: `Agora`
-   - **Support-E-Mail**: Deine E-Mail-Adresse
-   - **Kontaktdaten des Entwicklers**: Deine E-Mail-Adresse
-4. Klicke **"Speichern und fortfahren"**
-5. Bei **"Bereiche"**: Klicke **"Bereiche hinzufuegen"**, suche nach `Google Calendar API` und waehle:
-   - `.../auth/calendar` (Termine lesen und schreiben)
-6. Klicke **"Speichern und fortfahren"**
-7. Bei **"Testnutzer"**: Fuege die Google-E-Mail-Adressen hinzu, die den Kalender nutzen sollen
-8. Klicke **"Speichern und fortfahren"**
+1. Go to **"APIs & Services"** > **"OAuth consent screen"**
+2. Select **"External"** (or "Internal" for Google Workspace organizations)
+3. Fill in:
+   - **App name**: `Agora`
+   - **User support email**: Your email address
+   - **Developer contact information**: Your email address
+4. Click **"Save and Continue"**
+5. Under **"Scopes"**: Click **"Add or Remove Scopes"**, search for `Google Calendar API` and select:
+   - `.../auth/calendar` (read and write events)
+6. Click **"Save and Continue"**
+7. Under **"Test users"**: Add the Google email addresses that should be able to connect their calendar
+8. Click **"Save and Continue"**
 
-> **Hinweis:** Solange die App im "Test"-Modus ist, koennen nur die eingetragenen Testnutzer den Kalender verbinden. Fuer unbegrenzte Nutzer muss die App bei Google verifiziert werden.
+> **Note:** While the app is in "Testing" mode, only registered test users can connect their calendar. For unlimited users, the app must be verified by Google.
 
-### Schritt 4: OAuth-Client-ID erstellen
+### Step 4: Create OAuth Client ID
 
-1. Gehe zu **"APIs und Dienste"** > **"Anmeldedaten"**
-2. Klicke **"Anmeldedaten erstellen"** > **"OAuth-Client-ID"**
-3. Anwendungstyp: **"Webanwendung"**
-4. Name: z.B. `Agora Web Client`
-5. **Autorisierte Weiterleitungs-URIs** - fuege hinzu:
+1. Go to **"APIs & Services"** > **"Credentials"**
+2. Click **"Create Credentials"** > **"OAuth client ID"**
+3. Application type: **"Web application"**
+4. Name: e.g. `Agora Web Client`
+5. **Authorized redirect URIs** - add:
    ```
    http://localhost/calendar/google/callback
    ```
-   > **Wichtig:** Diese URI muss EXAKT mit `{FRONTEND_URL}/calendar/google/callback` uebereinstimmen!
-   > - Docker (Standard): `http://localhost/calendar/google/callback`
-   > - Ohne Docker (ng serve): `http://localhost:4200/calendar/google/callback`
-   > - Produktion: `https://agora.deine-domain.de/calendar/google/callback`
-6. Klicke **"Erstellen"**
-7. Kopiere **Client-ID** und **Client-Secret**
+   > **Important:** This URI must EXACTLY match `{FRONTEND_URL}/calendar/google/callback`!
+   > - Docker (default): `http://localhost/calendar/google/callback`
+   > - Without Docker (ng serve): `http://localhost:4200/calendar/google/callback`
+   > - Production: `https://agora.your-domain.com/calendar/google/callback`
+6. Click **"Create"**
+7. Copy the **Client ID** and **Client Secret**
 
-### Schritt 5: Agora konfigurieren
+### Step 5: Configure Agora
 
-Trage die Werte in deine `.env`-Datei ein:
+Add the values to your `.env` file:
 
 ```env
 GOOGLE_CLIENT_ID=123456789-xxxx.apps.googleusercontent.com
@@ -355,60 +355,60 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxx
 FRONTEND_URL=http://localhost
 ```
 
-Starte die Container neu:
+Restart the containers:
 
 ```bash
-docker compose down && docker compose up -d
+docker compose down && docker compose up -d --build
 ```
 
-### Schritt 6: Kalender verbinden
+### Step 6: Connect Your Calendar
 
-1. Melde dich in Agora an
-2. Gehe in den **Kalender**-Bereich
-3. Klicke auf das **Zahnrad-Symbol** (Einstellungen)
-4. Waehle als Anbieter **"Google Calendar"**
-5. Klicke **"Mit Google verbinden"**
-6. Melde dich mit deinem Google-Konto an und erteile die Berechtigung
-7. Deine Google-Termine werden automatisch synchronisiert
+1. Log in to Agora
+2. Go to the **Calendar** section
+3. Click the **gear icon** (settings)
+4. Select **"Google Calendar"** as provider
+5. Click **"Mit Google verbinden"** (Connect with Google)
+6. Sign in with your Google account and grant permission
+7. Your Google events will sync automatically
 
-### Fehlerbehebung Google OAuth
+### Troubleshooting Google OAuth
 
-| Problem | Loesung |
-|---------|---------|
-| `redirect_uri_mismatch` | Die Redirect-URI in Google Console muss EXAKT `{FRONTEND_URL}/calendar/google/callback` sein. Pruefe auch HTTP vs. HTTPS und den Port. |
-| `access_denied` | Stelle sicher, dass deine E-Mail als Testnutzer eingetragen ist (Schritt 3.7). |
-| `Google OAuth nicht verfuegbar` | `GOOGLE_CLIENT_ID` und `GOOGLE_CLIENT_SECRET` sind nicht in der `.env` gesetzt. |
-| Seite nicht erreichbar nach Google-Login | `FRONTEND_URL` stimmt nicht mit der tatsaechlichen App-URL ueberein. Fuer Docker: `http://localhost` |
+| Problem | Solution |
+|---------|----------|
+| `redirect_uri_mismatch` | The redirect URI in Google Console must EXACTLY match `{FRONTEND_URL}/calendar/google/callback`. Check HTTP vs. HTTPS and port number. |
+| `access_denied` | Make sure your email is added as a test user (Step 3.7). |
+| `Google OAuth not available` | `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are not set in `.env`. |
+| Page not reachable after Google login | `FRONTEND_URL` doesn't match the actual app URL. For Docker: `http://localhost` |
 
 ---
 
-## Weitere Kalender-Integrationen
+## Additional Calendar Integrations
 
 ### WebDAV / CalDAV
 
-Fuer Nextcloud, Baikal, Radicale oder andere CalDAV-Server:
+For Nextcloud, Baikal, Radicale, or other CalDAV servers:
 
-1. Gehe in den Kalender-Einstellungen auf **"WebDAV"**
-2. Gib die CalDAV-URL, Benutzername und Passwort ein
-3. Beispiel-URL fuer Nextcloud:
+1. In calendar settings, select **"WebDAV / CalDAV"**
+2. Enter the CalDAV URL, username, and password
+3. Example URL for Nextcloud:
    ```
-   https://nextcloud.deine-domain.de/remote.php/dav/calendars/benutzername/personal/
+   https://nextcloud.your-domain.com/remote.php/dav/calendars/username/personal/
    ```
 
 ### Outlook / Exchange
 
-Fuer Microsoft Exchange Server (on-premise):
+For Microsoft Exchange Server (on-premise):
 
-1. Gehe in den Kalender-Einstellungen auf **"Outlook"**
-2. Gib die EWS-URL, Benutzername und Passwort ein
-3. Beispiel-URL:
+1. In calendar settings, select **"Outlook / Microsoft 365"**
+2. Enter the EWS URL, username, and password
+3. Example URL:
    ```
-   https://mail.firma.de/EWS/Exchange.asmx
+   https://mail.company.com/EWS/Exchange.asmx
    ```
 
 ---
 
-## Entwicklung
+## Development
 
 ### Backend (FastAPI / Python)
 
@@ -426,7 +426,7 @@ npm install
 ng serve --port 4200
 ```
 
-> **Hinweis bei Entwicklung ohne Docker:** Setze `FRONTEND_URL=http://localhost:4200` in der `.env`, damit OAuth-Callbacks korrekt funktionieren.
+> **Note for development without Docker:** Set `FRONTEND_URL=http://localhost:4200` in `.env` so OAuth callbacks work correctly.
 
 ### Tests
 
@@ -437,31 +437,31 @@ pytest
 
 ---
 
-## Authentifizierungs-Flow
+## Authentication Flows
 
-### Lokale Authentifizierung
-1. Benutzer registriert sich (`POST /api/auth/register`)
-2. Login mit E-Mail/Passwort (`POST /api/auth/login`) → JWT-Token
-3. Alle API-Aufrufe enthalten `Authorization: Bearer <token>`
-4. Token ist 24 Stunden gueltig
+### Local Authentication
+1. User registers (`POST /api/auth/register`)
+2. Login with email/password (`POST /api/auth/login`) → JWT token
+3. All API calls include `Authorization: Bearer <token>`
+4. Token is valid for 24 hours
 
-### LDAP-Authentifizierung
-1. Benutzer gibt AD-Benutzername/Passwort ein
-2. Backend bindet an LDAP-Server und prueft Credentials
-3. Optional: Gruppenmitgliedschaft (`LDAP_GROUP_DN`) wird geprueft
-4. Bei Erfolg: Lokaler Benutzer wird erstellt/aktualisiert → JWT-Token
+### LDAP Authentication
+1. User enters AD username/password
+2. Backend binds to LDAP server and verifies credentials
+3. Optional: Group membership (`LDAP_GROUP_DN`) is checked
+4. On success: Local user is created/updated → JWT token
 
-### Google OAuth2 (Kalender)
-1. Frontend ruft `/api/calendar/google/auth` auf → Erhaelt Google-Auth-URL
-2. Benutzer wird zu Google weitergeleitet → Erlaubt Kalender-Zugriff
-3. Google leitet zurueck zu `{FRONTEND_URL}/calendar/google/callback?code=XXX`
-4. Frontend sendet Code an Backend (`POST /api/calendar/google/callback`)
-5. Backend tauscht Code gegen Access-Token + Refresh-Token
-6. Tokens werden in der Datenbank gespeichert
-7. Kalender-Sync nutzt die Tokens automatisch (inkl. Token-Refresh)
+### Google OAuth2 (Calendar)
+1. Frontend calls `/api/calendar/google/auth` → Receives Google auth URL
+2. User is redirected to Google → Grants calendar access
+3. Google redirects back to `{FRONTEND_URL}/calendar/google/callback?code=XXX`
+4. Frontend sends code to backend (`POST /api/calendar/google/callback`)
+5. Backend exchanges code for access token + refresh token
+6. Tokens are stored in the database
+7. Calendar sync uses the tokens automatically (including token refresh)
 
 ---
 
-## Lizenz
+## License
 
-Siehe [LICENSE](LICENSE) Datei.
+See [LICENSE](LICENSE) file.
