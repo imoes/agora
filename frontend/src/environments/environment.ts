@@ -1,7 +1,8 @@
-const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const wsProtocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws';
+const host = typeof window !== 'undefined' ? window.location.host : 'localhost';
 
 export const environment = {
   production: false,
-  apiUrl: `http://${hostname}:8000/api`,
-  wsUrl: `ws://${hostname}:8000/ws`,
+  apiUrl: '/api',
+  wsUrl: `${wsProtocol}://${host}/ws`,
 };
