@@ -46,6 +46,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'teams/chat/:channelId',
+        loadComponent: () =>
+          import('./features/chat/components/chat-room/chat-room.component').then(
+            (m) => m.ChatRoomComponent
+          ),
+      },
+      {
         path: 'teams/:teamId',
         loadComponent: () =>
           import('./features/teams/components/team-detail/team-detail.component').then(
