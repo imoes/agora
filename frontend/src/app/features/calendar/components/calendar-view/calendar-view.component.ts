@@ -601,10 +601,19 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   private handleGoogleCallback(): void {
     const params = new URLSearchParams(window.location.search);
+
+    // Case 1: Backend GET callback already exchanged the code and redirected here
+    if (params.get('google_connected') === 'true') {
+      this.router.navigate(['/calendar'], { replaceUrl: true });
+      this.snackBar.open('Google-Konto verbunden', 'OK', { duration: 3000 });
+      this.loadIntegration();
+      return;
+    }
+
+    // Case 2: Legacy frontend-based callback with code param
     const code = params.get('code');
     if (!code) return;
 
-    // Clean the URL
     this.router.navigate(['/calendar'], { replaceUrl: true });
 
     this.apiService.sendGoogleCallback(code).subscribe({
