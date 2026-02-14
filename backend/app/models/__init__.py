@@ -4,6 +4,7 @@ from app.models.channel import Channel, ChannelMember
 from app.models.file import File, FileReference
 from app.models.feed import FeedEvent
 from app.models.invitation import Invitation
+from app.models.calendar import CalendarEvent, CalendarIntegration
 
 __all__ = [
     "User",
@@ -15,4 +16,6 @@ __all__ = [
     "FileReference",
     "FeedEvent",
     "Invitation",
+    "CalendarEvent",
+    "CalendarIntegration",
 ]

@@ -43,6 +43,10 @@ import { WebSocketService } from '@services/websocket.service';
             <mat-icon>groups</mat-icon>
             <span>Teams</span>
           </a>
+          <a routerLink="/calendar" routerLinkActive="active" class="nav-item">
+            <mat-icon>calendar_today</mat-icon>
+            <span>Kalender</span>
+          </a>
           <a *ngIf="currentUser?.is_admin" routerLink="/admin" routerLinkActive="active" class="nav-item">
             <mat-icon>admin_panel_settings</mat-icon>
             <span>Admin</span>
