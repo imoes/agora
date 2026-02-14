@@ -60,6 +60,26 @@ class TestAddMissingColumns:
     """_add_missing_columns adds columns to pre-existing tables."""
 
     @pytest.mark.asyncio
+    async def test_adds_scheduled_at_to_channels(self, engine):
+        async with engine.begin() as conn:
+            await conn.execute(text(_OLD_CHANNELS_DDL))
+            await conn.execute(text(_OLD_USERS_DDL))
+            await conn.execute(text(
+                "INSERT INTO channels (id, name, sqlite_db_path, invite_token)"
+                " VALUES ('c1', 'general', '/tmp/c1.db', 'tok1')"
+            ))
+
+            await conn.run_sync(_add_missing_columns)
+
+            cols = await conn.run_sync(lambda c: _get_column_names(c, "channels"))
+            assert "scheduled_at" in cols
+
+            row = (await conn.execute(text(
+                "SELECT scheduled_at FROM channels WHERE id = 'c1'"
+            ))).fetchone()
+            assert row[0] is None  # nullable, no default
+
+    @pytest.mark.asyncio
     async def test_adds_is_hidden_to_channels(self, engine):
         async with engine.begin() as conn:
             await conn.execute(text(_OLD_CHANNELS_DDL))

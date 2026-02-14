@@ -20,6 +20,10 @@ def _add_missing_columns(connection):
     inspector = sa_inspect(connection)
 
     channel_cols = {c["name"] for c in inspector.get_columns("channels")}
+    if "scheduled_at" not in channel_cols:
+        connection.execute(text(
+            "ALTER TABLE channels ADD COLUMN scheduled_at TIMESTAMP"
+        ))
     if "is_hidden" not in channel_cols:
         connection.execute(text(
             "ALTER TABLE channels ADD COLUMN is_hidden BOOLEAN DEFAULT false"
