@@ -18,6 +18,7 @@ from app.schemas.calendar import (
 )
 from app.services.auth import get_current_user
 from app.services import calendar_sync
+from app.services.calendar_sync import ProviderError
 from app.config import settings
 
 import os
@@ -251,7 +252,13 @@ async def sync_events(
         next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
         end = (next_month.replace(day=28) + timedelta(days=4)).replace(day=1)
 
-    external_events = await _fetch_from_provider(integration, start, end)
+    try:
+        external_events = await _fetch_from_provider(integration, start, end)
+    except ProviderError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Calendar provider '{integration.provider}' error (HTTP {exc.status_code}): {exc.detail}",
+        )
 
     imported: list[CalendarEvent] = []
     for ext in external_events:

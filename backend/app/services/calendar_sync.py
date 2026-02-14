@@ -11,6 +11,7 @@ Supported providers:
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -19,6 +20,19 @@ import httpx
 from icalendar import Calendar, Event, vText
 
 from app.models.calendar import CalendarIntegration
+
+logger = logging.getLogger(__name__)
+
+
+class ProviderError(Exception):
+    """Raised when an external calendar provider returns an error."""
+
+    def __init__(self, provider: str, status_code: int, detail: str = ""):
+        self.provider = provider
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(f"{provider} returned HTTP {status_code}: {detail}")
+
 
 # ---------------------------------------------------------------------------
 # Generic helpers
@@ -91,7 +105,8 @@ async def webdav_list_events(
             auth=auth,
         )
     if resp.status_code >= 400:
-        return []
+        logger.warning("WebDAV REPORT failed: HTTP %d – %s", resp.status_code, resp.text[:200])
+        raise ProviderError("webdav", resp.status_code, resp.text[:200])
     return _parse_caldav_response(resp.text)
 
 
@@ -207,7 +222,13 @@ async def google_list_events(
             auth=auth,
         )
     if resp.status_code >= 400:
-        return []
+        detail = resp.text[:200]
+        if resp.status_code == 401:
+            detail = "Authentication failed – check Google email and app password"
+        elif resp.status_code == 403:
+            detail = "Access denied – ensure CalDAV API access is enabled for your Google account"
+        logger.warning("Google CalDAV REPORT failed: HTTP %d – %s", resp.status_code, detail)
+        raise ProviderError("google", resp.status_code, detail)
     return _parse_caldav_response(resp.text)
 
 
@@ -318,8 +339,11 @@ async def outlook_list_events(
         "</m:FindItem>"
     )
     resp = await _ews_request(integration, body)
-    if resp is None or resp.status_code >= 400:
+    if resp is None:
         return []
+    if resp.status_code >= 400:
+        logger.warning("Outlook EWS FindItem failed: HTTP %d – %s", resp.status_code, resp.text[:200])
+        raise ProviderError("outlook", resp.status_code, resp.text[:200])
     return _parse_ews_find_response(resp.text)
 
 

@@ -1,6 +1,7 @@
 """Tests fuer die Calendar-API (Events + Integration + Video-Call)."""
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -481,3 +482,98 @@ class TestCalendarIntegration:
         )
         resp = await client.post("/api/calendar/sync", headers=headers)
         assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_sync_google_auth_failure_returns_502(self, client: AsyncClient, _dirs):
+        """When Google CalDAV returns 401, the sync endpoint should return 502
+        with a meaningful error message instead of an empty list."""
+        auth = await register_user(client)
+        headers = auth_headers(auth["access_token"])
+
+        await client.put(
+            "/api/calendar/integration",
+            json={
+                "provider": "google",
+                "google_email": "user@gmail.com",
+                "google_app_password": "wrong-password",
+            },
+            headers=headers,
+        )
+
+        # Mock httpx to return 401 from Google
+        mock_response = AsyncMock()
+        mock_response.status_code = 401
+        mock_response.text = "Unauthorized"
+
+        with patch("app.services.calendar_sync.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.request = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            resp = await client.post("/api/calendar/sync", headers=headers)
+
+        assert resp.status_code == 502
+        assert "google" in resp.json()["detail"].lower()
+        assert "401" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_sync_google_success_imports_events(self, client: AsyncClient, _dirs):
+        """When Google CalDAV returns valid iCal data, events are imported."""
+        auth = await register_user(client)
+        headers = auth_headers(auth["access_token"])
+
+        await client.put(
+            "/api/calendar/integration",
+            json={
+                "provider": "google",
+                "google_email": "user@gmail.com",
+                "google_app_password": "valid-password",
+            },
+            headers=headers,
+        )
+
+        ical_data = (
+            "BEGIN:VCALENDAR\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:test-event-123\r\n"
+            "SUMMARY:Team Meeting\r\n"
+            "DTSTART:20260214T100000Z\r\n"
+            "DTEND:20260214T110000Z\r\n"
+            "LOCATION:Room 42\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR"
+        )
+        caldav_xml = (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            "<multistatus><response><propstat><prop>"
+            f"<calendar-data>{ical_data}</calendar-data>"
+            "</prop></propstat></response></multistatus>"
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 207
+        mock_response.text = caldav_xml
+
+        with patch("app.services.calendar_sync.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.request = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            resp = await client.post(
+                "/api/calendar/sync",
+                params={
+                    "start": "2026-02-01T00:00:00Z",
+                    "end": "2026-03-01T00:00:00Z",
+                },
+                headers=headers,
+            )
+
+        assert resp.status_code == 200
+        events = resp.json()
+        assert len(events) == 1
+        assert events[0]["title"] == "Team Meeting"
+        assert events[0]["external_id"] == "test-event-123"
