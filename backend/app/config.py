@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Frontend URL for invitation links
     frontend_url: str = "http://localhost:4200"
 
+    # Google OAuth2 for Calendar
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
     # LDAP / Active Directory settings
     ldap_enabled: bool = False
     ldap_server: str = ""

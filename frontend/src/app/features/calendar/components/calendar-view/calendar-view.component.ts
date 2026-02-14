@@ -6,7 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDividerModule } from '@angular/material/divider';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
@@ -85,15 +85,17 @@ interface CalendarEvent {
 
         <!-- Google Settings -->
         <div *ngIf="settingsProvider === 'google'" class="provider-fields">
-          <div class="field">
-            <label>Google E-Mail:</label>
-            <input type="email" [(ngModel)]="googleEmail" placeholder="name@gmail.com">
+          <div *ngIf="googleConnected" class="field">
+            <label>Verbunden als:</label>
+            <span>{{ googleEmail || 'Google-Konto' }}</span>
+            <button mat-button color="warn" (click)="disconnectGoogle()">Trennen</button>
           </div>
-          <div class="field">
-            <label>App-Passwort:</label>
-            <input type="password" [(ngModel)]="googleAppPassword" placeholder="Google App-Passwort">
+          <div *ngIf="!googleConnected" class="field">
+            <button mat-raised-button color="primary" (click)="connectGoogle()">
+              <mat-icon>login</mat-icon> Mit Google verbinden
+            </button>
           </div>
-          <span class="hint">Erstelle ein App-Passwort unter myaccount.google.com &gt; Sicherheit &gt; App-Passwoerter</span>
+          <span class="hint">Verbindet deinen Google Kalender via OAuth 2.0</span>
         </div>
 
         <!-- Outlook / Exchange Settings -->
@@ -574,6 +576,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   webdavPassword = '';
   googleEmail = '';
   googleAppPassword = '';
+  googleConnected = false;
   outlookServerUrl = '';
   outlookUsername = '';
   outlookPassword = '';
@@ -582,12 +585,41 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   syncing = false;
 
-  constructor(private apiService: ApiService, private snackBar: MatSnackBar) {}
+  constructor(
+    private apiService: ApiService,
+    private snackBar: MatSnackBar,
+    private route: ActivatedRoute,
+    private router: Router,
+  ) {}
 
   ngOnInit(): void {
     this.buildCalendar();
     this.loadEvents();
     this.loadIntegration();
+    this.handleGoogleCallback();
+  }
+
+  private handleGoogleCallback(): void {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+
+    // Clean the URL
+    this.router.navigate(['/calendar'], { replaceUrl: true });
+
+    this.apiService.sendGoogleCallback(code).subscribe({
+      next: (res) => {
+        this.snackBar.open(
+          `Google-Konto verbunden: ${res.google_email || 'OK'}`,
+          'OK', { duration: 3000 },
+        );
+        this.loadIntegration();
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Google-Verbindung fehlgeschlagen';
+        this.snackBar.open(detail, 'OK', { duration: 6000 });
+      },
+    });
   }
 
   ngOnDestroy(): void {
@@ -839,6 +871,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
           this.webdavUrl = data.webdav_url || '';
           this.webdavUsername = data.webdav_username || '';
           this.googleEmail = data.google_email || '';
+          this.googleConnected = data.google_connected || false;
           this.outlookServerUrl = data.outlook_server_url || '';
           this.outlookUsername = data.outlook_username || '';
         }
@@ -861,8 +894,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       data.webdav_username = this.webdavUsername;
       if (this.webdavPassword) data.webdav_password = this.webdavPassword;
     } else if (this.settingsProvider === 'google') {
-      data.google_email = this.googleEmail || null;
-      if (this.googleAppPassword) data.google_app_password = this.googleAppPassword;
+      // Google uses OAuth – no manual credentials needed
     } else if (this.settingsProvider === 'outlook') {
       data.outlook_server_url = this.outlookServerUrl || null;
       data.outlook_username = this.outlookUsername || null;
@@ -911,6 +943,29 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
         this.syncing = false;
         const detail = err.error?.detail || 'Synchronisierung fehlgeschlagen';
         this.snackBar.open(detail, 'OK', { duration: 6000 });
+      },
+    });
+  }
+
+  connectGoogle(): void {
+    this.apiService.getGoogleAuthUrl().subscribe({
+      next: (res) => {
+        window.location.href = res.auth_url;
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Google OAuth nicht verfuegbar';
+        this.snackBar.open(detail, 'OK', { duration: 5000 });
+      },
+    });
+  }
+
+  disconnectGoogle(): void {
+    this.googleConnected = false;
+    this.googleEmail = '';
+    this.apiService.saveCalendarIntegration({ provider: 'internal' }).subscribe({
+      next: () => {
+        this.snackBar.open('Google-Konto getrennt', 'OK', { duration: 2000 });
+        this.loadIntegration();
       },
     });
   }

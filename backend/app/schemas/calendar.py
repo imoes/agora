@@ -61,9 +61,17 @@ class CalendarIntegrationOut(BaseModel):
     webdav_url: str | None = None
     webdav_username: str | None = None
     google_email: str | None = None
+    google_connected: bool = False
     outlook_server_url: str | None = None
     outlook_username: str | None = None
     last_sync_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_integration(cls, obj: "CalendarIntegrationOut") -> "CalendarIntegrationOut":
+        """Build from ORM object, computing google_connected."""
+        data = {c: getattr(obj, c) for c in cls.model_fields if hasattr(obj, c)}
+        data["google_connected"] = bool(getattr(obj, "google_refresh_token", None))
+        return cls(**data)

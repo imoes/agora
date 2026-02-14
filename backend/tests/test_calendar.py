@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
+from app.services import calendar_sync
 from tests.conftest import auth_headers, register_user
 
 
@@ -484,35 +485,55 @@ class TestCalendarIntegration:
         assert resp.status_code == 400
 
     @pytest.mark.asyncio
+    async def test_sync_google_no_token_returns_502(self, client: AsyncClient, _dirs):
+        """When Google has no refresh token, sync returns 502."""
+        auth = await register_user(client)
+        headers = auth_headers(auth["access_token"])
+
+        # Set provider to google but without OAuth tokens
+        await client.put(
+            "/api/calendar/integration",
+            json={"provider": "google"},
+            headers=headers,
+        )
+
+        resp = await client.post("/api/calendar/sync", headers=headers)
+
+        assert resp.status_code == 502
+        assert "google" in resp.json()["detail"].lower()
+        assert "reconnect" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
     async def test_sync_google_auth_failure_returns_502(self, client: AsyncClient, _dirs):
-        """When Google CalDAV returns 401, the sync endpoint should return 502
-        with a meaningful error message instead of an empty list."""
+        """When Google token refresh fails, sync returns 502."""
         auth = await register_user(client)
         headers = auth_headers(auth["access_token"])
 
         await client.put(
             "/api/calendar/integration",
-            json={
-                "provider": "google",
-                "google_email": "user@gmail.com",
-                "google_app_password": "wrong-password",
-            },
+            json={"provider": "google"},
             headers=headers,
         )
 
-        # Mock httpx to return 401 from Google
-        mock_response = AsyncMock()
-        mock_response.status_code = 401
-        mock_response.text = "Unauthorized"
+        # Directly set refresh token in the DB via another request
+        # Use mock to simulate refresh failure
+        mock_token_resp = AsyncMock()
+        mock_token_resp.status_code = 401
+        mock_token_resp.text = '{"error": "invalid_grant"}'
 
         with patch("app.services.calendar_sync.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.request = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_token_resp)
             mock_client_cls.return_value = mock_client
 
-            resp = await client.post("/api/calendar/sync", headers=headers)
+            # We need to set the refresh_token directly
+            with patch(
+                "app.services.calendar_sync._google_ensure_token",
+                side_effect=calendar_sync.ProviderError("google", 401, "Google token refresh failed – please reconnect your account"),
+            ):
+                resp = await client.post("/api/calendar/sync", headers=headers)
 
         assert resp.status_code == 502
         assert "google" in resp.json()["detail"].lower()
@@ -520,57 +541,52 @@ class TestCalendarIntegration:
 
     @pytest.mark.asyncio
     async def test_sync_google_success_imports_events(self, client: AsyncClient, _dirs):
-        """When Google CalDAV returns valid iCal data, events are imported."""
+        """When Google Calendar API returns events, they are imported."""
         auth = await register_user(client)
         headers = auth_headers(auth["access_token"])
 
         await client.put(
             "/api/calendar/integration",
-            json={
-                "provider": "google",
-                "google_email": "user@gmail.com",
-                "google_app_password": "valid-password",
-            },
+            json={"provider": "google"},
             headers=headers,
         )
 
-        ical_data = (
-            "BEGIN:VCALENDAR\r\n"
-            "BEGIN:VEVENT\r\n"
-            "UID:test-event-123\r\n"
-            "SUMMARY:Team Meeting\r\n"
-            "DTSTART:20260214T100000Z\r\n"
-            "DTEND:20260214T110000Z\r\n"
-            "LOCATION:Room 42\r\n"
-            "END:VEVENT\r\n"
-            "END:VCALENDAR"
-        )
-        caldav_xml = (
-            '<?xml version="1.0" encoding="utf-8"?>'
-            "<multistatus><response><propstat><prop>"
-            f"<calendar-data>{ical_data}</calendar-data>"
-            "</prop></propstat></response></multistatus>"
-        )
-
-        mock_response = AsyncMock()
-        mock_response.status_code = 207
-        mock_response.text = caldav_xml
-
-        with patch("app.services.calendar_sync.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.request = AsyncMock(return_value=mock_response)
-            mock_client_cls.return_value = mock_client
-
-            resp = await client.post(
-                "/api/calendar/sync",
-                params={
-                    "start": "2026-02-01T00:00:00Z",
-                    "end": "2026-03-01T00:00:00Z",
+        google_api_response = {
+            "items": [
+                {
+                    "id": "test-event-123",
+                    "summary": "Team Meeting",
+                    "start": {"dateTime": "2026-02-14T10:00:00Z"},
+                    "end": {"dateTime": "2026-02-14T11:00:00Z"},
+                    "location": "Room 42",
+                    "status": "confirmed",
                 },
-                headers=headers,
-            )
+            ],
+        }
+
+        mock_list_resp = AsyncMock()
+        mock_list_resp.status_code = 200
+        mock_list_resp.json = lambda: google_api_response
+
+        with patch(
+            "app.services.calendar_sync._google_ensure_token",
+            return_value="fake-access-token",
+        ):
+            with patch("app.services.calendar_sync.httpx.AsyncClient") as mock_client_cls:
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client.get = AsyncMock(return_value=mock_list_resp)
+                mock_client_cls.return_value = mock_client
+
+                resp = await client.post(
+                    "/api/calendar/sync",
+                    params={
+                        "start": "2026-02-01T00:00:00Z",
+                        "end": "2026-03-01T00:00:00Z",
+                    },
+                    headers=headers,
+                )
 
         assert resp.status_code == 200
         events = resp.json()
