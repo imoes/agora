@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# Install dependencies if node_modules is missing or stale
-if [ ! -d node_modules ] || [ package.json -nt node_modules/.package-lock.json ]; then
+# Install dependencies if node_modules is empty or stale
+if [ ! -f node_modules/.package-lock.json ] || [ package.json -nt node_modules/.package-lock.json ]; then
   echo "[entrypoint] Installing dependencies..."
   npm ci
 fi
