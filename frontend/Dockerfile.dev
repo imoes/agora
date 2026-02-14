@@ -1,0 +1,13 @@
+# Development image – watches source files and rebuilds automatically
+FROM node:20-alpine
+
+RUN npm install -g serve@14 @angular/cli@17
+
+WORKDIR /app
+
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+EXPOSE 80
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
