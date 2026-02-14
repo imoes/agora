@@ -9,9 +9,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatBadgeModule } from '@angular/material/badge';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDividerModule } from '@angular/material/divider';
-import { Subscription, interval } from 'rxjs';
-import { switchMap, filter } from 'rxjs/operators';
+import { Subscription, Subject, interval, of } from 'rxjs';
+import { switchMap, filter, debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { AuthService, User, UserStatus, STATUS_LABELS, STATUS_ICONS } from '@core/services/auth.service';
 import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
@@ -22,7 +23,7 @@ import { WebSocketService } from '@services/websocket.service';
   imports: [
     CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive,
     MatSidenavModule, MatToolbarModule, MatListModule, MatIconModule,
-    MatBadgeModule, MatButtonModule, MatMenuModule, MatDividerModule,
+    MatBadgeModule, MatButtonModule, MatMenuModule, MatTooltipModule, MatDividerModule,
   ],
   template: `
     <div class="layout">
@@ -41,10 +42,6 @@ import { WebSocketService } from '@services/websocket.service';
           <a routerLink="/teams" routerLinkActive="active" class="nav-item">
             <mat-icon>groups</mat-icon>
             <span>Teams</span>
-          </a>
-          <a routerLink="/search" routerLinkActive="active" class="nav-item">
-            <mat-icon>search</mat-icon>
-            <span>Suche</span>
           </a>
         </div>
         <div class="sidebar-bottom">
@@ -79,66 +76,105 @@ import { WebSocketService } from '@services/websocket.service';
         </div>
       </nav>
 
-      <!-- Chat Sidebar -->
-      <aside class="chat-sidebar">
-        <div class="chat-sidebar-header">
-          <span>{{ sidebarMode === 'teams' ? 'Teams' : 'Chats' }}</span>
-          <button mat-icon-button (click)="toggleCallSearch($event)" class="call-search-btn"
-                  [class.active]="showCallSearch">
-            <mat-icon>add_call</mat-icon>
-          </button>
-        </div>
-
-        <!-- User search for calling -->
-        <div class="call-search-panel" *ngIf="showCallSearch" #callSearchPanel>
-          <input class="call-search-input" [(ngModel)]="callSearchQuery"
-                 (input)="onCallSearch()" placeholder="Benutzer suchen...">
-          <div class="call-search-results">
-            <div *ngFor="let u of callSearchResults" class="call-search-item">
-              <div class="call-search-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
-              <div class="call-search-info">
-                <span class="call-search-name">{{ u.display_name }}</span>
-                <span class="call-search-username">{{'@' + u.username}}</span>
+      <!-- Main wrapper (top bar + body) -->
+      <div class="main-wrapper">
+        <!-- Top bar with search -->
+        <div class="top-bar">
+          <div class="search-wrapper" #searchWrapper>
+            <mat-icon class="search-icon">search</mat-icon>
+            <input type="text" class="search-input" placeholder="Benutzer suchen..."
+                   [(ngModel)]="searchQuery" (input)="onSearchInput()" (focus)="onSearchFocus()">
+            <mat-icon *ngIf="searchQuery" class="search-clear" (click)="clearSearch()">close</mat-icon>
+            <!-- Search dropdown -->
+            <div class="search-dropdown" *ngIf="showSearchDropdown && (searchResults.length > 0 || (searchQuery.length >= 2 && !searchLoading))">
+              <div *ngFor="let user of searchResults" class="search-result-item" (click)="startChatFromSearch(user)">
+                <div class="search-result-avatar">{{ user.display_name?.charAt(0)?.toUpperCase() }}</div>
+                <div class="search-result-info">
+                  <span class="search-result-name">{{ user.display_name }}</span>
+                  <span class="search-result-username">{{'@' + user.username}}</span>
+                </div>
+                <div class="search-result-actions">
+                  <button mat-icon-button (click)="callUserFromSearch(user, true, $event)" matTooltip="Audioanruf" class="search-action-btn">
+                    <mat-icon>call</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="callUserFromSearch(user, false, $event)" matTooltip="Videoanruf" class="search-action-btn">
+                    <mat-icon>videocam</mat-icon>
+                  </button>
+                  <button mat-icon-button matTooltip="Chat starten" class="search-action-btn">
+                    <mat-icon>chat</mat-icon>
+                  </button>
+                </div>
               </div>
-              <button mat-icon-button (click)="callUser(u, false)" matTooltip="Videoanruf" class="call-action-btn">
-                <mat-icon>videocam</mat-icon>
-              </button>
-              <button mat-icon-button (click)="callUser(u, true)" matTooltip="Audioanruf" class="call-action-btn">
-                <mat-icon>call</mat-icon>
-              </button>
-            </div>
-            <div *ngIf="callSearchQuery && callSearchResults.length === 0" class="call-search-empty">
-              Keine Benutzer gefunden
+              <div *ngIf="searchQuery.length >= 2 && searchResults.length === 0 && !searchLoading" class="search-empty">
+                Keine Benutzer gefunden
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="chat-sidebar-list">
-          <div *ngFor="let ch of filteredChannels"
-               class="chat-sidebar-item"
-               [class.active]="activeChannelId === ch.id"
-               [class.unread]="ch.unread_count > 0"
-               (click)="openChat(ch.id)">
-            <div class="chat-sidebar-avatar" [class.team]="ch.channel_type === 'team'">
-              <mat-icon *ngIf="ch.channel_type === 'team'">tag</mat-icon>
-              <span *ngIf="ch.channel_type !== 'team'">{{ ch.name?.charAt(0)?.toUpperCase() }}</span>
+        <div class="main-body">
+          <!-- Chat Sidebar -->
+          <aside class="chat-sidebar">
+            <div class="chat-sidebar-header">
+              <span>{{ sidebarMode === 'teams' ? 'Teams' : 'Chats' }}</span>
+              <button mat-icon-button (click)="toggleCallSearch($event)" class="call-search-btn"
+                      [class.active]="showCallSearch">
+                <mat-icon>add_call</mat-icon>
+              </button>
             </div>
-            <div class="chat-sidebar-info">
-              <span class="chat-sidebar-name">{{ ch.team_name ? ch.team_name + ' / ' : '' }}{{ ch.name }}</span>
-              <span class="chat-sidebar-meta">{{ ch.member_count }} Mitglieder</span>
-            </div>
-            <span *ngIf="ch.unread_count > 0" class="chat-unread-badge">{{ ch.unread_count }}</span>
-          </div>
-          <div *ngIf="filteredChannels.length === 0" class="chat-sidebar-empty">
-            {{ sidebarMode === 'teams' ? 'Keine Team-Chats' : 'Keine Chats' }}
-          </div>
-        </div>
-      </aside>
 
-      <!-- Main Content -->
-      <main class="content">
-        <router-outlet></router-outlet>
-      </main>
+            <!-- User search for calling -->
+            <div class="call-search-panel" *ngIf="showCallSearch" #callSearchPanel>
+              <input class="call-search-input" [(ngModel)]="callSearchQuery"
+                     (input)="onCallSearch()" placeholder="Benutzer suchen...">
+              <div class="call-search-results">
+                <div *ngFor="let u of callSearchResults" class="call-search-item">
+                  <div class="call-search-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
+                  <div class="call-search-info">
+                    <span class="call-search-name">{{ u.display_name }}</span>
+                    <span class="call-search-username">{{'@' + u.username}}</span>
+                  </div>
+                  <button mat-icon-button (click)="callUser(u, false)" matTooltip="Videoanruf" class="call-action-btn">
+                    <mat-icon>videocam</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="callUser(u, true)" matTooltip="Audioanruf" class="call-action-btn">
+                    <mat-icon>call</mat-icon>
+                  </button>
+                </div>
+                <div *ngIf="callSearchQuery && callSearchResults.length === 0" class="call-search-empty">
+                  Keine Benutzer gefunden
+                </div>
+              </div>
+            </div>
+
+            <div class="chat-sidebar-list">
+              <div *ngFor="let ch of filteredChannels"
+                   class="chat-sidebar-item"
+                   [class.active]="activeChannelId === ch.id"
+                   [class.unread]="ch.unread_count > 0"
+                   (click)="openChat(ch.id)">
+                <div class="chat-sidebar-avatar" [class.team]="ch.channel_type === 'team'">
+                  <mat-icon *ngIf="ch.channel_type === 'team'">tag</mat-icon>
+                  <span *ngIf="ch.channel_type !== 'team'">{{ ch.name?.charAt(0)?.toUpperCase() }}</span>
+                </div>
+                <div class="chat-sidebar-info">
+                  <span class="chat-sidebar-name">{{ ch.team_name ? ch.team_name + ' / ' : '' }}{{ ch.name }}</span>
+                  <span class="chat-sidebar-meta">{{ ch.member_count }} Mitglieder</span>
+                </div>
+                <span *ngIf="ch.unread_count > 0" class="chat-unread-badge">{{ ch.unread_count }}</span>
+              </div>
+              <div *ngIf="filteredChannels.length === 0" class="chat-sidebar-empty">
+                {{ sidebarMode === 'teams' ? 'Keine Team-Chats' : 'Keine Chats' }}
+              </div>
+            </div>
+          </aside>
+
+          <!-- Main Content -->
+          <main class="content">
+            <router-outlet></router-outlet>
+          </main>
+        </div>
+      </div>
 
       <!-- Incoming Call Overlay -->
       <div class="incoming-call-overlay" *ngIf="incomingCall">
@@ -398,6 +434,133 @@ import { WebSocketService } from '@services/websocket.service';
       color: #999;
       font-size: 12px;
     }
+    /* Main wrapper & top bar */
+    .main-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .top-bar {
+      height: 48px;
+      background: var(--bg-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+    .search-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 480px;
+    }
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: #999;
+      pointer-events: none;
+    }
+    .search-input {
+      width: 100%;
+      padding: 7px 32px 7px 34px;
+      border: none;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.12);
+      color: white;
+      font-size: 13px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .search-input::placeholder { color: #aaa; }
+    .search-input:focus { background: rgba(255,255,255,0.2); }
+    .search-clear {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      color: #aaa;
+      cursor: pointer;
+    }
+    .search-clear:hover { color: white; }
+    .search-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      max-height: 320px;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .search-result-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    .search-result-item:hover { background: var(--hover); }
+    .search-result-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .search-result-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .search-result-name {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+    }
+    .search-result-username {
+      font-size: 11px;
+      color: #999;
+    }
+    .search-result-actions {
+      display: flex;
+      gap: 0;
+    }
+    .search-action-btn {
+      color: #666 !important;
+      width: 30px !important;
+      height: 30px !important;
+      line-height: 30px !important;
+    }
+    .search-action-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .search-empty {
+      padding: 16px;
+      text-align: center;
+      color: #999;
+      font-size: 13px;
+    }
+    .main-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
     .content {
       flex: 1;
       overflow: hidden;
@@ -504,6 +667,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
   showCallSearch = false;
   callSearchQuery = '';
   callSearchResults: any[] = [];
+  // Top bar search
+  searchQuery = '';
+  searchResults: any[] = [];
+  searchLoading = false;
+  showSearchDropdown = false;
+  private searchSubject = new Subject<string>();
+  @ViewChild('searchWrapper') searchWrapper!: ElementRef;
   @ViewChild('callSearchPanel') callSearchPanel!: ElementRef;
   private subscriptions: Subscription[] = [];
   private ringAudio: HTMLAudioElement | null = null;
@@ -524,6 +694,22 @@ export class LayoutComponent implements OnInit, OnDestroy {
       label: STATUS_LABELS[s],
       icon: STATUS_ICONS[s],
     }));
+
+    // Debounced user search
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      switchMap((query) => {
+        if (query.length < 2) {
+          return of([]);
+        }
+        this.searchLoading = true;
+        return this.apiService.searchUsers(query);
+      }),
+    ).subscribe((users) => {
+      this.searchResults = users.filter((u: any) => u.id !== this.currentUser?.id);
+      this.searchLoading = false;
+    });
   }
 
   ngOnInit(): void {
@@ -578,6 +764,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
         } else {
           this.sidebarMode = 'chats';
         }
+        // Immediately clear unread count for the opened channel
+        if (this.activeChannelId) {
+          this.clearUnreadForChannel(this.activeChannelId);
+        }
         this.updateFilteredChannels();
       })
     );
@@ -618,15 +808,19 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
-    if (!this.showCallSearch) return;
     const target = event.target as HTMLElement;
-    // Close if click is outside the call search panel and its toggle button
-    if (this.callSearchPanel?.nativeElement &&
+    // Close call search if click is outside
+    if (this.showCallSearch && this.callSearchPanel?.nativeElement &&
         !this.callSearchPanel.nativeElement.contains(target) &&
         !target.closest('.call-search-btn')) {
       this.showCallSearch = false;
       this.callSearchQuery = '';
       this.callSearchResults = [];
+    }
+    // Close top-bar search dropdown if click is outside
+    if (this.showSearchDropdown && this.searchWrapper?.nativeElement &&
+        !this.searchWrapper.nativeElement.contains(target)) {
+      this.showSearchDropdown = false;
     }
   }
 
@@ -673,6 +867,51 @@ export class LayoutComponent implements OnInit, OnDestroy {
       const queryParams = audioOnly ? { audio: 'true' } : {};
       this.router.navigate(['/video', channel.id], { queryParams });
     });
+  }
+
+  // Top bar search methods
+  onSearchInput(): void {
+    this.searchSubject.next(this.searchQuery);
+    this.showSearchDropdown = this.searchQuery.length >= 2;
+  }
+
+  onSearchFocus(): void {
+    if (this.searchQuery.length >= 2 && this.searchResults.length > 0) {
+      this.showSearchDropdown = true;
+    }
+  }
+
+  clearSearch(): void {
+    this.searchQuery = '';
+    this.searchResults = [];
+    this.showSearchDropdown = false;
+  }
+
+  startChatFromSearch(user: any): void {
+    this.apiService.findOrCreateDirectChat(user.id).subscribe((channel) => {
+      this.clearSearch();
+      this.router.navigate(['/chat', channel.id]);
+    });
+  }
+
+  callUserFromSearch(user: any, audioOnly: boolean, event: MouseEvent): void {
+    event.stopPropagation();
+    this.apiService.findOrCreateDirectChat(user.id).subscribe((channel) => {
+      this.clearSearch();
+      const queryParams = audioOnly ? { audio: 'true' } : {};
+      this.router.navigate(['/video', channel.id], { queryParams });
+    });
+  }
+
+  private clearUnreadForChannel(channelId: string): void {
+    const ch = this.chatChannels.find((c) => c.id === channelId);
+    if (ch) {
+      ch.unread_count = 0;
+    }
+    const fch = this.filteredChannels.find((c) => c.id === channelId);
+    if (fch) {
+      fch.unread_count = 0;
+    }
   }
 
   openChat(channelId: string): void {
