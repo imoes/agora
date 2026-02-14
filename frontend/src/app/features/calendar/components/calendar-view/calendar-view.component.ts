@@ -84,21 +84,14 @@ interface CalendarEvent {
         <!-- Google Settings -->
         <div *ngIf="settingsProvider === 'google'" class="provider-fields">
           <div class="field">
-            <label>Client-ID:</label>
-            <input type="text" [(ngModel)]="googleClientId" placeholder="Google OAuth2 Client-ID">
+            <label>Google E-Mail:</label>
+            <input type="email" [(ngModel)]="googleEmail" placeholder="name@gmail.com">
           </div>
           <div class="field">
-            <label>Client-Secret:</label>
-            <input type="password" [(ngModel)]="googleClientSecret" placeholder="Google OAuth2 Client-Secret">
+            <label>App-Passwort:</label>
+            <input type="password" [(ngModel)]="googleAppPassword" placeholder="Google App-Passwort">
           </div>
-          <div class="field">
-            <label>Refresh-Token:</label>
-            <input type="text" [(ngModel)]="googleRefreshToken" placeholder="OAuth2 Refresh-Token">
-          </div>
-          <div class="field">
-            <label>Kalender-ID:</label>
-            <input type="text" [(ngModel)]="googleCalendarId" placeholder="primary">
-          </div>
+          <span class="hint">Erstelle ein App-Passwort unter myaccount.google.com &gt; Sicherheit &gt; App-Passwoerter</span>
         </div>
 
         <!-- Outlook / Exchange Settings -->
@@ -575,10 +568,8 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   webdavUrl = '';
   webdavUsername = '';
   webdavPassword = '';
-  googleClientId = '';
-  googleClientSecret = '';
-  googleRefreshToken = '';
-  googleCalendarId = '';
+  googleEmail = '';
+  googleAppPassword = '';
   outlookServerUrl = '';
   outlookUsername = '';
   outlookPassword = '';
@@ -841,8 +832,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
           this.settingsProvider = data.provider || 'internal';
           this.webdavUrl = data.webdav_url || '';
           this.webdavUsername = data.webdav_username || '';
-          this.googleClientId = data.google_client_id || '';
-          this.googleCalendarId = data.google_calendar_id || '';
+          this.googleEmail = data.google_email || '';
           this.outlookServerUrl = data.outlook_server_url || '';
           this.outlookUsername = data.outlook_username || '';
         }
@@ -862,10 +852,8 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       data.webdav_username = this.webdavUsername;
       if (this.webdavPassword) data.webdav_password = this.webdavPassword;
     } else if (this.settingsProvider === 'google') {
-      data.google_client_id = this.googleClientId || null;
-      if (this.googleClientSecret) data.google_client_secret = this.googleClientSecret;
-      data.google_refresh_token = this.googleRefreshToken || null;
-      data.google_calendar_id = this.googleCalendarId || null;
+      data.google_email = this.googleEmail || null;
+      if (this.googleAppPassword) data.google_app_password = this.googleAppPassword;
     } else if (this.settingsProvider === 'outlook') {
       data.outlook_server_url = this.outlookServerUrl || null;
       data.outlook_username = this.outlookUsername || null;

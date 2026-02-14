@@ -264,20 +264,16 @@ describe('CalendarViewComponent', () => {
     expect(component.getVideoLink('Room A')).toBe('');
   });
 
-  it('should save Google OAuth2 settings with client credentials', () => {
+  it('should save Google settings with email and app password', () => {
     component.settingsProvider = 'google';
-    component.googleClientId = 'my-client-id';
-    component.googleClientSecret = 'my-secret';
-    component.googleRefreshToken = 'refresh-tok';
-    component.googleCalendarId = 'primary';
+    component.googleEmail = 'user@gmail.com';
+    component.googleAppPassword = 'abcd efgh ijkl mnop';
     component.saveSettings();
     expect(apiMock.saveCalendarIntegration).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'google',
-        google_client_id: 'my-client-id',
-        google_client_secret: 'my-secret',
-        google_refresh_token: 'refresh-tok',
-        google_calendar_id: 'primary',
+        google_email: 'user@gmail.com',
+        google_app_password: 'abcd efgh ijkl mnop',
       })
     );
   });
@@ -300,14 +296,12 @@ describe('CalendarViewComponent', () => {
 
   it('should load integration and populate new fields', () => {
     apiMock.getCalendarIntegration.mockReturnValue(of({
-      provider: 'outlook',
-      outlook_server_url: 'https://mail.example.com',
-      outlook_username: 'user@example.com',
+      provider: 'google',
+      google_email: 'user@gmail.com',
     }));
     component.loadIntegration();
-    expect(component.settingsProvider).toBe('outlook');
-    expect(component.outlookServerUrl).toBe('https://mail.example.com');
-    expect(component.outlookUsername).toBe('user@example.com');
+    expect(component.settingsProvider).toBe('google');
+    expect(component.googleEmail).toBe('user@gmail.com');
   });
 
   it('should filter events for selected day', () => {

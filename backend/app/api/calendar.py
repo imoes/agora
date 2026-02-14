@@ -208,10 +208,9 @@ async def upsert_integration(
     integration.webdav_username = data.webdav_username
     if data.webdav_password is not None:
         integration.webdav_password = data.webdav_password
-    integration.google_client_id = data.google_client_id
-    integration.google_client_secret = data.google_client_secret
-    integration.google_refresh_token = data.google_refresh_token
-    integration.google_calendar_id = data.google_calendar_id
+    integration.google_email = data.google_email
+    if data.google_app_password is not None:
+        integration.google_app_password = data.google_app_password
     integration.outlook_server_url = data.outlook_server_url
     integration.outlook_username = data.outlook_username
     if data.outlook_password is not None:

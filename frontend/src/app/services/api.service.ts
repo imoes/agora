@@ -211,10 +211,8 @@ export class ApiService {
     webdav_url?: string;
     webdav_username?: string;
     webdav_password?: string;
-    google_client_id?: string;
-    google_client_secret?: string;
-    google_refresh_token?: string;
-    google_calendar_id?: string;
+    google_email?: string;
+    google_app_password?: string;
     outlook_server_url?: string;
     outlook_username?: string;
     outlook_password?: string;
