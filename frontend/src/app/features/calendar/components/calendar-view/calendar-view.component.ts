@@ -7,6 +7,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDividerModule } from '@angular/material/divider';
 import { RouterLink } from '@angular/router';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
 
@@ -36,6 +37,7 @@ interface CalendarEvent {
   imports: [
     CommonModule, FormsModule, RouterLink,
     MatIconModule, MatButtonModule, MatTooltipModule, MatMenuModule, MatDividerModule,
+    MatSnackBarModule,
   ],
   template: `
     <div class="calendar-page">
@@ -43,8 +45,8 @@ interface CalendarEvent {
       <div class="cal-header">
         <h2>Kalender</h2>
         <div class="cal-header-actions">
-          <button mat-icon-button matTooltip="Synchronisieren" (click)="syncCalendar()" *ngIf="integration?.provider && integration.provider !== 'internal'">
-            <mat-icon>sync</mat-icon>
+          <button mat-icon-button [matTooltip]="syncing ? 'Synchronisiere...' : 'Synchronisieren'" (click)="syncCalendar()" *ngIf="integration?.provider && integration.provider !== 'internal'" [disabled]="syncing">
+            <mat-icon [class.spinning]="syncing">sync</mat-icon>
           </button>
           <button mat-icon-button matTooltip="Einstellungen" (click)="showSettings = !showSettings">
             <mat-icon>settings</mat-icon>
@@ -536,6 +538,8 @@ interface CalendarEvent {
       color: #999;
       margin-top: 2px;
     }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spinning { animation: spin 1s linear infinite; }
   `],
 })
 export class CalendarViewComponent implements OnInit, OnDestroy {
@@ -576,7 +580,9 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   private subscriptions: Subscription[] = [];
 
-  constructor(private apiService: ApiService) {}
+  syncing = false;
+
+  constructor(private apiService: ApiService, private snackBar: MatSnackBar) {}
 
   ngOnInit(): void {
     this.buildCalendar();
@@ -837,7 +843,10 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
           this.outlookUsername = data.outlook_username || '';
         }
       },
-      error: () => {},
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Laden der Integration';
+        this.snackBar.open(detail, 'OK', { duration: 5000 });
+      },
     });
   }
 
@@ -863,6 +872,11 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       next: (integration) => {
         this.integration = integration;
         this.showSettings = false;
+        this.snackBar.open('Einstellungen gespeichert', 'OK', { duration: 2000 });
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Speichern der Einstellungen';
+        this.snackBar.open(detail, 'OK', { duration: 5000 });
       },
     });
   }
@@ -882,9 +896,22 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     const start = new Date(year, month, 1).toISOString();
     const end = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
 
+    this.syncing = true;
     this.apiService.syncCalendar(start, end).subscribe({
-      next: () => this.loadEvents(),
-      error: () => {},
+      next: (events) => {
+        this.syncing = false;
+        const count = Array.isArray(events) ? events.length : 0;
+        this.snackBar.open(
+          count > 0 ? `${count} Termin(e) synchronisiert` : 'Keine neuen Termine gefunden',
+          'OK', { duration: 3000 },
+        );
+        this.loadEvents();
+      },
+      error: (err) => {
+        this.syncing = false;
+        const detail = err.error?.detail || 'Synchronisierung fehlgeschlagen';
+        this.snackBar.open(detail, 'OK', { duration: 6000 });
+      },
     });
   }
 }
