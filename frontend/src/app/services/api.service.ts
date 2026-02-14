@@ -162,4 +162,27 @@ export class ApiService {
   getInvitationIcsUrl(channelId: string, invitationId: string): string {
     return `${this.baseUrl}/invitations/channel/${channelId}/ics/${invitationId}`;
   }
+
+  // Delete channel
+  deleteChannel(channelId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/channels/${channelId}`);
+  }
+
+  // Auth config (LDAP status)
+  getAuthConfig(): Observable<{ ldap_enabled: boolean; registration_enabled: boolean }> {
+    return this.http.get<any>(`${this.baseUrl}/auth/config`);
+  }
+
+  // Admin
+  getAdminStats(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/admin/stats`);
+  }
+
+  getAdminLdapConfig(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/admin/ldap-config`);
+  }
+
+  toggleUserAdmin(userId: string, isAdmin: boolean): Observable<any> {
+    return this.http.post(`${this.baseUrl}/admin/toggle-admin`, { user_id: userId, is_admin: isAdmin });
+  }
 }

@@ -16,6 +16,7 @@ httpx==0.28.1
 websockets==14.1
 aiosmtplib==3.0.2
 icalendar==6.1.0
+ldap3==2.9.1
 pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0

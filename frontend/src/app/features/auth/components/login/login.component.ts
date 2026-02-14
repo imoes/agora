@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { AuthService } from '@core/services/auth.service';
+import { ApiService } from '@services/api.service';
 
 @Component({
   selector: 'app-login',
@@ -43,7 +44,7 @@ import { AuthService } from '@core/services/auth.service';
             </button>
           </form>
         </mat-card-content>
-        <mat-card-actions align="end">
+        <mat-card-actions align="end" *ngIf="registrationEnabled">
           <a routerLink="/register">Noch kein Konto? Registrieren</a>
         </mat-card-actions>
       </mat-card>
@@ -88,16 +89,24 @@ import { AuthService } from '@core/services/auth.service';
     }
   `],
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   username = '';
   password = '';
   loading = false;
+  registrationEnabled = true;
 
   constructor(
     private authService: AuthService,
+    private apiService: ApiService,
     private router: Router,
     private snackBar: MatSnackBar
   ) {}
+
+  ngOnInit(): void {
+    this.apiService.getAuthConfig().subscribe((config) => {
+      this.registrationEnabled = config.registration_enabled;
+    });
+  }
 
   onLogin(): void {
     if (!this.username || !this.password) return;

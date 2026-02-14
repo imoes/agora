@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -29,6 +29,7 @@ async def create_channel(
         description=data.description,
         channel_type=data.channel_type,
         team_id=data.team_id,
+        scheduled_at=data.scheduled_at,
         sqlite_db_path="",  # will be set after flush
     )
     db.add(channel)
@@ -76,6 +77,7 @@ async def list_channels(
         select(Channel, func.count(ChannelMember.id).label("cnt"))
         .join(ChannelMember, Channel.id == ChannelMember.channel_id)
         .where(Channel.id.in_(my_channels))
+        .where(Channel.is_hidden == False)
     )
     if team_id:
         query = query.where(Channel.team_id == team_id)
@@ -128,6 +130,7 @@ async def list_channels(
                 unread_count=unread or 0,
                 invite_token=ch.invite_token,
                 last_activity_at=last_activity or ch.created_at,
+                scheduled_at=ch.scheduled_at,
             )
         )
 
@@ -173,6 +176,43 @@ async def get_channel(
         member_count=count,
         invite_token=channel.invite_token,
     )
+
+
+@router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_channel(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a channel. Only members can delete non-team channels."""
+    membership = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == current_user.id,
+            )
+        )
+    )
+    if not membership.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Not a channel member")
+
+    result = await db.execute(select(Channel).where(Channel.id == channel_id))
+    channel = result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    # Don't allow deleting team channels (managed by team)
+    if channel.channel_type == "team":
+        raise HTTPException(status_code=403, detail="Team channels cannot be deleted directly")
+
+    # Delete feed events for this channel
+    await db.execute(
+        sa_delete(FeedEvent).where(FeedEvent.channel_id == channel_id)
+    )
+
+    # Delete the channel (cascade deletes members, invitations)
+    await db.delete(channel)
+    await db.flush()
 
 
 @router.get("/{channel_id}/members")
@@ -294,6 +334,10 @@ async def find_or_create_direct_chat(
     existing_channel = result.scalar_one_or_none()
 
     if existing_channel:
+        # Unhide if it was hidden (e.g. from a video call)
+        if existing_channel.is_hidden:
+            existing_channel.is_hidden = False
+            await db.flush()
         count_result = await db.execute(
             select(func.count()).where(ChannelMember.channel_id == existing_channel.id)
         )

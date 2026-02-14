@@ -30,6 +30,8 @@ export interface User {
   avatar_path: string | null;
   status: UserStatus;
   status_message: string | null;
+  is_admin: boolean;
+  auth_source: string;
   created_at: string;
 }
 

@@ -1,4 +1,4 @@
-from sqlalchemy import String, Text
+from sqlalchemy import Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -16,6 +16,12 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
         String(20), nullable=False, server_default="offline"
     )
     status_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    auth_source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="local"
+    )  # 'local' or 'ldap'
 
     owned_teams = relationship("Team", back_populates="owner")
     team_memberships = relationship("TeamMember", back_populates="user")

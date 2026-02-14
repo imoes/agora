@@ -80,6 +80,13 @@ export const routes: Routes = [
             (m) => m.VideoRoomComponent
           ),
       },
+      {
+        path: 'admin',
+        loadComponent: () =>
+          import('./features/admin/components/admin-page/admin-page.component').then(
+            (m) => m.AdminPageComponent
+          ),
+      },
       { path: 'search', redirectTo: 'feed', pathMatch: 'full' },
       { path: '', redirectTo: 'feed', pathMatch: 'full' },
     ],
