@@ -19,7 +19,10 @@ class Channel(Base, UUIDPrimaryKey, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     channel_type: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="group"
-    )  # 'direct', 'group', 'team'
+    )  # 'direct', 'group', 'team', 'meeting'
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # For meeting/appointment channels
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType(),
         ForeignKey("teams.id", ondelete="CASCADE"),
@@ -29,6 +32,9 @@ class Channel(Base, UUIDPrimaryKey, TimestampMixin):
     invite_token: Mapped[str] = mapped_column(
         String(64), unique=True, nullable=False, default=_generate_invite_token
     )
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )  # Hidden until first message (e.g. auto-created for video calls)
 
     team = relationship("Team", back_populates="channels")
     members = relationship(

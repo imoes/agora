@@ -24,6 +24,8 @@ class UserOut(BaseModel):
     avatar_path: str | None = None
     status: str = "offline"
     status_message: str | None = None
+    is_admin: bool = False
+    auth_source: str = "local"
     created_at: datetime
 
     model_config = {"from_attributes": True}

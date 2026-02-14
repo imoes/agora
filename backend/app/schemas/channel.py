@@ -9,9 +9,10 @@ from app.schemas.user import UserOut
 class ChannelCreate(BaseModel):
     name: str
     description: str | None = None
-    channel_type: str = "group"  # 'direct', 'group', 'team'
+    channel_type: str = "group"  # 'direct', 'group', 'team', 'meeting'
     team_id: uuid.UUID | None = None
     member_ids: list[uuid.UUID] = []
+    scheduled_at: datetime | None = None  # For meeting channels
 
 
 class ChannelUpdate(BaseModel):
@@ -38,6 +39,7 @@ class ChannelOut(BaseModel):
     unread_count: int = 0
     invite_token: str | None = None
     last_activity_at: datetime | None = None
+    scheduled_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

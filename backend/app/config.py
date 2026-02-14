@@ -24,6 +24,21 @@ class Settings(BaseSettings):
     # Frontend URL for invitation links
     frontend_url: str = "http://localhost:4200"
 
+    # LDAP / Active Directory settings
+    ldap_enabled: bool = False
+    ldap_server: str = ""
+    ldap_port: int = 389
+    ldap_use_ssl: bool = False
+    ldap_bind_dn: str = ""
+    ldap_bind_password: str = ""
+    ldap_base_dn: str = ""
+    ldap_user_filter: str = "(sAMAccountName={username})"
+    ldap_group_dn: str = ""  # Required LDAP group for access
+    ldap_username_attr: str = "sAMAccountName"
+    ldap_email_attr: str = "mail"
+    ldap_display_name_attr: str = "displayName"
+    ldap_admin_group_dn: str = ""  # Optional: members get admin role
+
     model_config = {"env_file": ".env"}
 
 

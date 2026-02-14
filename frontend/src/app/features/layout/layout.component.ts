@@ -43,6 +43,10 @@ import { WebSocketService } from '@services/websocket.service';
             <mat-icon>groups</mat-icon>
             <span>Teams</span>
           </a>
+          <a *ngIf="currentUser?.is_admin" routerLink="/admin" routerLinkActive="active" class="nav-item">
+            <mat-icon>admin_panel_settings</mat-icon>
+            <span>Admin</span>
+          </a>
         </div>
         <div class="sidebar-bottom">
           <div class="nav-item user-menu" [matMenuTriggerFor]="userMenu">
@@ -117,10 +121,15 @@ import { WebSocketService } from '@services/websocket.service';
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
               <span>{{ sidebarMode === 'teams' ? 'Teams' : 'Chats' }}</span>
-              <button mat-icon-button (click)="toggleCallSearch($event)" class="call-search-btn"
-                      [class.active]="showCallSearch">
-                <mat-icon>add_call</mat-icon>
-              </button>
+              <div class="header-actions">
+                <button mat-icon-button (click)="openNewMeeting()" matTooltip="Neuer Termin" class="call-search-btn">
+                  <mat-icon>event</mat-icon>
+                </button>
+                <button mat-icon-button (click)="toggleCallSearch($event)" class="call-search-btn"
+                        [class.active]="showCallSearch">
+                  <mat-icon>add_call</mat-icon>
+                </button>
+              </div>
             </div>
 
             <!-- User search for calling -->
@@ -152,14 +161,17 @@ import { WebSocketService } from '@services/websocket.service';
                    class="chat-sidebar-item"
                    [class.active]="activeChannelId === ch.id"
                    [class.unread]="ch.unread_count > 0"
-                   (click)="openChat(ch.id)">
-                <div class="chat-sidebar-avatar" [class.team]="ch.channel_type === 'team'">
+                   (click)="openChat(ch.id)"
+                   (contextmenu)="onChatContextMenu($event, ch)">
+                <div class="chat-sidebar-avatar" [class.team]="ch.channel_type === 'team'" [class.meeting]="ch.channel_type === 'meeting'">
                   <mat-icon *ngIf="ch.channel_type === 'team'">tag</mat-icon>
-                  <span *ngIf="ch.channel_type !== 'team'">{{ ch.name?.charAt(0)?.toUpperCase() }}</span>
+                  <mat-icon *ngIf="ch.channel_type === 'meeting'">event</mat-icon>
+                  <span *ngIf="ch.channel_type !== 'team' && ch.channel_type !== 'meeting'">{{ ch.name?.charAt(0)?.toUpperCase() }}</span>
                 </div>
                 <div class="chat-sidebar-info">
                   <span class="chat-sidebar-name">{{ ch.team_name ? ch.team_name + ' / ' : '' }}{{ ch.name }}</span>
-                  <span class="chat-sidebar-meta">{{ ch.member_count }} Mitglieder</span>
+                  <span class="chat-sidebar-meta" *ngIf="ch.channel_type !== 'meeting'">{{ ch.member_count }} Mitglieder</span>
+                  <span class="chat-sidebar-meta" *ngIf="ch.channel_type === 'meeting' && ch.scheduled_at">{{ ch.scheduled_at | date:'dd.MM.yyyy HH:mm' }}</span>
                 </div>
                 <span *ngIf="ch.unread_count > 0" class="chat-unread-badge">{{ ch.unread_count }}</span>
               </div>
@@ -168,6 +180,15 @@ import { WebSocketService } from '@services/websocket.service';
               </div>
             </div>
           </aside>
+
+          <!-- Context Menu -->
+          <div class="context-menu" *ngIf="contextMenu.show"
+               [style.top.px]="contextMenu.y" [style.left.px]="contextMenu.x">
+            <button class="context-menu-item delete" (click)="deleteChat()">
+              <mat-icon>delete</mat-icon>
+              <span>Chat loeschen</span>
+            </button>
+          </div>
 
           <!-- Main Content -->
           <main class="content">
@@ -316,6 +337,14 @@ import { WebSocketService } from '@services/websocket.service';
     }
     .chat-sidebar-avatar.team {
       border-radius: 4px;
+    }
+    .chat-sidebar-avatar.meeting {
+      border-radius: 4px;
+      background: #e65100;
+    }
+    .header-actions {
+      display: flex;
+      gap: 0;
     }
     .chat-sidebar-info {
       flex: 1;
@@ -653,6 +682,32 @@ import { WebSocketService } from '@services/websocket.service';
     }
     .call-btn { width: 56px !important; height: 56px !important; }
     .call-btn.accept { background: #4caf50 !important; }
+    /* Context menu */
+    .context-menu {
+      position: fixed;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 200;
+      min-width: 160px;
+      padding: 4px 0;
+    }
+    .context-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 13px;
+      color: #333;
+    }
+    .context-menu-item:hover { background: var(--hover); }
+    .context-menu-item.delete { color: #d32f2f; }
+    .context-menu-item.delete:hover { background: #fbe9e7; }
+    .context-menu-item mat-icon { font-size: 18px; width: 18px; height: 18px; }
   `],
 })
 export class LayoutComponent implements OnInit, OnDestroy {
@@ -675,6 +730,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private searchSubject = new Subject<string>();
   @ViewChild('searchWrapper') searchWrapper!: ElementRef;
   @ViewChild('callSearchPanel') callSearchPanel!: ElementRef;
+  // Context menu
+  contextMenu = { show: false, x: 0, y: 0, channel: null as any };
   private subscriptions: Subscription[] = [];
   private ringAudio: HTMLAudioElement | null = null;
   private ringBlobUrl: string | null = null;
@@ -822,6 +879,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
         !this.searchWrapper.nativeElement.contains(target)) {
       this.showSearchDropdown = false;
     }
+    // Close context menu on any click
+    if (this.contextMenu.show) {
+      this.contextMenu.show = false;
+    }
   }
 
   loadChatChannels(): void {
@@ -911,6 +972,53 @@ export class LayoutComponent implements OnInit, OnDestroy {
     const fch = this.filteredChannels.find((c) => c.id === channelId);
     if (fch) {
       fch.unread_count = 0;
+    }
+  }
+
+  openNewMeeting(): void {
+    const name = prompt('Termin-Name:');
+    if (!name) return;
+    const dateStr = prompt('Datum und Uhrzeit (z.B. 2026-03-15 14:00):');
+    if (!dateStr) return;
+    const scheduledAt = new Date(dateStr);
+    if (isNaN(scheduledAt.getTime())) {
+      alert('Ungueltiges Datum');
+      return;
+    }
+    this.apiService.createChannel({
+      name,
+      channel_type: 'meeting',
+      scheduled_at: scheduledAt.toISOString(),
+    }).subscribe((channel) => {
+      this.loadChatChannels();
+      this.router.navigate(['/chat', channel.id]);
+    });
+  }
+
+  onChatContextMenu(event: MouseEvent, channel: any): void {
+    event.preventDefault();
+    // Don't allow deleting team channels
+    if (channel.channel_type === 'team') return;
+    this.contextMenu = {
+      show: true,
+      x: event.clientX,
+      y: event.clientY,
+      channel,
+    };
+  }
+
+  deleteChat(): void {
+    if (!this.contextMenu.channel) return;
+    const ch = this.contextMenu.channel;
+    this.contextMenu.show = false;
+    if (confirm(`Chat "${ch.name}" wirklich loeschen?`)) {
+      this.apiService.deleteChannel(ch.id).subscribe(() => {
+        this.chatChannels = this.chatChannels.filter((c) => c.id !== ch.id);
+        this.updateFilteredChannels();
+        if (this.activeChannelId === ch.id) {
+          this.router.navigate(['/chat']);
+        }
+      });
     }
   }
 
