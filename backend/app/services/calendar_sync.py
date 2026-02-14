@@ -204,19 +204,26 @@ async def _google_ensure_token(integration: CalendarIntegration) -> str:
         return integration.google_access_token
 
     # Refresh
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(GOOGLE_TOKEN_URL, data={
-            "client_id": app_settings.google_client_id,
-            "client_secret": app_settings.google_client_secret,
-            "refresh_token": integration.google_refresh_token,
-            "grant_type": "refresh_token",
-        })
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(GOOGLE_TOKEN_URL, data={
+                "client_id": app_settings.google_client_id,
+                "client_secret": app_settings.google_client_secret,
+                "refresh_token": integration.google_refresh_token,
+                "grant_type": "refresh_token",
+            })
+    except httpx.HTTPError as exc:
+        logger.warning("Google token refresh network error: %s", exc)
+        raise ProviderError("google", 503, f"Could not reach Google servers: {exc}")
+
     if resp.status_code != 200:
         logger.warning("Google token refresh failed: %d – %s", resp.status_code, resp.text[:300])
         raise ProviderError("google", 401, "Google token refresh failed – please reconnect your account")
 
     data = resp.json()
-    integration.google_access_token = data["access_token"]
+    integration.google_access_token = data.get("access_token")
+    if not integration.google_access_token:
+        raise ProviderError("google", 401, "Google token refresh returned no access token")
     integration.google_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=data.get("expires_in", 3600))
     # Note: caller must flush the session to persist updated tokens
     return data["access_token"]
@@ -236,12 +243,17 @@ async def google_list_events(
         "orderBy": "startTime",
         "maxResults": "250",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
-            params=params,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("Google Calendar API network error: %s", exc)
+        raise ProviderError("google", 503, f"Could not reach Google Calendar API: {exc}")
+
     if resp.status_code >= 400:
         detail = resp.text[:200]
         if resp.status_code == 401:

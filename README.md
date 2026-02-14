@@ -46,7 +46,7 @@ Agora is a self-hosted collaboration platform with chat, video conferencing, fil
    docker compose up -d --build
    ```
 
-5. Open in browser: [http://localhost](http://localhost)
+5. Open in browser: [https://localhost](https://localhost)
 
 ### Services
 
@@ -265,7 +265,7 @@ Generate a secure secret with: `openssl rand -hex 32`
 
 ### Email (SMTP)
 
-In development mode, MailHog runs as an email catcher at [http://localhost:8025](http://localhost:8025). For production, configure a real SMTP server:
+In development mode, MailHog runs as an email catcher at [https://localhost:8025](https://localhost:8025). For production, configure a real SMTP server:
 
 ```env
 SMTP_HOST=smtp.gmail.com
@@ -296,7 +296,7 @@ LDAP_USER_FILTER=(sAMAccountName={username})
 
 Agora can sync events with Google Calendar. This requires a one-time setup of OAuth2 credentials (~10 minutes).
 
-> **Important:** The `FRONTEND_URL` in your `.env` must be the URL where you access Agora in the browser. For Docker this is `http://localhost` by default. The **redirect URI** in Google Console must match: `{FRONTEND_URL}/calendar/google/callback`
+> **Important:** The `FRONTEND_URL` in your `.env` must be the URL where you access Agora in the browser. For Docker this is `https://localhost` by default. The **redirect URI** in Google Console must match: `{FRONTEND_URL}/calendar/google/callback`
 
 ### Step 1: Create a Google Cloud Project
 
@@ -336,10 +336,10 @@ Agora can sync events with Google Calendar. This requires a one-time setup of OA
 4. Name: e.g. `Agora Web Client`
 5. **Authorized redirect URIs** - add:
    ```
-   http://localhost/calendar/google/callback
+   https://localhost/calendar/google/callback
    ```
    > **Important:** This URI must EXACTLY match `{FRONTEND_URL}/calendar/google/callback`!
-   > - Docker (default): `http://localhost/calendar/google/callback`
+   > - Docker (default): `https://localhost/calendar/google/callback`
    > - Without Docker (ng serve): `http://localhost:4200/calendar/google/callback`
    > - Production: `https://agora.your-domain.com/calendar/google/callback`
 6. Click **"Create"**
@@ -352,7 +352,7 @@ Add the values to your `.env` file:
 ```env
 GOOGLE_CLIENT_ID=123456789-xxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxx
-FRONTEND_URL=http://localhost
+FRONTEND_URL=https://localhost
 ```
 
 Restart the containers:
@@ -378,7 +378,7 @@ docker compose down && docker compose up -d --build
 | `redirect_uri_mismatch` | The redirect URI in Google Console must EXACTLY match `{FRONTEND_URL}/calendar/google/callback`. Check HTTP vs. HTTPS and port number. |
 | `access_denied` | Make sure your email is added as a test user (Step 3.7). |
 | `Google OAuth not available` | `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are not set in `.env`. |
-| Page not reachable after Google login | `FRONTEND_URL` doesn't match the actual app URL. For Docker: `http://localhost` |
+| Page not reachable after Google login | `FRONTEND_URL` doesn't match the actual app URL. For Docker: `https://localhost` |
 
 ---
 
