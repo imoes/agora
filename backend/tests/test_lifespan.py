@@ -46,6 +46,27 @@ CREATE TABLE users (
 )"""
 
 
+_OLD_CALENDAR_INTEGRATIONS_DDL = """\
+CREATE TABLE calendar_integrations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'internal',
+    webdav_url TEXT,
+    webdav_username TEXT,
+    webdav_password TEXT,
+    google_client_id TEXT,
+    google_client_secret TEXT,
+    google_refresh_token TEXT,
+    google_calendar_id TEXT,
+    outlook_server_url TEXT,
+    outlook_username TEXT,
+    outlook_password TEXT,
+    last_sync_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"""
+
+
 def _get_column_names(connection, table):
     inspector = sa_inspect(connection)
     return {c["name"] for c in inspector.get_columns(table)}
@@ -182,3 +203,30 @@ class TestAddMissingColumns:
 
             cols = await conn.run_sync(lambda c: _get_column_names(c, "channels"))
             assert "is_hidden" in cols
+
+    @pytest.mark.asyncio
+    async def test_adds_google_caldav_columns_to_calendar_integrations(self, engine):
+        """Old calendar_integrations with OAuth2 fields gets new CalDAV columns."""
+        async with engine.begin() as conn:
+            await conn.execute(text(_OLD_CHANNELS_DDL))
+            await conn.execute(text(_OLD_USERS_DDL))
+            await conn.execute(text(_OLD_CALENDAR_INTEGRATIONS_DDL))
+            await conn.execute(text(
+                "INSERT INTO calendar_integrations (id, user_id, provider)"
+                " VALUES ('ci1', 'u1', 'google')"
+            ))
+
+            await conn.run_sync(_add_missing_columns)
+
+            cols = await conn.run_sync(
+                lambda c: _get_column_names(c, "calendar_integrations")
+            )
+            assert "google_email" in cols
+            assert "google_app_password" in cols
+
+            row = (await conn.execute(text(
+                "SELECT google_email, google_app_password"
+                " FROM calendar_integrations WHERE id = 'ci1'"
+            ))).fetchone()
+            assert row[0] is None
+            assert row[1] is None

@@ -29,6 +29,17 @@ def _add_missing_columns(connection):
             "ALTER TABLE channels ADD COLUMN is_hidden BOOLEAN DEFAULT false"
         ))
 
+    if "calendar_integrations" in inspector.get_table_names():
+        cal_cols = {c["name"] for c in inspector.get_columns("calendar_integrations")}
+        if "google_email" not in cal_cols:
+            connection.execute(text(
+                "ALTER TABLE calendar_integrations ADD COLUMN google_email VARCHAR(200)"
+            ))
+        if "google_app_password" not in cal_cols:
+            connection.execute(text(
+                "ALTER TABLE calendar_integrations ADD COLUMN google_app_password VARCHAR(200)"
+            ))
+
     user_cols = {c["name"] for c in inspector.get_columns("users")}
     if "is_admin" not in user_cols:
         connection.execute(text(
