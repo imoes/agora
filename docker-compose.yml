@@ -61,6 +61,7 @@ services:
       LDAP_DISPLAY_NAME_ATTR: ${LDAP_DISPLAY_NAME_ATTR:-displayName}
       LDAP_ADMIN_GROUP_DN: ${LDAP_ADMIN_GROUP_DN:-}
     volumes:
+      - ./backend:/app
       - chat_data:/data/chats
       - upload_data:/data/uploads
     depends_on:
