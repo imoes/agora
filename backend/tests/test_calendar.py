@@ -1,7 +1,6 @@
-"""Tests fuer die Calendar-API (Events + Integration)."""
+"""Tests fuer die Calendar-API (Events + Integration + Video-Call)."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -72,7 +71,6 @@ class TestCalendarEvents:
         headers = auth_headers(token)
 
         now = datetime.now(timezone.utc)
-        # Create two events
         for title in ("Event A", "Event B"):
             await client.post(
                 "/api/calendar/events",
@@ -105,7 +103,6 @@ class TestCalendarEvents:
         headers = auth_headers(token)
 
         base = datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
-        # Event inside range
         await client.post(
             "/api/calendar/events",
             json={
@@ -115,7 +112,6 @@ class TestCalendarEvents:
             },
             headers=headers,
         )
-        # Event outside range
         await client.post(
             "/api/calendar/events",
             json={
@@ -220,7 +216,6 @@ class TestCalendarEvents:
         resp = await client.delete(f"/api/calendar/events/{event_id}", headers=headers)
         assert resp.status_code == 204
 
-        # Verify it's gone
         resp2 = await client.get(f"/api/calendar/events/{event_id}", headers=headers)
         assert resp2.status_code == 404
 
@@ -231,7 +226,6 @@ class TestCalendarEvents:
         auth2 = await register_user(client, username="bob", email="bob@test.local")
 
         now = datetime.now(timezone.utc)
-        # Alice creates an event
         await client.post(
             "/api/calendar/events",
             json={
@@ -242,7 +236,6 @@ class TestCalendarEvents:
             headers=auth_headers(auth1["access_token"]),
         )
 
-        # Bob should not see Alice's event
         resp = await client.get(
             "/api/calendar/events",
             params={
@@ -272,6 +265,53 @@ class TestCalendarEvents:
         )
         assert resp.status_code == 201
         assert resp.json()["all_day"] is True
+
+    @pytest.mark.asyncio
+    async def test_create_event_with_video_call(self, client: AsyncClient, _dirs):
+        """create_video_call=True should create a meeting channel and put a
+        /video/<uuid> link in the location field."""
+        auth = await register_user(client)
+        token = auth["access_token"]
+
+        now = datetime.now(timezone.utc)
+        resp = await client.post(
+            "/api/calendar/events",
+            json={
+                "title": "Team Sync",
+                "start_time": now.isoformat(),
+                "end_time": (now + timedelta(hours=1)).isoformat(),
+                "create_video_call": True,
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert "/video/" in data["location"]
+        assert data["channel_id"] is not None
+
+    @pytest.mark.asyncio
+    async def test_create_event_with_video_call_preserves_existing_location(
+        self, client: AsyncClient, _dirs
+    ):
+        auth = await register_user(client)
+        token = auth["access_token"]
+
+        now = datetime.now(timezone.utc)
+        resp = await client.post(
+            "/api/calendar/events",
+            json={
+                "title": "Offsite",
+                "start_time": now.isoformat(),
+                "end_time": (now + timedelta(hours=1)).isoformat(),
+                "location": "Berlin HQ",
+                "create_video_call": True,
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert "Berlin HQ" in data["location"]
+        assert "/video/" in data["location"]
 
 
 # ---------------------------------------------------------------------------
@@ -325,24 +365,73 @@ class TestCalendarIntegration:
         assert data["provider"] == "webdav"
         assert data["webdav_url"] == "https://cal.example.com/dav/"
         assert data["webdav_username"] == "user1"
-        # Password should NOT be returned in the response
         assert "webdav_password" not in data
+
+    @pytest.mark.asyncio
+    async def test_create_google_integration(self, client: AsyncClient, _dirs):
+        auth = await register_user(client)
+        headers = auth_headers(auth["access_token"])
+
+        resp = await client.put(
+            "/api/calendar/integration",
+            json={
+                "provider": "google",
+                "google_client_id": "my-client-id.apps.googleusercontent.com",
+                "google_client_secret": "my-secret",
+                "google_refresh_token": "1//refresh-tok",
+                "google_calendar_id": "primary",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["provider"] == "google"
+        assert data["google_client_id"] == "my-client-id.apps.googleusercontent.com"
+        assert data["google_calendar_id"] == "primary"
+        # Secret and tokens should NOT be returned
+        assert "google_client_secret" not in data
+        assert "google_refresh_token" not in data
+
+    @pytest.mark.asyncio
+    async def test_create_outlook_exchange_integration(self, client: AsyncClient, _dirs):
+        auth = await register_user(client)
+        headers = auth_headers(auth["access_token"])
+
+        resp = await client.put(
+            "/api/calendar/integration",
+            json={
+                "provider": "outlook",
+                "outlook_server_url": "https://mail.contoso.com",
+                "outlook_username": "CONTOSO\\jdoe",
+                "outlook_password": "s3cret",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["provider"] == "outlook"
+        assert data["outlook_server_url"] == "https://mail.contoso.com"
+        assert data["outlook_username"] == "CONTOSO\\jdoe"
+        # Password should NOT be returned
+        assert "outlook_password" not in data
 
     @pytest.mark.asyncio
     async def test_update_integration(self, client: AsyncClient, _dirs):
         auth = await register_user(client)
         headers = auth_headers(auth["access_token"])
 
-        # Create
         await client.put(
             "/api/calendar/integration",
             json={"provider": "internal"},
             headers=headers,
         )
-        # Update to google
         resp = await client.put(
             "/api/calendar/integration",
-            json={"provider": "google", "google_calendar_id": "primary"},
+            json={
+                "provider": "google",
+                "google_client_id": "cid",
+                "google_calendar_id": "primary",
+            },
             headers=headers,
         )
         assert resp.status_code == 200

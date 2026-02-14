@@ -12,6 +12,7 @@ class CalendarEventCreate(BaseModel):
     all_day: bool = False
     location: str | None = None
     channel_id: uuid.UUID | None = None
+    create_video_call: bool = False
 
 
 class CalendarEventUpdate(BaseModel):
@@ -46,11 +47,13 @@ class CalendarIntegrationCreate(BaseModel):
     webdav_url: str | None = None
     webdav_username: str | None = None
     webdav_password: str | None = None
-    google_token: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
     google_refresh_token: str | None = None
     google_calendar_id: str | None = None
-    outlook_token: str | None = None
-    outlook_refresh_token: str | None = None
+    outlook_server_url: str | None = None
+    outlook_username: str | None = None
+    outlook_password: str | None = None
 
 
 class CalendarIntegrationOut(BaseModel):
@@ -59,7 +62,10 @@ class CalendarIntegrationOut(BaseModel):
     provider: str
     webdav_url: str | None = None
     webdav_username: str | None = None
+    google_client_id: str | None = None
     google_calendar_id: str | None = None
+    outlook_server_url: str | None = None
+    outlook_username: str | None = None
     last_sync_at: datetime | None = None
     created_at: datetime
 

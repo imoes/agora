@@ -189,6 +189,7 @@ export class ApiService {
     all_day?: boolean;
     location?: string;
     channel_id?: string;
+    create_video_call?: boolean;
   }): Observable<any> {
     return this.http.post(`${this.baseUrl}/calendar/events`, data);
   }
@@ -210,11 +211,13 @@ export class ApiService {
     webdav_url?: string;
     webdav_username?: string;
     webdav_password?: string;
-    google_token?: string;
+    google_client_id?: string;
+    google_client_secret?: string;
     google_refresh_token?: string;
     google_calendar_id?: string;
-    outlook_token?: string;
-    outlook_refresh_token?: string;
+    outlook_server_url?: string;
+    outlook_username?: string;
+    outlook_password?: string;
   }): Observable<any> {
     return this.http.put(`${this.baseUrl}/calendar/integration`, data);
   }

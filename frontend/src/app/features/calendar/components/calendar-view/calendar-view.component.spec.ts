@@ -1,4 +1,5 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { CalendarViewComponent } from './calendar-view.component';
 import { ApiService } from '@services/api.service';
 import { of, throwError } from 'rxjs';
@@ -31,7 +32,10 @@ describe('CalendarViewComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [CalendarViewComponent, NoopAnimationsModule],
-      providers: [{ provide: ApiService, useValue: apiMock }],
+      providers: [
+        { provide: ApiService, useValue: apiMock },
+        provideRouter([]),
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(CalendarViewComponent);
@@ -230,6 +234,80 @@ describe('CalendarViewComponent', () => {
     const label = component.selectedDateLabel;
     expect(label).toContain('2026');
     expect(label).toContain('14');
+  });
+
+  it('should send create_video_call flag when checkbox is checked', () => {
+    component.openNewEventForm();
+    component.eventTitle = 'Video Meeting';
+    component.eventCreateVideoCall = true;
+    component.saveEvent();
+    expect(apiMock.createCalendarEvent).toHaveBeenCalled();
+    const callData = apiMock.createCalendarEvent.mock.calls[0][0];
+    expect(callData.create_video_call).toBe(true);
+  });
+
+  it('should reset eventCreateVideoCall on new event form', () => {
+    component.eventCreateVideoCall = true;
+    component.openNewEventForm();
+    expect(component.eventCreateVideoCall).toBe(false);
+  });
+
+  it('should detect video links in location', () => {
+    expect(component.isVideoLink('/video/abc-123-def')).toBe(true);
+    expect(component.isVideoLink('Room A')).toBe(false);
+    expect(component.isVideoLink('')).toBe(false);
+  });
+
+  it('should extract video link path from location', () => {
+    expect(component.getVideoLink('/video/abc-123-def')).toBe('/video/abc-123-def');
+    expect(component.getVideoLink('Berlin HQ | /video/abc-123-def')).toBe('/video/abc-123-def');
+    expect(component.getVideoLink('Room A')).toBe('');
+  });
+
+  it('should save Google OAuth2 settings with client credentials', () => {
+    component.settingsProvider = 'google';
+    component.googleClientId = 'my-client-id';
+    component.googleClientSecret = 'my-secret';
+    component.googleRefreshToken = 'refresh-tok';
+    component.googleCalendarId = 'primary';
+    component.saveSettings();
+    expect(apiMock.saveCalendarIntegration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'google',
+        google_client_id: 'my-client-id',
+        google_client_secret: 'my-secret',
+        google_refresh_token: 'refresh-tok',
+        google_calendar_id: 'primary',
+      })
+    );
+  });
+
+  it('should save Outlook Exchange settings with URL, username, password', () => {
+    component.settingsProvider = 'outlook';
+    component.outlookServerUrl = 'https://mail.contoso.com';
+    component.outlookUsername = 'CONTOSO\\jdoe';
+    component.outlookPassword = 's3cret';
+    component.saveSettings();
+    expect(apiMock.saveCalendarIntegration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'outlook',
+        outlook_server_url: 'https://mail.contoso.com',
+        outlook_username: 'CONTOSO\\jdoe',
+        outlook_password: 's3cret',
+      })
+    );
+  });
+
+  it('should load integration and populate new fields', () => {
+    apiMock.getCalendarIntegration.mockReturnValue(of({
+      provider: 'outlook',
+      outlook_server_url: 'https://mail.example.com',
+      outlook_username: 'user@example.com',
+    }));
+    component.loadIntegration();
+    expect(component.settingsProvider).toBe('outlook');
+    expect(component.outlookServerUrl).toBe('https://mail.example.com');
+    expect(component.outlookUsername).toBe('user@example.com');
   });
 
   it('should filter events for selected day', () => {

@@ -2,12 +2,17 @@
 
 Provides a thin abstraction over different calendar back-ends so the
 API layer can create / read / update / delete events in a uniform way.
+
+Supported providers:
+  - WebDAV / CalDAV  (URL + username + password)
+  - Google Calendar  (OAuth2 client_id + client_secret + refresh_token)
+  - Outlook Exchange (EWS server URL + username + password)
 """
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -18,6 +23,7 @@ from app.models.calendar import CalendarIntegration
 # ---------------------------------------------------------------------------
 # Generic helpers
 # ---------------------------------------------------------------------------
+
 
 def _ical_event(
     uid: str,
@@ -49,6 +55,7 @@ def _ical_event(
 # ---------------------------------------------------------------------------
 # WebDAV / CalDAV
 # ---------------------------------------------------------------------------
+
 
 async def webdav_list_events(
     integration: CalendarIntegration,
@@ -93,9 +100,6 @@ def _parse_caldav_response(xml_text: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     try:
         from icalendar import Calendar as iCal
-
-        # Extract calendar-data CDATA blocks (simplified parser)
-        import re
 
         for match in re.finditer(r"<[^>]*calendar-data[^>]*>(.*?)</", xml_text, re.S):
             cal = iCal.from_ical(match.group(1))
@@ -157,10 +161,30 @@ async def webdav_delete_event(integration: CalendarIntegration, uid: str) -> boo
 
 
 # ---------------------------------------------------------------------------
-# Google Calendar (via REST API)
+# Google Calendar  (OAuth2 client_id + client_secret + refresh_token)
 # ---------------------------------------------------------------------------
 
 GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+async def _google_access_token(integration: CalendarIntegration) -> str | None:
+    """Exchange a refresh_token for a short-lived access token."""
+    if not (integration.google_client_id and integration.google_client_secret and integration.google_refresh_token):
+        return None
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": integration.google_client_id,
+                "client_secret": integration.google_client_secret,
+                "refresh_token": integration.google_refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+    if resp.status_code >= 400:
+        return None
+    return resp.json().get("access_token")
 
 
 async def google_list_events(
@@ -169,7 +193,8 @@ async def google_list_events(
     range_end: datetime,
 ) -> list[dict[str, Any]]:
     """List events from Google Calendar API."""
-    if not integration.google_token:
+    token = await _google_access_token(integration)
+    if not token:
         return []
     calendar_id = integration.google_calendar_id or "primary"
     url = f"{GOOGLE_CALENDAR_BASE}/calendars/{calendar_id}/events"
@@ -179,7 +204,7 @@ async def google_list_events(
         "singleEvents": "true",
         "orderBy": "startTime",
     }
-    headers = {"Authorization": f"Bearer {integration.google_token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(url, params=params, headers=headers)
     if resp.status_code >= 400:
@@ -211,7 +236,8 @@ async def google_create_event(
     location: str | None = None,
 ) -> str | None:
     """Create a Google Calendar event. Returns external event ID."""
-    if not integration.google_token:
+    token = await _google_access_token(integration)
+    if not token:
         return None
     calendar_id = integration.google_calendar_id or "primary"
     url = f"{GOOGLE_CALENDAR_BASE}/calendars/{calendar_id}/events"
@@ -225,7 +251,7 @@ async def google_create_event(
     if location:
         body["location"] = location
     headers = {
-        "Authorization": f"Bearer {integration.google_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(timeout=15) as client:
@@ -236,21 +262,55 @@ async def google_create_event(
 
 
 async def google_delete_event(integration: CalendarIntegration, event_id: str) -> bool:
-    if not integration.google_token:
+    token = await _google_access_token(integration)
+    if not token:
         return False
     calendar_id = integration.google_calendar_id or "primary"
     url = f"{GOOGLE_CALENDAR_BASE}/calendars/{calendar_id}/events/{event_id}"
-    headers = {"Authorization": f"Bearer {integration.google_token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.delete(url, headers=headers)
     return resp.status_code < 400
 
 
 # ---------------------------------------------------------------------------
-# Outlook / Microsoft Graph
+# Outlook / Exchange Web Services (EWS) with username + password
 # ---------------------------------------------------------------------------
 
-GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+def _ews_soap(action_body: str) -> str:
+    """Wrap an EWS action in a SOAP envelope."""
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"'
+        ' xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"'
+        ' xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+        "<soap:Body>" + action_body + "</soap:Body>"
+        "</soap:Envelope>"
+    )
+
+
+def _ews_date(dt: datetime) -> str:
+    """Format datetime for EWS."""
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+async def _ews_request(
+    integration: CalendarIntegration, soap_body: str
+) -> httpx.Response | None:
+    """Send an EWS SOAP request with basic auth."""
+    if not (integration.outlook_server_url and integration.outlook_username and integration.outlook_password):
+        return None
+    url = integration.outlook_server_url.rstrip("/") + "/EWS/Exchange.asmx"
+    auth = (integration.outlook_username, integration.outlook_password)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            url,
+            content=_ews_soap(soap_body),
+            headers={"Content-Type": "text/xml; charset=utf-8"},
+            auth=auth,
+        )
+    return resp
 
 
 async def outlook_list_events(
@@ -258,34 +318,69 @@ async def outlook_list_events(
     range_start: datetime,
     range_end: datetime,
 ) -> list[dict[str, Any]]:
-    """List events from Microsoft Graph Calendar API."""
-    if not integration.outlook_token:
+    """List events from Exchange via EWS FindItem."""
+    body = (
+        '<m:FindItem Traversal="Shallow">'
+        "  <m:ItemShape>"
+        "    <t:BaseShape>Default</t:BaseShape>"
+        "    <t:AdditionalProperties>"
+        '      <t:FieldURI FieldURI="item:Subject"/>'
+        '      <t:FieldURI FieldURI="item:Body"/>'
+        '      <t:FieldURI FieldURI="calendar:Start"/>'
+        '      <t:FieldURI FieldURI="calendar:End"/>'
+        '      <t:FieldURI FieldURI="calendar:Location"/>'
+        "    </t:AdditionalProperties>"
+        "  </m:ItemShape>"
+        "  <m:CalendarView"
+        f'    StartDate="{_ews_date(range_start)}"'
+        f'    EndDate="{_ews_date(range_end)}"/>'
+        "  <m:ParentFolderIds>"
+        '    <t:DistinguishedFolderId Id="calendar"/>'
+        "  </m:ParentFolderIds>"
+        "</m:FindItem>"
+    )
+    resp = await _ews_request(integration, body)
+    if resp is None or resp.status_code >= 400:
         return []
-    url = f"{GRAPH_BASE}/me/calendarview"
-    params = {
-        "startDateTime": range_start.isoformat(),
-        "endDateTime": range_end.isoformat(),
-        "$orderby": "start/dateTime",
-    }
-    headers = {"Authorization": f"Bearer {integration.outlook_token}"}
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url, params=params, headers=headers)
-    if resp.status_code >= 400:
-        return []
-    data = resp.json()
-    events = []
-    for item in data.get("value", []):
-        events.append(
-            {
-                "external_id": item.get("id", ""),
-                "title": item.get("subject", ""),
-                "description": (item.get("body") or {}).get("content"),
-                "start_time": (item.get("start") or {}).get("dateTime"),
-                "end_time": (item.get("end") or {}).get("dateTime"),
-                "location": (item.get("location") or {}).get("displayName"),
-            }
-        )
+    return _parse_ews_find_response(resp.text)
+
+
+def _parse_ews_find_response(xml_text: str) -> list[dict[str, Any]]:
+    """Best-effort parse of EWS FindItem CalendarView response."""
+    events: list[dict[str, Any]] = []
+    try:
+        # Extract CalendarItem blocks
+        for match in re.finditer(
+            r"<t:CalendarItem>(.*?)</t:CalendarItem>", xml_text, re.S
+        ):
+            block = match.group(1)
+            item_id = ""
+            id_match = re.search(r'<t:ItemId Id="([^"]*)"', block)
+            if id_match:
+                item_id = id_match.group(1)
+            subject = _ews_extract(block, "t:Subject")
+            start = _ews_extract(block, "t:Start")
+            end = _ews_extract(block, "t:End")
+            location = _ews_extract(block, "t:Location")
+            events.append(
+                {
+                    "external_id": item_id,
+                    "title": subject or "",
+                    "description": None,
+                    "start_time": start,
+                    "end_time": end,
+                    "location": location or None,
+                }
+            )
+    except Exception:
+        pass
     return events
+
+
+def _ews_extract(xml: str, tag: str) -> str:
+    """Extract text content of an XML tag."""
+    m = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", xml, re.S)
+    return m.group(1).strip() if m else ""
 
 
 async def outlook_create_event(
@@ -296,35 +391,44 @@ async def outlook_create_event(
     description: str | None = None,
     location: str | None = None,
 ) -> str | None:
-    """Create an Outlook calendar event. Returns external event ID."""
-    if not integration.outlook_token:
-        return None
-    url = f"{GRAPH_BASE}/me/events"
-    body: dict[str, Any] = {
-        "subject": title,
-        "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
-        "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
-    }
+    """Create a calendar item via EWS CreateItem. Returns ItemId."""
+    body_elem = ""
     if description:
-        body["body"] = {"contentType": "text", "content": description}
+        body_elem = (
+            f"<t:Body BodyType='Text'>{description}</t:Body>"
+        )
+    location_elem = ""
     if location:
-        body["location"] = {"displayName": location}
-    headers = {
-        "Authorization": f"Bearer {integration.outlook_token}",
-        "Content-Type": "application/json",
-    }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, json=body, headers=headers)
-    if resp.status_code < 400:
-        return resp.json().get("id")
-    return None
+        location_elem = f"<t:Location>{location}</t:Location>"
+    body = (
+        '<m:CreateItem SendMeetingInvitations="SendToNone">'
+        "  <m:Items>"
+        "    <t:CalendarItem>"
+        f"      <t:Subject>{title}</t:Subject>"
+        f"      {body_elem}"
+        f"      <t:Start>{_ews_date(start)}</t:Start>"
+        f"      <t:End>{_ews_date(end)}</t:End>"
+        f"      {location_elem}"
+        "    </t:CalendarItem>"
+        "  </m:Items>"
+        "</m:CreateItem>"
+    )
+    resp = await _ews_request(integration, body)
+    if resp is None or resp.status_code >= 400:
+        return None
+    # Extract ItemId from response
+    m = re.search(r'<t:ItemId Id="([^"]*)"', resp.text)
+    return m.group(1) if m else None
 
 
-async def outlook_delete_event(integration: CalendarIntegration, event_id: str) -> bool:
-    if not integration.outlook_token:
-        return False
-    url = f"{GRAPH_BASE}/me/events/{event_id}"
-    headers = {"Authorization": f"Bearer {integration.outlook_token}"}
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.delete(url, headers=headers)
-    return resp.status_code < 400
+async def outlook_delete_event(integration: CalendarIntegration, item_id: str) -> bool:
+    """Delete a calendar item via EWS DeleteItem."""
+    body = (
+        '<m:DeleteItem DeleteType="MoveToDeletedItems">'
+        "  <m:ItemIds>"
+        f'    <t:ItemId Id="{item_id}"/>'
+        "  </m:ItemIds>"
+        "</m:DeleteItem>"
+    )
+    resp = await _ews_request(integration, body)
+    return resp is not None and resp.status_code < 400
