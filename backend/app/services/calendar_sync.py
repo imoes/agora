@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -176,17 +176,50 @@ async def webdav_delete_event(integration: CalendarIntegration, uid: str) -> boo
 
 
 # ---------------------------------------------------------------------------
-# Google Calendar  (CalDAV with Google account email + app password)
+# Google Calendar  (REST API v3 with OAuth 2.0)
 # ---------------------------------------------------------------------------
 
-GOOGLE_CALDAV_BASE = "https://apidata.googleusercontent.com/caldav/v2"
+GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar"
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 
 
-def _google_caldav_url(integration: CalendarIntegration) -> str | None:
-    """Build the CalDAV URL for Google Calendar."""
-    if not integration.google_email:
-        return None
-    return f"{GOOGLE_CALDAV_BASE}/{integration.google_email}/events/"
+async def _google_ensure_token(integration: CalendarIntegration) -> str:
+    """Return a valid access token, refreshing if expired.
+
+    Raises ProviderError when refresh fails.
+    """
+    if not integration.google_refresh_token:
+        raise ProviderError("google", 401, "Google account not connected – please reconnect via settings")
+
+    from app.config import settings as app_settings
+
+    # Check if access token is still valid (with 60s safety margin)
+    if (
+        integration.google_access_token
+        and integration.google_token_expiry
+        and integration.google_token_expiry > datetime.now(timezone.utc) + timedelta(seconds=60)
+    ):
+        return integration.google_access_token
+
+    # Refresh
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(GOOGLE_TOKEN_URL, data={
+            "client_id": app_settings.google_client_id,
+            "client_secret": app_settings.google_client_secret,
+            "refresh_token": integration.google_refresh_token,
+            "grant_type": "refresh_token",
+        })
+    if resp.status_code != 200:
+        logger.warning("Google token refresh failed: %d – %s", resp.status_code, resp.text[:300])
+        raise ProviderError("google", 401, "Google token refresh failed – please reconnect your account")
+
+    data = resp.json()
+    integration.google_access_token = data["access_token"]
+    integration.google_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=data.get("expires_in", 3600))
+    # Note: caller must flush the session to persist updated tokens
+    return data["access_token"]
 
 
 async def google_list_events(
@@ -194,42 +227,45 @@ async def google_list_events(
     range_start: datetime,
     range_end: datetime,
 ) -> list[dict[str, Any]]:
-    """List events from Google Calendar via CalDAV."""
-    caldav_url = _google_caldav_url(integration)
-    if not caldav_url or not integration.google_app_password:
-        return []
-    body = (
-        '<?xml version="1.0" encoding="utf-8" ?>'
-        '<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">'
-        "  <D:prop><D:getetag/><C:calendar-data/></D:prop>"
-        "  <C:filter>"
-        '    <C:comp-filter name="VCALENDAR">'
-        '      <C:comp-filter name="VEVENT">'
-        f'        <C:time-range start="{range_start.strftime("%Y%m%dT%H%M%SZ")}"'
-        f'                      end="{range_end.strftime("%Y%m%dT%H%M%SZ")}"/>'
-        "      </C:comp-filter>"
-        "    </C:comp-filter>"
-        "  </C:filter>"
-        "</C:calendar-query>"
-    )
-    auth = (integration.google_email, integration.google_app_password)
+    """List events from Google Calendar via REST API v3."""
+    token = await _google_ensure_token(integration)
+    params = {
+        "timeMin": range_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timeMax": range_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "singleEvents": "true",
+        "orderBy": "startTime",
+        "maxResults": "250",
+    }
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.request(
-            "REPORT",
-            caldav_url,
-            content=body,
-            headers={"Content-Type": "application/xml; charset=utf-8", "Depth": "1"},
-            auth=auth,
+        resp = await client.get(
+            f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
         )
     if resp.status_code >= 400:
         detail = resp.text[:200]
         if resp.status_code == 401:
-            detail = "Authentication failed – check Google email and app password"
+            detail = "Authentication failed – please reconnect your Google account"
         elif resp.status_code == 403:
-            detail = "Access denied – ensure CalDAV API access is enabled for your Google account"
-        logger.warning("Google CalDAV REPORT failed: HTTP %d – %s", resp.status_code, detail)
+            detail = "Access denied – calendar permissions may have been revoked"
+        logger.warning("Google Calendar API failed: HTTP %d – %s", resp.status_code, detail)
         raise ProviderError("google", resp.status_code, detail)
-    return _parse_caldav_response(resp.text)
+
+    events: list[dict[str, Any]] = []
+    for item in resp.json().get("items", []):
+        if item.get("status") == "cancelled":
+            continue
+        start = item.get("start", {})
+        end = item.get("end", {})
+        events.append({
+            "external_id": item.get("id", ""),
+            "title": item.get("summary", ""),
+            "description": item.get("description"),
+            "start_time": start.get("dateTime") or start.get("date"),
+            "end_time": end.get("dateTime") or end.get("date"),
+            "location": item.get("location"),
+        })
+    return events
 
 
 async def google_create_event(
@@ -240,35 +276,37 @@ async def google_create_event(
     description: str | None = None,
     location: str | None = None,
 ) -> str | None:
-    """Create a Google Calendar event via CalDAV PUT. Returns UID."""
-    caldav_url = _google_caldav_url(integration)
-    if not caldav_url or not integration.google_app_password:
-        return None
-    import uuid as _uuid
+    """Create a Google Calendar event via REST API. Returns event ID."""
+    token = await _google_ensure_token(integration)
+    body: dict[str, Any] = {
+        "summary": title,
+        "start": {"dateTime": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "timeZone": "UTC"},
+        "end": {"dateTime": end.strftime("%Y-%m-%dT%H:%M:%SZ"), "timeZone": "UTC"},
+    }
+    if description:
+        body["description"] = description
+    if location:
+        body["location"] = location
 
-    uid = str(_uuid.uuid4())
-    ical_bytes = _ical_event(uid, title, start, end, description, location)
-    url = caldav_url.rstrip("/") + f"/{uid}.ics"
-    auth = (integration.google_email, integration.google_app_password)
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.put(
-            url,
-            content=ical_bytes,
-            headers={"Content-Type": "text/calendar; charset=utf-8"},
-            auth=auth,
+        resp = await client.post(
+            f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
+            json=body,
+            headers={"Authorization": f"Bearer {token}"},
         )
-    return uid if resp.status_code < 400 else None
+    if resp.status_code < 400:
+        return resp.json().get("id")
+    return None
 
 
 async def google_delete_event(integration: CalendarIntegration, event_id: str) -> bool:
-    """Delete a Google Calendar event via CalDAV DELETE."""
-    caldav_url = _google_caldav_url(integration)
-    if not caldav_url or not integration.google_app_password:
-        return False
-    url = caldav_url.rstrip("/") + f"/{event_id}.ics"
-    auth = (integration.google_email, integration.google_app_password)
+    """Delete a Google Calendar event via REST API."""
+    token = await _google_ensure_token(integration)
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.delete(url, auth=auth)
+        resp = await client.delete(
+            f"{GOOGLE_CALENDAR_API}/calendars/primary/events/{event_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
     return resp.status_code < 400
 
 

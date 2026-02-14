@@ -224,6 +224,18 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/calendar/integration`);
   }
 
+  getGoogleAuthUrl(): Observable<{ auth_url: string }> {
+    return this.http.get<{ auth_url: string }>(`${this.baseUrl}/calendar/google/auth`);
+  }
+
+  sendGoogleCallback(code: string): Observable<{ ok: boolean; google_email: string }> {
+    return this.http.post<{ ok: boolean; google_email: string }>(
+      `${this.baseUrl}/calendar/google/callback`,
+      null,
+      { params: new HttpParams().set('code', code) },
+    );
+  }
+
   syncCalendar(start?: string, end?: string): Observable<any[]> {
     let params = new HttpParams();
     if (start) params = params.set('start', start);

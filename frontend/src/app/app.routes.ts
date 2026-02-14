@@ -88,6 +88,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'calendar/google/callback',
+        loadComponent: () =>
+          import('./features/calendar/components/calendar-view/calendar-view.component').then(
+            (m) => m.CalendarViewComponent
+          ),
+      },
+      {
         path: 'admin',
         loadComponent: () =>
           import('./features/admin/components/admin-page/admin-page.component').then(

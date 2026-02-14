@@ -39,6 +39,18 @@ def _add_missing_columns(connection):
             connection.execute(text(
                 "ALTER TABLE calendar_integrations ADD COLUMN google_app_password VARCHAR(200)"
             ))
+        if "google_access_token" not in cal_cols:
+            connection.execute(text(
+                "ALTER TABLE calendar_integrations ADD COLUMN google_access_token TEXT"
+            ))
+        if "google_refresh_token" not in cal_cols:
+            connection.execute(text(
+                "ALTER TABLE calendar_integrations ADD COLUMN google_refresh_token TEXT"
+            ))
+        if "google_token_expiry" not in cal_cols:
+            connection.execute(text(
+                "ALTER TABLE calendar_integrations ADD COLUMN google_token_expiry TIMESTAMP"
+            ))
 
     user_cols = {c["name"] for c in inspector.get_columns("users")}
     if "is_admin" not in user_cols:

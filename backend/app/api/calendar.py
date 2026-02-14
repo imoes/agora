@@ -18,10 +18,11 @@ from app.schemas.calendar import (
 )
 from app.services.auth import get_current_user
 from app.services import calendar_sync
-from app.services.calendar_sync import ProviderError
+from app.services.calendar_sync import ProviderError, GOOGLE_AUTH_URL, GOOGLE_SCOPES, GOOGLE_TOKEN_URL
 from app.config import settings
 
 import os
+import urllib.parse
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -179,17 +180,19 @@ async def delete_event(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/integration", response_model=CalendarIntegrationOut | None)
+@router.get("/integration")
 async def get_integration(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> CalendarIntegrationOut | None:
     """Get the current user's calendar integration settings."""
     integration = await _get_integration(db, current_user.id)
-    return integration
+    if integration is None:
+        return None
+    return _integration_to_out(integration)
 
 
-@router.put("/integration", response_model=CalendarIntegrationOut)
+@router.put("/integration")
 async def upsert_integration(
     data: CalendarIntegrationCreate,
     db: AsyncSession = Depends(get_db),
@@ -209,9 +212,15 @@ async def upsert_integration(
     integration.webdav_username = data.webdav_username
     if data.webdav_password is not None:
         integration.webdav_password = data.webdav_password
-    integration.google_email = data.google_email
-    if data.google_app_password is not None:
-        integration.google_app_password = data.google_app_password
+    # Only clear Google OAuth tokens when switching away from google provider
+    if data.provider != "google":
+        integration.google_access_token = None
+        integration.google_refresh_token = None
+        integration.google_token_expiry = None
+        integration.google_email = None
+    # Allow frontend to pass google_email for display, but don't overwrite OAuth email
+    elif data.google_email is not None and not integration.google_refresh_token:
+        integration.google_email = data.google_email
     integration.outlook_server_url = data.outlook_server_url
     integration.outlook_username = data.outlook_username
     if data.outlook_password is not None:
@@ -219,7 +228,7 @@ async def upsert_integration(
 
     await db.flush()
     await db.refresh(integration)
-    return integration
+    return _integration_to_out(integration)
 
 
 @router.delete("/integration", status_code=status.HTTP_204_NO_CONTENT)
@@ -308,8 +317,114 @@ async def sync_events(
 
 
 # ---------------------------------------------------------------------------
+# Google OAuth 2.0 flow
+# ---------------------------------------------------------------------------
+
+
+@router.get("/google/auth")
+async def google_auth_redirect(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the Google OAuth2 authorization URL for the frontend to redirect to."""
+    if not settings.google_client_id:
+        raise HTTPException(status_code=400, detail="Google OAuth not configured on this server")
+
+    # Encode user id in state so callback can match
+    import secrets
+    state = f"{current_user.id}:{secrets.token_urlsafe(16)}"
+
+    # Persist state in integration for verification
+    integration = await _get_integration(db, current_user.id)
+    if integration is None:
+        integration = CalendarIntegration(user_id=current_user.id, provider="google")
+        db.add(integration)
+        await db.flush()
+
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": f"{settings.frontend_url}/calendar/google/callback",
+        "response_type": "code",
+        "scope": GOOGLE_SCOPES,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+    url = f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    return {"auth_url": url}
+
+
+@router.post("/google/callback")
+async def google_callback(
+    code: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Exchange the OAuth2 authorization code for tokens."""
+    import httpx as _httpx
+
+    async with _httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(GOOGLE_TOKEN_URL, data={
+            "code": code,
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri": f"{settings.frontend_url}/calendar/google/callback",
+            "grant_type": "authorization_code",
+        })
+    if resp.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Google token exchange failed: {resp.text[:200]}")
+
+    data = resp.json()
+    access_token = data["access_token"]
+    refresh_token = data.get("refresh_token")
+    expires_in = data.get("expires_in", 3600)
+
+    # Fetch user email from Google
+    async with _httpx.AsyncClient(timeout=10) as client:
+        me = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    google_email = me.json().get("email") if me.status_code == 200 else None
+
+    integration = await _get_integration(db, current_user.id)
+    if integration is None:
+        integration = CalendarIntegration(user_id=current_user.id)
+        db.add(integration)
+
+    integration.provider = "google"
+    integration.google_email = google_email
+    integration.google_access_token = access_token
+    if refresh_token:
+        integration.google_refresh_token = refresh_token
+    from datetime import timedelta
+    integration.google_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+    await db.flush()
+    await db.refresh(integration)
+    return {"ok": True, "google_email": google_email}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _integration_to_out(integration: CalendarIntegration) -> CalendarIntegrationOut:
+    """Convert ORM object to response schema with computed google_connected."""
+    return CalendarIntegrationOut(
+        id=integration.id,
+        user_id=integration.user_id,
+        provider=integration.provider,
+        webdav_url=integration.webdav_url,
+        webdav_username=integration.webdav_username,
+        google_email=integration.google_email,
+        google_connected=bool(integration.google_refresh_token),
+        outlook_server_url=integration.outlook_server_url,
+        outlook_username=integration.outlook_username,
+        last_sync_at=integration.last_sync_at,
+        created_at=integration.created_at,
+    )
 
 
 async def _get_integration(

@@ -53,9 +53,12 @@ class CalendarIntegration(Base, UUIDPrimaryKey, TimestampMixin):
     webdav_username: Mapped[str | None] = mapped_column(String(200), nullable=True)
     webdav_password: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
-    # Google Calendar (CalDAV with Google account)
+    # Google Calendar (OAuth 2.0)
     google_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    google_app_password: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    google_app_password: Mapped[str | None] = mapped_column(String(200), nullable=True)  # legacy, unused
+    google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Outlook / Exchange (EWS with username + password)
     outlook_server_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
