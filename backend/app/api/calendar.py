@@ -29,6 +29,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
+
+def _google_redirect_uri() -> str:
+    """Build the Google OAuth redirect URI.
+
+    Google rejects https://localhost as a redirect URI for OAuth.
+    For localhost development, we must use http:// instead.
+    The nginx config serves the app on both HTTP and HTTPS,
+    so the redirect back to http://localhost/... still works.
+    """
+    base = settings.frontend_url
+    parsed = urllib.parse.urlparse(base)
+    if parsed.hostname == "localhost" and parsed.scheme == "https":
+        base = base.replace("https://", "http://", 1)
+    return f"{base}/calendar/google/callback"
+
 # ---------------------------------------------------------------------------
 # Calendar Events
 # ---------------------------------------------------------------------------
@@ -352,7 +367,7 @@ async def google_auth_redirect(
 
     params = {
         "client_id": settings.google_client_id,
-        "redirect_uri": f"{settings.frontend_url}/calendar/google/callback",
+        "redirect_uri": _google_redirect_uri(),
         "response_type": "code",
         "scope": GOOGLE_SCOPES,
         "access_type": "offline",
@@ -377,7 +392,7 @@ async def google_callback(
             "code": code,
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret,
-            "redirect_uri": f"{settings.frontend_url}/calendar/google/callback",
+            "redirect_uri": _google_redirect_uri(),
             "grant_type": "authorization_code",
         })
     if resp.status_code != 200:
