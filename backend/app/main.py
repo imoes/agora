@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api import admin, auth, channels, feed, files, invitations, messages, teams, users, video
 from app.database import engine
@@ -14,22 +15,17 @@ async def lifespan(app: FastAPI):
     # Create tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Backfill NULL defaults for new columns on existing rows
-        await conn.execute(
-            Base.metadata.tables["channels"].update()
-            .where(Base.metadata.tables["channels"].c.is_hidden.is_(None))
-            .values(is_hidden=False)
-        )
-        await conn.execute(
-            Base.metadata.tables["users"].update()
-            .where(Base.metadata.tables["users"].c.is_admin.is_(None))
-            .values(is_admin=False)
-        )
-        await conn.execute(
-            Base.metadata.tables["users"].update()
-            .where(Base.metadata.tables["users"].c.auth_source.is_(None))
-            .values(auth_source="local")
-        )
+        # Add columns that may not exist on pre-existing tables
+        # (create_all only creates new tables, it won't alter existing ones)
+        await conn.execute(text(
+            "ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT false"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_source VARCHAR(20) NOT NULL DEFAULT 'local'"
+        ))
     yield
 
 
