@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.calendar import CalendarEvent, CalendarIntegration
+from app.models.channel import Channel, ChannelMember
 from app.models.user import User
 from app.schemas.calendar import (
     CalendarEventCreate,
@@ -17,6 +18,9 @@ from app.schemas.calendar import (
 )
 from app.services.auth import get_current_user
 from app.services import calendar_sync
+from app.config import settings
+
+import os
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -67,6 +71,29 @@ async def create_event(
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
+    location = data.location
+    channel_id = data.channel_id
+
+    # Create a video call meeting channel and put the link in location
+    if data.create_video_call:
+        from app.models.channel import _generate_invite_token
+
+        meeting_channel = Channel(
+            name=data.title,
+            channel_type="meeting",
+            sqlite_db_path=os.path.join(settings.chat_db_dir, f"meeting_{uuid.uuid4().hex}.db"),
+            invite_token=_generate_invite_token(),
+            scheduled_at=data.start_time,
+        )
+        db.add(meeting_channel)
+        await db.flush()
+        # Add the creator as member
+        db.add(ChannelMember(channel_id=meeting_channel.id, user_id=current_user.id))
+        await db.flush()
+        channel_id = meeting_channel.id
+        video_link = f"/video/{meeting_channel.id}"
+        location = video_link if not location else f"{location} | {video_link}"
+
     event = CalendarEvent(
         user_id=current_user.id,
         title=data.title,
@@ -74,8 +101,8 @@ async def create_event(
         start_time=data.start_time,
         end_time=data.end_time,
         all_day=data.all_day,
-        location=data.location,
-        channel_id=data.channel_id,
+        location=location,
+        channel_id=channel_id,
     )
     db.add(event)
     await db.flush()
@@ -181,11 +208,14 @@ async def upsert_integration(
     integration.webdav_username = data.webdav_username
     if data.webdav_password is not None:
         integration.webdav_password = data.webdav_password
-    integration.google_token = data.google_token
+    integration.google_client_id = data.google_client_id
+    integration.google_client_secret = data.google_client_secret
     integration.google_refresh_token = data.google_refresh_token
     integration.google_calendar_id = data.google_calendar_id
-    integration.outlook_token = data.outlook_token
-    integration.outlook_refresh_token = data.outlook_refresh_token
+    integration.outlook_server_url = data.outlook_server_url
+    integration.outlook_username = data.outlook_username
+    if data.outlook_password is not None:
+        integration.outlook_password = data.outlook_password
 
     await db.flush()
     await db.refresh(integration)

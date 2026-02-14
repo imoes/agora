@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDividerModule } from '@angular/material/divider';
+import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
 
@@ -33,7 +34,7 @@ interface CalendarEvent {
   selector: 'app-calendar-view',
   standalone: true,
   imports: [
-    CommonModule, FormsModule,
+    CommonModule, FormsModule, RouterLink,
     MatIconModule, MatButtonModule, MatTooltipModule, MatMenuModule, MatDividerModule,
   ],
   template: `
@@ -83,12 +84,16 @@ interface CalendarEvent {
         <!-- Google Settings -->
         <div *ngIf="settingsProvider === 'google'" class="provider-fields">
           <div class="field">
-            <label>Access Token:</label>
-            <input type="text" [(ngModel)]="googleToken" placeholder="OAuth2 Access Token">
+            <label>Client-ID:</label>
+            <input type="text" [(ngModel)]="googleClientId" placeholder="Google OAuth2 Client-ID">
           </div>
           <div class="field">
-            <label>Refresh Token:</label>
-            <input type="text" [(ngModel)]="googleRefreshToken">
+            <label>Client-Secret:</label>
+            <input type="password" [(ngModel)]="googleClientSecret" placeholder="Google OAuth2 Client-Secret">
+          </div>
+          <div class="field">
+            <label>Refresh-Token:</label>
+            <input type="text" [(ngModel)]="googleRefreshToken" placeholder="OAuth2 Refresh-Token">
           </div>
           <div class="field">
             <label>Kalender-ID:</label>
@@ -96,15 +101,19 @@ interface CalendarEvent {
           </div>
         </div>
 
-        <!-- Outlook Settings -->
+        <!-- Outlook / Exchange Settings -->
         <div *ngIf="settingsProvider === 'outlook'" class="provider-fields">
           <div class="field">
-            <label>Access Token:</label>
-            <input type="text" [(ngModel)]="outlookToken" placeholder="Microsoft Graph Token">
+            <label>Exchange-Server-URL:</label>
+            <input type="url" [(ngModel)]="outlookServerUrl" placeholder="https://mail.example.com">
           </div>
           <div class="field">
-            <label>Refresh Token:</label>
-            <input type="text" [(ngModel)]="outlookRefreshToken">
+            <label>Benutzername:</label>
+            <input type="text" [(ngModel)]="outlookUsername" placeholder="DOMAIN\\benutzer oder email">
+          </div>
+          <div class="field">
+            <label>Passwort:</label>
+            <input type="password" [(ngModel)]="outlookPassword">
           </div>
         </div>
 
@@ -179,6 +188,13 @@ interface CalendarEvent {
             Ganztaegig
           </label>
         </div>
+        <div class="field checkbox-field" *ngIf="!editingEvent">
+          <label>
+            <input type="checkbox" [(ngModel)]="eventCreateVideoCall">
+            Video-Call erstellen
+          </label>
+          <span class="hint" *ngIf="eventCreateVideoCall">Ein Video-Call-Link wird automatisch im Ort eingetragen</span>
+        </div>
         <div class="form-actions">
           <button class="btn btn-primary" (click)="saveEvent()">Speichern</button>
           <button class="btn btn-secondary" (click)="cancelEventForm()">Abbrechen</button>
@@ -201,8 +217,9 @@ interface CalendarEvent {
           </div>
           <div class="event-title">{{ ev.title }}</div>
           <div class="event-location" *ngIf="ev.location">
-            <mat-icon class="event-location-icon">place</mat-icon>
-            {{ ev.location }}
+            <mat-icon class="event-location-icon">{{ isVideoLink(ev.location) ? 'videocam' : 'place' }}</mat-icon>
+            <a *ngIf="isVideoLink(ev.location)" [routerLink]="getVideoLink(ev.location)" class="video-link">Video-Call beitreten</a>
+            <span *ngIf="!isVideoLink(ev.location)">{{ ev.location }}</span>
           </div>
         </div>
       </div>
@@ -512,6 +529,20 @@ interface CalendarEvent {
       width: 14px;
       height: 14px;
     }
+    .video-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .video-link:hover {
+      text-decoration: underline;
+    }
+    .hint {
+      display: block;
+      font-size: 11px;
+      color: #999;
+      margin-top: 2px;
+    }
   `],
 })
 export class CalendarViewComponent implements OnInit, OnDestroy {
@@ -535,6 +566,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   eventEnd = '';
   eventLocation = '';
   eventAllDay = false;
+  eventCreateVideoCall = false;
 
   // Settings
   showSettings = false;
@@ -543,11 +575,13 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   webdavUrl = '';
   webdavUsername = '';
   webdavPassword = '';
-  googleToken = '';
+  googleClientId = '';
+  googleClientSecret = '';
   googleRefreshToken = '';
   googleCalendarId = '';
-  outlookToken = '';
-  outlookRefreshToken = '';
+  outlookServerUrl = '';
+  outlookUsername = '';
+  outlookPassword = '';
 
   private subscriptions: Subscription[] = [];
 
@@ -731,6 +765,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     this.eventEnd = this.toLocalDatetime(endTime);
     this.eventLocation = '';
     this.eventAllDay = false;
+    this.eventCreateVideoCall = false;
   }
 
   editEvent(ev: CalendarEvent): void {
@@ -753,6 +788,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       end_time: new Date(this.eventEnd).toISOString(),
       all_day: this.eventAllDay,
       location: this.eventLocation.trim() || null,
+      create_video_call: this.eventCreateVideoCall,
     };
 
     if (this.editingEvent) {
@@ -805,7 +841,10 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
           this.settingsProvider = data.provider || 'internal';
           this.webdavUrl = data.webdav_url || '';
           this.webdavUsername = data.webdav_username || '';
+          this.googleClientId = data.google_client_id || '';
           this.googleCalendarId = data.google_calendar_id || '';
+          this.outlookServerUrl = data.outlook_server_url || '';
+          this.outlookUsername = data.outlook_username || '';
         }
       },
       error: () => {},
@@ -823,12 +862,14 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       data.webdav_username = this.webdavUsername;
       if (this.webdavPassword) data.webdav_password = this.webdavPassword;
     } else if (this.settingsProvider === 'google') {
-      data.google_token = this.googleToken || null;
+      data.google_client_id = this.googleClientId || null;
+      if (this.googleClientSecret) data.google_client_secret = this.googleClientSecret;
       data.google_refresh_token = this.googleRefreshToken || null;
       data.google_calendar_id = this.googleCalendarId || null;
     } else if (this.settingsProvider === 'outlook') {
-      data.outlook_token = this.outlookToken || null;
-      data.outlook_refresh_token = this.outlookRefreshToken || null;
+      data.outlook_server_url = this.outlookServerUrl || null;
+      data.outlook_username = this.outlookUsername || null;
+      if (this.outlookPassword) data.outlook_password = this.outlookPassword;
     }
     this.apiService.saveCalendarIntegration(data).subscribe({
       next: (integration) => {
@@ -836,6 +877,15 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
         this.showSettings = false;
       },
     });
+  }
+
+  isVideoLink(location: string): boolean {
+    return location?.includes('/video/') ?? false;
+  }
+
+  getVideoLink(location: string): string {
+    const match = location?.match(/\/video\/[a-f0-9-]+/);
+    return match ? match[0] : '';
   }
 
   syncCalendar(): void {
