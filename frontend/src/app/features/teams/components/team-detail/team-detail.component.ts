@@ -203,7 +203,7 @@ export class TeamDetailComponent implements OnInit {
   }
 
   openChannel(channelId: string): void {
-    this.router.navigate(['/chat', channelId]);
+    this.router.navigate(['/teams/chat', channelId]);
   }
 
   createChannel(): void {

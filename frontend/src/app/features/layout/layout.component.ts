@@ -571,7 +571,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
         filter((e): e is NavigationEnd => e instanceof NavigationEnd)
       ).subscribe((e) => {
         const url = e.urlAfterRedirects;
-        const match = url.match(/\/chat\/([^?/]+)/);
+        const match = url.match(/\/(?:teams\/)?chat\/([^?/]+)/);
         this.activeChannelId = match ? match[1] : null;
         if (url.startsWith('/teams')) {
           this.sidebarMode = 'teams';
@@ -676,7 +676,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   openChat(channelId: string): void {
-    this.router.navigate(['/chat', channelId]);
+    if (this.sidebarMode === 'teams') {
+      this.router.navigate(['/teams/chat', channelId]);
+    } else {
+      this.router.navigate(['/chat', channelId]);
+    }
   }
 
   ngOnDestroy(): void {

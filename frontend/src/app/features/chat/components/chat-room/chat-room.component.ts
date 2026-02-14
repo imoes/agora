@@ -678,7 +678,11 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   goBack(): void {
-    this.router.navigate(['/chat']);
+    if (this.router.url.startsWith('/teams/chat/')) {
+      this.router.navigate(['/teams']);
+    } else {
+      this.router.navigate(['/chat']);
+    }
   }
 
   getDownloadUrl(refId: string): string {
