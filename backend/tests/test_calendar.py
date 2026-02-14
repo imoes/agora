@@ -376,21 +376,17 @@ class TestCalendarIntegration:
             "/api/calendar/integration",
             json={
                 "provider": "google",
-                "google_client_id": "my-client-id.apps.googleusercontent.com",
-                "google_client_secret": "my-secret",
-                "google_refresh_token": "1//refresh-tok",
-                "google_calendar_id": "primary",
+                "google_email": "user@gmail.com",
+                "google_app_password": "abcd efgh ijkl mnop",
             },
             headers=headers,
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["provider"] == "google"
-        assert data["google_client_id"] == "my-client-id.apps.googleusercontent.com"
-        assert data["google_calendar_id"] == "primary"
-        # Secret and tokens should NOT be returned
-        assert "google_client_secret" not in data
-        assert "google_refresh_token" not in data
+        assert data["google_email"] == "user@gmail.com"
+        # App password should NOT be returned
+        assert "google_app_password" not in data
 
     @pytest.mark.asyncio
     async def test_create_outlook_exchange_integration(self, client: AsyncClient, _dirs):
@@ -429,14 +425,13 @@ class TestCalendarIntegration:
             "/api/calendar/integration",
             json={
                 "provider": "google",
-                "google_client_id": "cid",
-                "google_calendar_id": "primary",
+                "google_email": "user@gmail.com",
             },
             headers=headers,
         )
         assert resp.status_code == 200
         assert resp.json()["provider"] == "google"
-        assert resp.json()["google_calendar_id"] == "primary"
+        assert resp.json()["google_email"] == "user@gmail.com"
 
     @pytest.mark.asyncio
     async def test_delete_integration(self, client: AsyncClient, _dirs):
