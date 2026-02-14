@@ -4,15 +4,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: agora
-      POSTGRES_USER: agora
-      POSTGRES_PASSWORD: agora_secret
+      POSTGRES_DB: ${POSTGRES_DB:-agora}
+      POSTGRES_USER: ${POSTGRES_USER:-agora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agora_secret}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agora"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agora}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -20,7 +20,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -32,14 +32,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://agora:agora_secret@postgres:5432/agora
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-agora}:${POSTGRES_PASSWORD:-agora_secret}@postgres:5432/${POSTGRES_DB:-agora}
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: change-me-in-production-use-a-real-secret
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-real-secret}
       JANUS_URL: http://janus:8088/janus
       UPLOAD_DIR: /data/uploads
       CHAT_DB_DIR: /data/chats
+      # SMTP
       SMTP_HOST: ${SMTP_HOST:-mailhog}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}
@@ -47,6 +48,10 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@agora.local}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
+      # Google Calendar OAuth2
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # LDAP / Active Directory
       LDAP_ENABLED: ${LDAP_ENABLED:-false}
       LDAP_SERVER: ${LDAP_SERVER:-}
       LDAP_PORT: ${LDAP_PORT:-389}
@@ -79,7 +84,7 @@ services:
       - "7088:7088"
       - "10000-10100:10000-10100/udp"
     environment:
-      JANUS_API_SECRET: janus-api-secret
+      JANUS_API_SECRET: ${JANUS_API_SECRET:-janus-api-secret}
 
   mailhog:
     image: mailhog/mailhog:latest
@@ -106,8 +111,8 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     depends_on:
       - frontend
       - backend
