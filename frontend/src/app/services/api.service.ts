@@ -173,6 +173,63 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/auth/config`);
   }
 
+  // Calendar
+  getCalendarEvents(start?: string, end?: string): Observable<any[]> {
+    let params = new HttpParams();
+    if (start) params = params.set('start', start);
+    if (end) params = params.set('end', end);
+    return this.http.get<any[]>(`${this.baseUrl}/calendar/events`, { params });
+  }
+
+  createCalendarEvent(data: {
+    title: string;
+    description?: string;
+    start_time: string;
+    end_time: string;
+    all_day?: boolean;
+    location?: string;
+    channel_id?: string;
+  }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/calendar/events`, data);
+  }
+
+  updateCalendarEvent(eventId: string, data: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/calendar/events/${eventId}`, data);
+  }
+
+  deleteCalendarEvent(eventId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/calendar/events/${eventId}`);
+  }
+
+  getCalendarIntegration(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/calendar/integration`);
+  }
+
+  saveCalendarIntegration(data: {
+    provider: string;
+    webdav_url?: string;
+    webdav_username?: string;
+    webdav_password?: string;
+    google_token?: string;
+    google_refresh_token?: string;
+    google_calendar_id?: string;
+    outlook_token?: string;
+    outlook_refresh_token?: string;
+  }): Observable<any> {
+    return this.http.put(`${this.baseUrl}/calendar/integration`, data);
+  }
+
+  deleteCalendarIntegration(): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/calendar/integration`);
+  }
+
+  syncCalendar(start?: string, end?: string): Observable<any[]> {
+    let params = new HttpParams();
+    if (start) params = params.set('start', start);
+    if (end) params = params.set('end', end);
+    return this.http.post<any[]>(`${this.baseUrl}/calendar/sync`, null, { params });
+  }
+
   // Admin
   getAdminStats(): Observable<any> {
     return this.http.get(`${this.baseUrl}/admin/stats`);

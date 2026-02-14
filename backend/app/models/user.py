@@ -28,3 +28,7 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     channel_memberships = relationship("ChannelMember", back_populates="user")
     file_references = relationship("FileReference", back_populates="uploader")
     feed_events = relationship("FeedEvent", back_populates="user", foreign_keys="[FeedEvent.user_id]")
+    calendar_events = relationship("CalendarEvent", back_populates="user", cascade="all, delete-orphan")
+    calendar_integration = relationship(
+        "CalendarIntegration", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
