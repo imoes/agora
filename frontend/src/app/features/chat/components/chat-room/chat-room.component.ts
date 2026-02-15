@@ -10,6 +10,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
@@ -22,7 +23,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
   imports: [
     CommonModule, FormsModule, MatIconModule, MatButtonModule,
     MatFormFieldModule, MatInputModule, MatMenuModule, MatTooltipModule,
-    MatProgressSpinnerModule, MatDialogModule,
+    MatProgressSpinnerModule, MatDialogModule, MatSnackBarModule,
   ],
   template: `
     <div class="chat-room">
@@ -49,6 +50,10 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
           </button>
           <button mat-icon-button matTooltip="Dateien" (click)="showFiles = !showFiles">
             <mat-icon>attach_file</mat-icon>
+          </button>
+          <button mat-icon-button matTooltip="Chat verlassen" (click)="leaveChannel()"
+                  *ngIf="channel?.channel_type === 'group' || channel?.channel_type === 'meeting'">
+            <mat-icon>logout</mat-icon>
           </button>
         </div>
       </div>
@@ -427,6 +432,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     private wsService: WebSocketService,
     private authService: AuthService,
     private dialog: MatDialog,
+    private snackBar: MatSnackBar,
   ) {}
 
   ngOnInit(): void {
@@ -530,6 +536,18 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         case 'member_added':
           if (this.channel) {
             this.channel.member_count = msg.member_count;
+            if (msg.channel_name) {
+              this.channel.name = msg.channel_name;
+            }
+          }
+          this.loadChannelMembers();
+          break;
+        case 'member_left':
+          if (this.channel) {
+            this.channel.member_count = msg.member_count;
+            if (msg.channel_name) {
+              this.channel.name = msg.channel_name;
+            }
           }
           this.loadChannelMembers();
           break;
@@ -661,11 +679,31 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       data: {
         channelId: this.channelId,
         inviteToken: this.channel?.invite_token || '',
+        channelType: this.channel?.channel_type || '',
       },
     });
-    dialogRef.afterClosed().subscribe(() => {
+    dialogRef.afterClosed().subscribe((result) => {
+      if (result?.redirectTo) {
+        // A new group channel was created from a direct chat
+        this.router.navigate(['/chat', result.redirectTo]);
+        return;
+      }
       this.loadChannel();
       this.loadChannelMembers();
+    });
+  }
+
+  leaveChannel(): void {
+    if (!this.channelId) return;
+    this.apiService.leaveChannel(this.channelId).subscribe({
+      next: () => {
+        this.snackBar.open('Chat verlassen', 'OK', { duration: 2000 });
+        this.router.navigate(['/chat']);
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Verlassen';
+        this.snackBar.open(detail, 'OK', { duration: 3000 });
+      },
     });
   }
 

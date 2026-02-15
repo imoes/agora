@@ -28,6 +28,10 @@ def _add_missing_columns(connection):
         connection.execute(text(
             "ALTER TABLE channels ADD COLUMN is_hidden BOOLEAN DEFAULT false"
         ))
+    if "custom_name" not in channel_cols:
+        connection.execute(text(
+            "ALTER TABLE channels ADD COLUMN custom_name BOOLEAN DEFAULT false"
+        ))
 
     if "calendar_integrations" in inspector.get_table_names():
         cal_cols = {c["name"] for c in inspector.get_columns("calendar_integrations")}

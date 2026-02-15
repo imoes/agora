@@ -18,36 +18,141 @@ from app.websocket.manager import manager
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _build_channel_name(channel_id: uuid.UUID, db: AsyncSession) -> str:
+    """Build a channel display name from its member list (comma-separated)."""
+    result = await db.execute(
+        select(User.display_name)
+        .join(ChannelMember, ChannelMember.user_id == User.id)
+        .where(ChannelMember.channel_id == channel_id)
+        .order_by(User.display_name)
+    )
+    names = [row[0] for row in result.all()]
+    return ", ".join(names)
+
+
+async def _update_channel_name(channel: Channel, db: AsyncSession) -> None:
+    """Recompute and persist the channel name unless it has a custom_name."""
+    if channel.custom_name:
+        return
+    channel.name = await _build_channel_name(channel.id, db)
+    await db.flush()
+
+
+async def _find_channel_by_members(
+    member_ids: set[uuid.UUID],
+    channel_type: str,
+    db: AsyncSession,
+) -> Channel | None:
+    """Find an existing channel whose member set matches *exactly*.
+
+    Returns the channel or ``None``.
+    """
+    count = len(member_ids)
+
+    # Subquery: channels that have exactly `count` members
+    exact_count = (
+        select(ChannelMember.channel_id)
+        .group_by(ChannelMember.channel_id)
+        .having(func.count(ChannelMember.id) == count)
+    )
+
+    # Start from channels of the right type with the right member count
+    candidate_q = (
+        select(Channel.id)
+        .where(
+            and_(
+                Channel.channel_type == channel_type,
+                Channel.id.in_(exact_count),
+            )
+        )
+    )
+
+    # Narrow down: every requested member must be present
+    for uid in member_ids:
+        member_sub = select(ChannelMember.channel_id).where(
+            ChannelMember.user_id == uid
+        )
+        candidate_q = candidate_q.where(Channel.id.in_(member_sub))
+
+    result = await db.execute(candidate_q.limit(1))
+    channel_id = result.scalar_one_or_none()
+    if channel_id is None:
+        return None
+
+    ch_result = await db.execute(select(Channel).where(Channel.id == channel_id))
+    return ch_result.scalar_one_or_none()
+
+
+async def _create_group_channel(
+    member_ids: list[uuid.UUID],
+    db: AsyncSession,
+    name: str | None = None,
+    custom_name: bool = False,
+) -> Channel:
+    """Create a new group channel with the given members."""
+    channel = Channel(
+        name=name or "",
+        channel_type="group",
+        sqlite_db_path="",
+        custom_name=custom_name,
+    )
+    db.add(channel)
+    await db.flush()
+    channel.sqlite_db_path = f"{channel.id}.db"
+
+    for uid in member_ids:
+        db.add(ChannelMember(channel_id=channel.id, user_id=uid))
+    await db.flush()
+
+    # Compute name from members if not custom
+    if not custom_name or not name:
+        await _update_channel_name(channel, db)
+
+    await init_chat_db(str(channel.id))
+    await db.refresh(channel)
+    return channel
+
+
+# ---------------------------------------------------------------------------
+# CRUD endpoints
+# ---------------------------------------------------------------------------
+
 @router.post("/", response_model=ChannelOut, status_code=status.HTTP_201_CREATED)
 async def create_channel(
     data: ChannelCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    all_member_ids = list({current_user.id} | set(data.member_ids))
+    has_custom_name = bool(data.name and data.name.strip())
+
     channel = Channel(
-        name=data.name,
+        name=data.name if has_custom_name else "",
         description=data.description,
         channel_type=data.channel_type,
         team_id=data.team_id,
         scheduled_at=data.scheduled_at,
         sqlite_db_path="",  # will be set after flush
+        custom_name=has_custom_name,
     )
     db.add(channel)
     await db.flush()
 
     channel.sqlite_db_path = f"{channel.id}.db"
 
-    # Add creator as member
-    member = ChannelMember(channel_id=channel.id, user_id=current_user.id)
-    db.add(member)
-
-    # Add other members
-    for uid in data.member_ids:
-        if uid != current_user.id:
-            m = ChannelMember(channel_id=channel.id, user_id=uid)
-            db.add(m)
+    for uid in all_member_ids:
+        db.add(ChannelMember(channel_id=channel.id, user_id=uid))
 
     await db.flush()
+
+    # Build dynamic name from members if no custom name was given
+    if not has_custom_name:
+        await _update_channel_name(channel, db)
+
     await init_chat_db(str(channel.id))
     await db.refresh(channel)
 
@@ -58,7 +163,7 @@ async def create_channel(
         channel_type=channel.channel_type,
         team_id=channel.team_id,
         created_at=channel.created_at,
-        member_count=1 + len(data.member_ids),
+        member_count=len(all_member_ids),
         invite_token=channel.invite_token,
     )
 
@@ -243,6 +348,56 @@ async def add_channel_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Load the channel
+    ch_result = await db.execute(select(Channel).where(Channel.id == channel_id))
+    channel = ch_result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    # If this is a direct chat, we must NOT modify it.
+    # Instead, create (or find) a group channel with all members + the new user.
+    if channel.channel_type == "direct":
+        # Collect current member ids
+        members_result = await db.execute(
+            select(ChannelMember.user_id).where(
+                ChannelMember.channel_id == channel_id
+            )
+        )
+        current_member_ids = {row[0] for row in members_result.all()}
+        new_member_ids = current_member_ids | {user_id}
+
+        # Check if a group channel with exactly these members already exists
+        existing = await _find_channel_by_members(new_member_ids, "group", db)
+        if existing:
+            # Unhide if needed
+            if existing.is_hidden:
+                existing.is_hidden = False
+                await db.flush()
+
+            count_result = await db.execute(
+                select(func.count()).where(ChannelMember.channel_id == existing.id)
+            )
+            count = count_result.scalar() or 0
+            return {
+                "status": "ok",
+                "member_count": count,
+                "channel_id": str(existing.id),
+                "channel_type": "group",
+            }
+
+        # Create new group channel
+        new_channel = await _create_group_channel(
+            list(new_member_ids), db
+        )
+
+        return {
+            "status": "ok",
+            "member_count": len(new_member_ids),
+            "channel_id": str(new_channel.id),
+            "channel_type": "group",
+        }
+
+    # Normal case: add member to existing group/team/meeting channel
     existing = await db.execute(
         select(ChannelMember).where(
             and_(
@@ -257,6 +412,9 @@ async def add_channel_member(
     member = ChannelMember(channel_id=channel_id, user_id=user_id)
     db.add(member)
     await db.flush()
+
+    # Update channel name dynamically
+    await _update_channel_name(channel, db)
 
     # Get updated member count
     count_result = await db.execute(
@@ -279,11 +437,77 @@ async def add_channel_member(
             "display_name": added.display_name if added else "",
             "username": added.username if added else "",
             "member_count": new_count,
+            "channel_name": channel.name,
         },
     )
 
     return {"status": "ok", "member_count": new_count}
 
+
+# ---------------------------------------------------------------------------
+# Leave channel
+# ---------------------------------------------------------------------------
+
+@router.delete("/{channel_id}/members/me", status_code=status.HTTP_200_OK)
+async def leave_channel(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Leave a group channel. Direct and team channels cannot be left."""
+    ch_result = await db.execute(select(Channel).where(Channel.id == channel_id))
+    channel = ch_result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    if channel.channel_type in ("direct", "team"):
+        raise HTTPException(
+            status_code=400,
+            detail="Dieser Kanal kann nicht verlassen werden",
+        )
+
+    membership = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == current_user.id,
+            )
+        )
+    )
+    member = membership.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=404, detail="Nicht Mitglied dieses Kanals")
+
+    await db.delete(member)
+    await db.flush()
+
+    # Update channel name
+    await _update_channel_name(channel, db)
+
+    # Get remaining member count
+    count_result = await db.execute(
+        select(func.count()).where(ChannelMember.channel_id == channel_id)
+    )
+    remaining = count_result.scalar() or 0
+
+    # Broadcast member_left event
+    await manager.send_to_channel(
+        str(channel_id),
+        {
+            "type": "member_left",
+            "user_id": str(current_user.id),
+            "display_name": current_user.display_name,
+            "member_count": remaining,
+            "channel_name": channel.name,
+        },
+    )
+
+    return {"status": "ok", "remaining_members": remaining}
+
+
+# ---------------------------------------------------------------------------
+# Direct chat (1:1)
+# ---------------------------------------------------------------------------
 
 from pydantic import BaseModel as _BaseModel
 
@@ -298,59 +522,38 @@ async def find_or_create_direct_chat(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Findet einen bestehenden Direktchat oder erstellt einen neuen."""
+    """Findet einen bestehenden Direktchat oder erstellt einen neuen.
+
+    Only matches direct channels with *exactly* 2 members (the two users).
+    """
     target_user = await db.execute(select(User).where(User.id == data.user_id))
     target = target_user.scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="User nicht gefunden")
 
-    # Suche nach einem bestehenden direct-Channel zwischen den beiden Usern
-    my_directs = (
-        select(ChannelMember.channel_id)
-        .join(Channel, ChannelMember.channel_id == Channel.id)
-        .where(
-            and_(
-                ChannelMember.user_id == current_user.id,
-                Channel.channel_type == "direct",
-            )
-        )
-    )
-    target_directs = (
-        select(ChannelMember.channel_id)
-        .where(ChannelMember.user_id == data.user_id)
+    # Use set-based dedup: find a direct channel with exactly these 2 members
+    existing = await _find_channel_by_members(
+        {current_user.id, data.user_id}, "direct", db
     )
 
-    # Gemeinsame direct-Channels
-    result = await db.execute(
-        select(Channel)
-        .where(
-            and_(
-                Channel.id.in_(my_directs),
-                Channel.id.in_(target_directs),
-                Channel.channel_type == "direct",
-            )
-        )
-    )
-    existing_channel = result.scalar_one_or_none()
-
-    if existing_channel:
+    if existing:
         # Unhide if it was hidden (e.g. from a video call)
-        if existing_channel.is_hidden:
-            existing_channel.is_hidden = False
+        if existing.is_hidden:
+            existing.is_hidden = False
             await db.flush()
         count_result = await db.execute(
-            select(func.count()).where(ChannelMember.channel_id == existing_channel.id)
+            select(func.count()).where(ChannelMember.channel_id == existing.id)
         )
         count = count_result.scalar()
         return ChannelOut(
-            id=existing_channel.id,
-            name=existing_channel.name,
-            description=existing_channel.description,
-            channel_type=existing_channel.channel_type,
-            team_id=existing_channel.team_id,
-            created_at=existing_channel.created_at,
+            id=existing.id,
+            name=existing.name,
+            description=existing.description,
+            channel_type=existing.channel_type,
+            team_id=existing.team_id,
+            created_at=existing.created_at,
             member_count=count,
-            invite_token=existing_channel.invite_token,
+            invite_token=existing.invite_token,
         )
 
     # Neuen direct-Channel erstellen
