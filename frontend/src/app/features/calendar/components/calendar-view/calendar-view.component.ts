@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -680,6 +680,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     private snackBar: MatSnackBar,
     private route: ActivatedRoute,
     private router: Router,
+    private elementRef: ElementRef,
   ) {}
 
   ngOnInit(): void {
@@ -900,6 +901,12 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     this.eventCreateVideoCall = false;
     this.eventAttendees = [];
     this.attendeeEmail = '';
+    setTimeout(() => {
+      const formEl = this.elementRef.nativeElement.querySelector('.event-form');
+      if (formEl) {
+        formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
   }
 
   addAttendee(): void {

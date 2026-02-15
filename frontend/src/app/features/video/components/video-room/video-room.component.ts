@@ -1,11 +1,13 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild, ChangeDetectorRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { Subscription } from 'rxjs';
+import { Subscription, Subject, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { take } from 'rxjs/operators';
 import { WebRTCService, Participant } from '@services/webrtc.service';
 import { WebSocketService } from '@services/websocket.service';
@@ -15,7 +17,7 @@ import { AuthService } from '@core/services/auth.service';
 @Component({
   selector: 'app-video-room',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule, MatSnackBarModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatButtonModule, MatTooltipModule, MatSnackBarModule],
   template: `
     <div class="video-room">
       <!-- Error banner -->
@@ -116,31 +118,68 @@ import { AuthService } from '@core/services/auth.service';
             <mat-icon>close</mat-icon>
           </button>
         </div>
+        <div class="invite-search">
+          <mat-icon>search</mat-icon>
+          <input type="text" [(ngModel)]="userSearchQuery"
+                 (ngModelChange)="onSearchQueryChange($event)"
+                 placeholder="Benutzer suchen...">
+        </div>
         <div class="invite-panel-list">
-          <div *ngFor="let m of callableMembers" class="invite-member-item">
-            <div class="invite-avatar-wrapper">
-              <div class="invite-member-avatar">{{ m.display_name?.charAt(0)?.toUpperCase() }}</div>
-              <span class="invite-status-dot" [class]="m.status || 'offline'"></span>
+          <!-- Channel members (when no search) -->
+          <div *ngIf="!userSearchQuery">
+            <div *ngFor="let m of callableMembers" class="invite-member-item">
+              <div class="invite-avatar-wrapper">
+                <div class="invite-member-avatar">{{ m.display_name?.charAt(0)?.toUpperCase() }}</div>
+                <span class="invite-status-dot" [class]="m.status || 'offline'"></span>
+              </div>
+              <div class="invite-member-info">
+                <span class="invite-member-name">{{ m.display_name }}</span>
+                <span class="invite-member-username">{{'@' + m.username}}</span>
+              </div>
+              <button mat-icon-button *ngIf="!invitedUserIds.has(m.id)"
+                      [matTooltip]="m.status === 'offline' ? 'Offline' : 'Anrufen'"
+                      (click)="inviteToCall(m)"
+                      [disabled]="m.status === 'offline'"
+                      [class.call-online]="m.status && m.status !== 'offline'">
+                <mat-icon>call</mat-icon>
+              </button>
+              <button mat-icon-button *ngIf="invitedUserIds.has(m.id)"
+                      matTooltip="Anruf abbrechen"
+                      (click)="cancelInvite(m)"
+                      class="call-cancel">
+                <mat-icon>call_end</mat-icon>
+              </button>
             </div>
-            <div class="invite-member-info">
-              <span class="invite-member-name">{{ m.display_name }}</span>
-              <span class="invite-member-username">{{'@' + m.username}}</span>
-            </div>
-            <button mat-icon-button *ngIf="!invitedUserIds.has(m.id)"
-                    [matTooltip]="m.status === 'offline' ? 'Offline' : 'Anrufen'"
-                    (click)="inviteToCall(m)"
-                    [disabled]="m.status === 'offline'"
-                    [class.call-online]="m.status && m.status !== 'offline'">
-              <mat-icon>call</mat-icon>
-            </button>
-            <button mat-icon-button *ngIf="invitedUserIds.has(m.id)"
-                    matTooltip="Anruf abbrechen"
-                    (click)="cancelInvite(m)"
-                    class="call-cancel">
-              <mat-icon>call_end</mat-icon>
-            </button>
+            <p *ngIf="callableMembers.length === 0" class="no-members">Keine weiteren Mitglieder</p>
           </div>
-          <p *ngIf="callableMembers.length === 0" class="no-members">Keine weiteren Mitglieder</p>
+          <!-- Search results -->
+          <div *ngIf="userSearchQuery">
+            <div *ngIf="searchLoading" class="no-members">Suche...</div>
+            <div *ngFor="let u of searchResults" class="invite-member-item">
+              <div class="invite-avatar-wrapper">
+                <div class="invite-member-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
+                <span class="invite-status-dot" [class]="u.status || 'offline'"></span>
+              </div>
+              <div class="invite-member-info">
+                <span class="invite-member-name">{{ u.display_name }}</span>
+                <span class="invite-member-username">{{'@' + u.username}}</span>
+              </div>
+              <button mat-icon-button *ngIf="!invitedUserIds.has(u.id)"
+                      [matTooltip]="u.status === 'offline' ? 'Offline' : 'Anrufen'"
+                      (click)="inviteToCall(u)"
+                      [disabled]="u.status === 'offline'"
+                      [class.call-online]="u.status && u.status !== 'offline'">
+                <mat-icon>call</mat-icon>
+              </button>
+              <button mat-icon-button *ngIf="invitedUserIds.has(u.id)"
+                      matTooltip="Anruf abbrechen"
+                      (click)="cancelInvite(u)"
+                      class="call-cancel">
+                <mat-icon>call_end</mat-icon>
+              </button>
+            </div>
+            <p *ngIf="!searchLoading && searchResults.length === 0 && userSearchQuery.length >= 2" class="no-members">Keine Benutzer gefunden</p>
+          </div>
         </div>
       </div>
 
@@ -360,6 +399,29 @@ import { AuthService } from '@core/services/auth.service';
       font-size: 14px;
     }
     .invite-panel-header button { color: #aaa; }
+    .invite-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid #444;
+    }
+    .invite-search mat-icon {
+      color: #888;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+    .invite-search input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: white;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .invite-search input::placeholder { color: #888; }
     .invite-panel-list {
       max-height: 250px;
       overflow-y: auto;
@@ -439,6 +501,10 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   channelMembers: any[] = [];
   callableMembers: any[] = [];
   invitedUserIds = new Set<string>();
+  userSearchQuery = '';
+  searchResults: any[] = [];
+  searchLoading = false;
+  private searchSubject = new Subject<string>();
   private currentUserId = '';
   private subscriptions: Subscription[] = [];
   private pendingStreamAttach = false;
@@ -464,6 +530,27 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
 
     this.loadChannelMembers();
+
+    // User search with debounce
+    this.subscriptions.push(
+      this.searchSubject.pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((query) => {
+          if (query.length < 2) {
+            this.searchLoading = false;
+            return of([]);
+          }
+          this.searchLoading = true;
+          return this.apiService.searchUsers(query);
+        }),
+      ).subscribe((users) => {
+        const inCallIds = new Set(this.participantList.map((p) => p.userId));
+        inCallIds.add(this.currentUserId);
+        this.searchResults = users.filter((u: any) => !inCallIds.has(u.id));
+        this.searchLoading = false;
+      })
+    );
 
     // Create or get existing room, then join
     this.apiService.createVideoRoom(this.channelId).subscribe({
@@ -614,9 +701,20 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       .filter((u: any) => !inCallIds.has(u.id));
   }
 
+  onSearchQueryChange(query: string): void {
+    if (!query) {
+      this.searchResults = [];
+      this.searchLoading = false;
+      return;
+    }
+    this.searchSubject.next(query);
+  }
+
   toggleInvitePanel(): void {
     this.showInvitePanel = !this.showInvitePanel;
     if (this.showInvitePanel) {
+      this.userSearchQuery = '';
+      this.searchResults = [];
       this.updateCallableMembers();
     }
   }
