@@ -100,6 +100,20 @@ CREATE TABLE calendar_events (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"""
 
+_OLD_EVENT_ATTENDEES_DDL = """\
+CREATE TABLE event_attendees (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    user_id TEXT,
+    email TEXT NOT NULL,
+    display_name TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    is_external BOOLEAN DEFAULT false,
+    guest_token TEXT UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"""
+
 
 # ---------------------------------------------------------------------------
 # Fixtures: build an "old" database, run migration, then spin up the API
@@ -117,6 +131,7 @@ async def old_schema_engine():
         await conn.execute(text(_OLD_CHANNEL_MEMBERS_DDL))
         await conn.execute(text(_OLD_CALENDAR_INTEGRATIONS_DDL))
         await conn.execute(text(_OLD_CALENDAR_EVENTS_DDL))
+        await conn.execute(text(_OLD_EVENT_ATTENDEES_DDL))
 
         # Insert a pre-existing Google integration with OLD fields
         user_id = str(uuid.uuid4())

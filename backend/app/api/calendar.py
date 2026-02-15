@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.calendar import CalendarEvent, CalendarIntegration, EventAttendee
@@ -71,6 +72,7 @@ async def list_events(
 
     query = (
         select(CalendarEvent)
+        .options(selectinload(CalendarEvent.attendees))
         .where(
             and_(
                 CalendarEvent.user_id == current_user.id,
@@ -398,7 +400,7 @@ async def sync_events(
     await db.flush()
 
     for ev in imported:
-        await db.refresh(ev)
+        await db.refresh(ev, ["attendees"])
     return imported
 
 
@@ -537,6 +539,72 @@ async def _exchange_google_code(
     await db.flush()
     await db.refresh(integration)
     return google_email, integration
+
+
+# ---------------------------------------------------------------------------
+# Google Calendar diagnostics
+# ---------------------------------------------------------------------------
+
+
+@router.get("/google/status")
+async def google_calendar_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Diagnostic endpoint: check if Google Calendar integration is working.
+
+    Returns details about the OAuth state and tries a minimal API call
+    so the user sees the *actual* Google error (e.g. API not enabled).
+    """
+    import httpx as _httpx
+
+    if not settings.google_client_id:
+        return {"ok": False, "error": "Google OAuth not configured (GOOGLE_CLIENT_ID missing)"}
+
+    integration = await _get_integration(db, current_user.id)
+    if not integration or integration.provider != "google":
+        return {"ok": False, "error": "No Google Calendar integration configured for this user"}
+
+    if not integration.google_refresh_token:
+        return {"ok": False, "error": "Google account not connected – no refresh token. Please reconnect via Settings."}
+
+    # Try refreshing the token
+    try:
+        token = await calendar_sync._google_ensure_token(integration)
+        await db.flush()
+    except calendar_sync.ProviderError as exc:
+        return {"ok": False, "error": f"Token refresh failed: {exc.detail}"}
+
+    # Try a minimal Calendar API call
+    try:
+        async with _httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{calendar_sync.GOOGLE_CALENDAR_API}/calendars/primary",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except _httpx.HTTPError as exc:
+        return {"ok": False, "error": f"Network error reaching Google: {exc}"}
+
+    if resp.status_code == 200:
+        cal = resp.json()
+        return {
+            "ok": True,
+            "google_email": integration.google_email,
+            "calendar_summary": cal.get("summary"),
+            "calendar_timezone": cal.get("timeZone"),
+        }
+
+    # Return the actual Google error for diagnosis
+    try:
+        err = resp.json()
+        google_msg = err.get("error", {}).get("message", resp.text[:500])
+    except Exception:
+        google_msg = resp.text[:500]
+    return {
+        "ok": False,
+        "http_status": resp.status_code,
+        "google_error": google_msg,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -708,7 +776,9 @@ async def _get_own_event(
     db: AsyncSession, event_id: uuid.UUID, user_id: uuid.UUID
 ) -> CalendarEvent:
     result = await db.execute(
-        select(CalendarEvent).where(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.attendees))
+        .where(
             and_(CalendarEvent.id == event_id, CalendarEvent.user_id == user_id)
         )
     )
