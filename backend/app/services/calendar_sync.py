@@ -260,12 +260,23 @@ async def google_list_events(
         raise ProviderError("google", 503, f"Could not reach Google Calendar API: {exc}")
 
     if resp.status_code >= 400:
-        detail = resp.text[:200]
+        raw_detail = resp.text[:500]
+        detail = raw_detail
+        # Try to extract meaningful message from Google JSON error response
+        google_message = ""
+        try:
+            err_json = resp.json()
+            google_message = err_json.get("error", {}).get("message", "")
+        except Exception:
+            pass
         if resp.status_code == 401:
             detail = "Authentication failed – please reconnect your Google account"
         elif resp.status_code == 403:
-            detail = "Access denied – calendar permissions may have been revoked"
-        logger.warning("Google Calendar API failed: HTTP %d – %s", resp.status_code, detail)
+            if google_message:
+                detail = f"Access denied – {google_message}"
+            else:
+                detail = f"Access denied – {raw_detail}"
+        logger.warning("Google Calendar API failed: HTTP %d – %s", resp.status_code, raw_detail)
         raise ProviderError("google", resp.status_code, detail)
 
     events: list[dict[str, Any]] = []
@@ -313,6 +324,7 @@ async def google_create_event(
         )
     if resp.status_code < 400:
         return resp.json().get("id")
+    logger.warning("Google Calendar create event failed: HTTP %d – %s", resp.status_code, resp.text[:500])
     return None
 
 
@@ -324,6 +336,8 @@ async def google_delete_event(integration: CalendarIntegration, event_id: str) -
             f"{GOOGLE_CALENDAR_API}/calendars/primary/events/{event_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
+    if resp.status_code >= 400:
+        logger.warning("Google Calendar delete event failed: HTTP %d – %s", resp.status_code, resp.text[:500])
     return resp.status_code < 400
 
 
