@@ -206,6 +206,14 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/calendar/events/${eventId}`);
   }
 
+  getCalendarInvitations(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/calendar/invitations`);
+  }
+
+  rsvpCalendarEvent(eventId: string, rsvpStatus: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/calendar/events/${eventId}/rsvp`, { status: rsvpStatus });
+  }
+
   getCalendarIntegration(): Observable<any> {
     return this.http.get(`${this.baseUrl}/calendar/integration`);
   }

@@ -377,8 +377,10 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
     if (!query) {
       this.memberSearchResults = [];
       this.memberSearchLoading = false;
+      this.showSearchResults = false;
       return;
     }
+    this.showSearchResults = true;
     this.searchSubject.next(query);
   }
 

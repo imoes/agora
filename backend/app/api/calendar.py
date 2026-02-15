@@ -62,7 +62,10 @@ async def list_events(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List calendar events for the current user within an optional date range."""
+    """List calendar events for the current user within an optional date range.
+
+    Includes events the user owns AND events where the user is an accepted attendee.
+    """
     if start is None:
         start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if end is None:
@@ -70,12 +73,26 @@ async def list_events(
         next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
         end = (next_month.replace(day=28) + timedelta(days=4)).replace(day=1)
 
+    from sqlalchemy import or_
+
+    # Own events OR events where user is an accepted attendee
     query = (
         select(CalendarEvent)
+        .outerjoin(
+            EventAttendee,
+            and_(
+                EventAttendee.event_id == CalendarEvent.id,
+                EventAttendee.user_id == current_user.id,
+                EventAttendee.status == "accepted",
+            ),
+        )
         .options(selectinload(CalendarEvent.attendees))
         .where(
             and_(
-                CalendarEvent.user_id == current_user.id,
+                or_(
+                    CalendarEvent.user_id == current_user.id,
+                    EventAttendee.id.isnot(None),
+                ),
                 CalendarEvent.start_time < end,
                 CalendarEvent.end_time > start,
             )
@@ -83,7 +100,7 @@ async def list_events(
         .order_by(CalendarEvent.start_time)
     )
     result = await db.execute(query)
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 @router.post("/events", response_model=CalendarEventOut, status_code=status.HTTP_201_CREATED)
@@ -194,10 +211,13 @@ async def create_event(
     # Push to external provider if configured
     integration = await _get_integration(db, current_user.id)
     if integration and integration.provider != "internal":
-        external_id = await _push_event_to_provider(integration, event)
-        if external_id:
-            event.external_id = external_id
-            await db.flush()
+        try:
+            external_id = await _push_event_to_provider(integration, event)
+            if external_id:
+                event.external_id = external_id
+                await db.flush()
+        except (ProviderError, Exception) as exc:
+            logger.warning("Failed to push event to provider: %s", exc)
 
     await db.refresh(event, ["attendees"])
     return event
@@ -211,6 +231,58 @@ async def get_event(
 ):
     event = await _get_own_event(db, event_id, current_user.id)
     return event
+
+
+@router.get("/invitations", response_model=list[CalendarEventOut])
+async def list_invitations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List calendar events where the current user is invited (as attendee)."""
+    result = await db.execute(
+        select(CalendarEvent)
+        .join(EventAttendee, EventAttendee.event_id == CalendarEvent.id)
+        .options(selectinload(CalendarEvent.attendees))
+        .where(
+            and_(
+                EventAttendee.user_id == current_user.id,
+                EventAttendee.is_external == False,  # noqa: E712
+                CalendarEvent.user_id != current_user.id,
+                CalendarEvent.start_time >= datetime.now(timezone.utc),
+            )
+        )
+        .order_by(CalendarEvent.start_time)
+    )
+    return result.scalars().unique().all()
+
+
+@router.post("/events/{event_id}/rsvp")
+async def rsvp_event(
+    event_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Accept or decline an event invitation. Body: {"status": "accepted"|"declined"}."""
+    rsvp_status = body.get("status", "").lower()
+    if rsvp_status not in ("accepted", "declined"):
+        raise HTTPException(status_code=400, detail="status must be 'accepted' or 'declined'")
+
+    result = await db.execute(
+        select(EventAttendee).where(
+            and_(
+                EventAttendee.event_id == event_id,
+                EventAttendee.user_id == current_user.id,
+            )
+        )
+    )
+    attendee = result.scalar_one_or_none()
+    if attendee is None:
+        raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
+
+    attendee.status = rsvp_status
+    await db.flush()
+    return {"status": rsvp_status}
 
 
 @router.patch("/events/{event_id}", response_model=CalendarEventOut)
@@ -234,7 +306,10 @@ async def update_event(
     # Update in external provider
     integration = await _get_integration(db, current_user.id)
     if integration and integration.provider != "internal" and event.external_id:
-        await _push_event_to_provider(integration, event)
+        try:
+            await _push_event_to_provider(integration, event)
+        except (ProviderError, Exception) as exc:
+            logger.warning("Failed to update event in provider: %s", exc)
 
     await db.refresh(event)
     return event
@@ -251,7 +326,10 @@ async def delete_event(
     # Delete from external provider
     integration = await _get_integration(db, current_user.id)
     if integration and integration.provider != "internal" and event.external_id:
-        await _delete_from_provider(integration, event.external_id)
+        try:
+            await _delete_from_provider(integration, event.external_id)
+        except (ProviderError, Exception) as exc:
+            logger.warning("Failed to delete event from provider: %s", exc)
 
     await db.delete(event)
     await db.flush()
@@ -395,6 +473,22 @@ async def sync_events(
             )
             db.add(ev)
         imported.append(ev)
+
+    # Remove local events that no longer exist in the external provider
+    synced_ext_ids = {ext.get("external_id") for ext in external_events if ext.get("external_id")}
+    local_external = await db.execute(
+        select(CalendarEvent).where(
+            and_(
+                CalendarEvent.user_id == current_user.id,
+                CalendarEvent.external_id.isnot(None),
+                CalendarEvent.start_time < end,
+                CalendarEvent.end_time > start,
+            )
+        )
+    )
+    for local_ev in local_external.scalars().all():
+        if local_ev.external_id not in synced_ext_ids:
+            await db.delete(local_ev)
 
     integration.last_sync_at = now
     await db.flush()
