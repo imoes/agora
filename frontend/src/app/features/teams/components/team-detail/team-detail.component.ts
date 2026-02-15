@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -87,15 +87,15 @@ export class CreateChannelDialogComponent {
 
         <mat-tab label="Mitglieder">
           <div class="tab-content">
-            <div class="tab-header">
+            <div class="tab-header search-container">
               <div class="member-search">
                 <mat-icon class="search-icon">search</mat-icon>
                 <input type="text" [(ngModel)]="memberSearchQuery"
                        (ngModelChange)="onMemberSearchChange($event)"
+                       (focus)="showSearchResults = true"
                        placeholder="Benutzer suchen und hinzufuegen...">
               </div>
-            </div>
-            <div *ngIf="memberSearchQuery && memberSearchQuery.length >= 2" class="search-results">
+              <div *ngIf="showSearchResults && memberSearchQuery && memberSearchQuery.length >= 2" class="search-results">
               <div *ngIf="memberSearchLoading" class="search-hint">Suche...</div>
               <div *ngFor="let u of memberSearchResults" class="search-result-item">
                 <div class="member-avatar">
@@ -112,6 +112,7 @@ export class CreateChannelDialogComponent {
               </div>
               <div *ngIf="!memberSearchLoading && memberSearchResults.length === 0" class="search-hint">
                 Keine Benutzer gefunden
+              </div>
               </div>
             </div>
             <mat-list>
@@ -172,6 +173,9 @@ export class CreateChannelDialogComponent {
     }
     .tab-header {
       margin-bottom: 16px;
+    }
+    .search-container {
+      position: relative;
     }
     .channel-item {
       cursor: pointer;
@@ -278,6 +282,7 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
   memberSearchResults: any[] = [];
   memberSearchLoading = false;
   addingUserId: string | null = null;
+  showSearchResults = false;
   private searchSubject = new Subject<string>();
   private subscriptions: Subscription[] = [];
 
@@ -287,7 +292,16 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
     private apiService: ApiService,
     private dialog: MatDialog,
     private snackBar: MatSnackBar,
+    private elementRef: ElementRef,
   ) {}
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    const container = this.elementRef.nativeElement.querySelector('.search-container');
+    if (container && !container.contains(event.target)) {
+      this.showSearchResults = false;
+    }
+  }
 
   ngOnInit(): void {
     this.teamId = this.route.snapshot.paramMap.get('teamId') || '';
