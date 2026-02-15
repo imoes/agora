@@ -22,6 +22,9 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     auth_source: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="local"
     )  # 'local' or 'ldap'
+    is_guest: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )  # True for temporary guest participants
 
     owned_teams = relationship("Team", back_populates="owner")
     team_memberships = relationship("TeamMember", back_populates="user")

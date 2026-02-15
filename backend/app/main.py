@@ -61,6 +61,10 @@ def _add_missing_columns(connection):
         connection.execute(text(
             "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local'"
         ))
+    if "is_guest" not in user_cols:
+        connection.execute(text(
+            "ALTER TABLE users ADD COLUMN is_guest BOOLEAN DEFAULT false"
+        ))
 
 
 @asynccontextmanager

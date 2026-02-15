@@ -195,11 +195,16 @@ async def _google_ensure_token(integration: CalendarIntegration) -> str:
 
     from app.config import settings as app_settings
 
-    # Check if access token is still valid (with 60s safety margin)
+    # Check if access token is still valid (with 60s safety margin).
+    # The expiry loaded from PostgreSQL may be a naive datetime (no tzinfo),
+    # so normalise before comparing with an aware now().
+    expiry = integration.google_token_expiry
+    if expiry is not None and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
     if (
         integration.google_access_token
-        and integration.google_token_expiry
-        and integration.google_token_expiry > datetime.now(timezone.utc) + timedelta(seconds=60)
+        and expiry
+        and expiry > datetime.now(timezone.utc) + timedelta(seconds=60)
     ):
         return integration.google_access_token
 

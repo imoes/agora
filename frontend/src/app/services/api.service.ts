@@ -243,6 +243,17 @@ export class ApiService {
     return this.http.post<any[]>(`${this.baseUrl}/calendar/sync`, null, { params });
   }
 
+  // Guest meeting access (no auth)
+  getGuestMeetingInfo(guestToken: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/calendar/guest/${guestToken}`);
+  }
+
+  guestJoinMeeting(guestToken: string, displayName: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/calendar/guest/${guestToken}/join`, {
+      display_name: displayName,
+    });
+  }
+
   // Admin
   getAdminStats(): Observable<any> {
     return this.http.get(`${this.baseUrl}/admin/stats`);

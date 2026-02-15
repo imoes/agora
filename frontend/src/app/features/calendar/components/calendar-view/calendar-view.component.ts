@@ -20,6 +20,14 @@ interface CalendarDay {
   hasEvents: boolean;
 }
 
+interface EventAttendee {
+  id: string;
+  email: string;
+  display_name?: string;
+  status: string;
+  is_external: boolean;
+}
+
 interface CalendarEvent {
   id: string;
   title: string;
@@ -29,6 +37,7 @@ interface CalendarEvent {
   all_day: boolean;
   location?: string;
   channel_id?: string;
+  attendees?: EventAttendee[];
 }
 
 @Component({
@@ -192,6 +201,27 @@ interface CalendarEvent {
           </label>
           <span class="hint" *ngIf="eventCreateVideoCall">Ein Video-Call-Link wird automatisch im Ort eingetragen</span>
         </div>
+        <div class="field">
+          <label>Teilnehmer einladen:</label>
+          <div class="attendee-input-row">
+            <input type="email" [(ngModel)]="attendeeEmail"
+                   placeholder="E-Mail-Adresse eingeben"
+                   (keydown.enter)="addAttendee()">
+            <button class="btn btn-small" (click)="addAttendee()" [disabled]="!attendeeEmail.trim()">
+              <mat-icon>person_add</mat-icon>
+            </button>
+          </div>
+          <div class="attendee-chips" *ngIf="eventAttendees.length > 0">
+            <div class="attendee-chip" *ngFor="let email of eventAttendees; let i = index">
+              <mat-icon class="chip-icon">person</mat-icon>
+              <span>{{ email }}</span>
+              <mat-icon class="chip-remove" (click)="removeAttendee(i)">close</mat-icon>
+            </div>
+          </div>
+          <span class="hint" *ngIf="eventAttendees.length > 0">
+            Externe Teilnehmer koennen dem Termin ohne Account beitreten
+          </span>
+        </div>
         <div class="form-actions">
           <button class="btn btn-primary" (click)="saveEvent()">Speichern</button>
           <button class="btn btn-secondary" (click)="cancelEventForm()">Abbrechen</button>
@@ -217,6 +247,11 @@ interface CalendarEvent {
             <mat-icon class="event-location-icon">{{ isVideoLink(ev.location) ? 'videocam' : 'place' }}</mat-icon>
             <a *ngIf="isVideoLink(ev.location)" [routerLink]="getVideoLink(ev.location)" class="video-link">Video-Call beitreten</a>
             <span *ngIf="!isVideoLink(ev.location)">{{ ev.location }}</span>
+          </div>
+          <div class="event-attendees" *ngIf="ev.attendees?.length > 0">
+            <mat-icon class="event-location-icon">group</mat-icon>
+            <span>{{ ev.attendees.length }} Teilnehmer</span>
+            <span class="attendee-names">{{ ev.attendees.map(a => a.display_name || a.email).join(', ') }}</span>
           </div>
         </div>
       </div>
@@ -345,6 +380,59 @@ interface CalendarEvent {
     }
     .btn-danger:hover {
       background: #b71c1c;
+    }
+    .btn-small {
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+    .btn-small mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .attendee-input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .attendee-input-row input { flex: 1; }
+    .attendee-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .attendee-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #e8eaf6;
+      border-radius: 16px;
+      padding: 4px 8px 4px 6px;
+      font-size: 12px;
+      color: #333;
+    }
+    .chip-icon { font-size: 16px; width: 16px; height: 16px; color: var(--primary); }
+    .chip-remove {
+      font-size: 14px; width: 14px; height: 14px;
+      cursor: pointer; color: #999;
+    }
+    .chip-remove:hover { color: #d32f2f; }
+    .event-attendees {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .attendee-names {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
     }
 
     /* Mini Calendar */
@@ -566,6 +654,8 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   eventLocation = '';
   eventAllDay = false;
   eventCreateVideoCall = false;
+  eventAttendees: string[] = [];
+  attendeeEmail = '';
 
   // Settings
   showSettings = false;
@@ -804,6 +894,20 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     this.eventLocation = '';
     this.eventAllDay = false;
     this.eventCreateVideoCall = false;
+    this.eventAttendees = [];
+    this.attendeeEmail = '';
+  }
+
+  addAttendee(): void {
+    const email = this.attendeeEmail.trim().toLowerCase();
+    if (email && email.includes('@') && !this.eventAttendees.includes(email)) {
+      this.eventAttendees.push(email);
+    }
+    this.attendeeEmail = '';
+  }
+
+  removeAttendee(index: number): void {
+    this.eventAttendees.splice(index, 1);
   }
 
   editEvent(ev: CalendarEvent): void {
@@ -829,6 +933,11 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       create_video_call: this.eventCreateVideoCall,
     };
 
+    // Include attendees for new events
+    if (!this.editingEvent && this.eventAttendees.length > 0) {
+      data.attendees = this.eventAttendees.map((email: string) => ({ email }));
+    }
+
     if (this.editingEvent) {
       this.apiService.updateCalendarEvent(this.editingEvent.id, data).subscribe({
         next: () => {
@@ -839,8 +948,14 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       });
     } else {
       this.apiService.createCalendarEvent(data).subscribe({
-        next: () => {
+        next: (created: any) => {
           this.showEventForm = false;
+          if (data.attendees?.length > 0) {
+            this.snackBar.open(
+              `Termin erstellt, ${data.attendees.length} Einladung(en) werden versendet`,
+              'OK', { duration: 4000 },
+            );
+          }
           this.loadEvents();
         },
       });
@@ -862,6 +977,8 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   cancelEventForm(): void {
     this.showEventForm = false;
     this.editingEvent = null;
+    this.eventAttendees = [];
+    this.attendeeEmail = '';
   }
 
   private toLocalDatetime(d: Date): string {
