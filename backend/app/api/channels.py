@@ -481,14 +481,23 @@ async def leave_channel(
     await db.delete(member)
     await db.flush()
 
-    # Update channel name
-    await _update_channel_name(channel, db)
-
     # Get remaining member count
     count_result = await db.execute(
         select(func.count()).where(ChannelMember.channel_id == channel_id)
     )
     remaining = count_result.scalar() or 0
+
+    # If no members remain, delete the channel entirely
+    if remaining == 0:
+        await db.execute(
+            sa_delete(FeedEvent).where(FeedEvent.channel_id == channel_id)
+        )
+        await db.delete(channel)
+        await db.flush()
+        return {"status": "ok", "remaining_members": 0, "deleted": True}
+
+    # Update channel name
+    await _update_channel_name(channel, db)
 
     # Broadcast member_left event
     await manager.send_to_channel(
