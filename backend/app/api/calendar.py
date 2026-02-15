@@ -396,8 +396,21 @@ async def delete_event(
         except (ProviderError, Exception) as exc:
             logger.warning("Failed to delete event from provider: %s", exc)
 
+    # Delete the associated meeting channel (and its members via cascade)
+    channel_id = event.channel_id
     await db.delete(event)
     await db.flush()
+
+    if channel_id:
+        channel = await db.get(Channel, channel_id)
+        if channel and channel.channel_type == "meeting":
+            from sqlalchemy import delete as sa_delete
+            from app.models.feed import FeedEvent
+            await db.execute(
+                sa_delete(FeedEvent).where(FeedEvent.channel_id == channel_id)
+            )
+            await db.delete(channel)
+            await db.flush()
 
 
 # ---------------------------------------------------------------------------
