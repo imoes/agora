@@ -248,10 +248,10 @@ interface CalendarEvent {
             <a *ngIf="isVideoLink(ev.location)" [routerLink]="getVideoLink(ev.location)" class="video-link">Video-Call beitreten</a>
             <span *ngIf="!isVideoLink(ev.location)">{{ ev.location }}</span>
           </div>
-          <div class="event-attendees" *ngIf="ev.attendees?.length > 0">
+          <div class="event-attendees" *ngIf="ev.attendees && ev.attendees.length > 0">
             <mat-icon class="event-location-icon">group</mat-icon>
             <span>{{ ev.attendees.length }} Teilnehmer</span>
-            <span class="attendee-names">{{ ev.attendees.map(a => a.display_name || a.email).join(', ') }}</span>
+            <span class="attendee-names">{{ formatAttendees(ev.attendees) }}</span>
           </div>
         </div>
       </div>
@@ -875,6 +875,10 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  formatAttendees(attendees: EventAttendee[]): string {
+    return attendees.map(a => a.display_name || a.email).join(', ');
   }
 
   // ---------- Event Form ----------
