@@ -1,6 +1,7 @@
 import { Component, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -206,9 +207,10 @@ export class InviteDialogComponent {
 
   constructor(
     private dialogRef: MatDialogRef<InviteDialogComponent>,
-    @Inject(MAT_DIALOG_DATA) public data: { channelId: string; inviteToken: string },
+    @Inject(MAT_DIALOG_DATA) public data: { channelId: string; inviteToken: string; channelType?: string },
     private apiService: ApiService,
     private snackBar: MatSnackBar,
+    private router: Router,
   ) {
     this.inviteUrl = `${window.location.origin}/invite/${data.inviteToken}`;
     this.loadInvitations();
@@ -237,7 +239,13 @@ export class InviteDialogComponent {
 
   addMember(user: any): void {
     this.apiService.addChannelMember(this.data.channelId, user.id).subscribe({
-      next: () => {
+      next: (res) => {
+        // If backend created/found a new group channel (from direct chat), redirect
+        if (res.channel_id && res.channel_id !== this.data.channelId) {
+          this.snackBar.open(`Gruppenchat erstellt mit ${user.display_name}`, 'OK', { duration: 2000 });
+          this.dialogRef.close({ redirectTo: res.channel_id });
+          return;
+        }
         this.addedMembers.push(user);
         this.existingMemberIds.add(user.id);
         this.userSearchResults = this.userSearchResults.filter((u) => u.id !== user.id);
