@@ -409,7 +409,16 @@ async def google_callback_get(
 
     google_email, _ = await _exchange_google_code(db, code, user_id)
 
-    redirect_url = f"{settings.frontend_url}/calendar?google_connected=true"
+    # Commit NOW so tokens are persisted before the browser follows the
+    # redirect and triggers a sync call.
+    await db.commit()
+
+    # Redirect back to the HTTPS frontend.
+    frontend = settings.frontend_url
+    parsed = urllib.parse.urlparse(frontend)
+    if parsed.hostname == "localhost" and parsed.scheme == "http":
+        frontend = frontend.replace("http://", "https://", 1)
+    redirect_url = f"{frontend}/calendar?google_connected=true"
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
