@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Agora
+Comment=Agora Collaboration Platform - Desktop Client
+Exec=agora-linux
+Type=Application
+Categories=Network;Chat;InstantMessaging;
+Keywords=chat;video;collaboration;teams;
+StartupNotify=true

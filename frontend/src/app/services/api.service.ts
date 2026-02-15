@@ -76,6 +76,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/files/channel/${channelId}`);
   }
 
+  getTeamFiles(teamId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/files/team/${teamId}`);
+  }
+
   getFileDownloadUrl(refId: string): string {
     return `${this.baseUrl}/files/download/${refId}`;
   }

@@ -1,0 +1,60 @@
+<Window x:Class="AgoraWindows.Views.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Agora - Anmeldung"
+        Width="420" Height="500"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Grid>
+        <Border Background="White" CornerRadius="8" Margin="40"
+                Padding="30" VerticalAlignment="Center"
+                Effect="{x:Null}">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" ShadowDepth="2" Opacity="0.15" />
+            </Border.Effect>
+
+            <StackPanel>
+                <!-- Logo / Title -->
+                <TextBlock Text="Agora" FontSize="28" FontWeight="Bold"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           HorizontalAlignment="Center" Margin="0,0,0,8" />
+                <TextBlock Text="Collaboration Platform"
+                           FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center" Margin="0,0,0,24" />
+
+                <!-- Server URL -->
+                <TextBlock Text="Server-URL:" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                <TextBox x:Name="ServerUrlBox" Text="https://localhost"
+                         Padding="8" FontSize="13" Margin="0,0,0,12"
+                         BorderBrush="{StaticResource BorderBrush}" />
+
+                <!-- Username -->
+                <TextBlock Text="Benutzername:" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                <TextBox x:Name="UsernameBox" Padding="8" FontSize="13" Margin="0,0,0,12"
+                         BorderBrush="{StaticResource BorderBrush}" />
+
+                <!-- Password -->
+                <TextBlock Text="Passwort:" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                <PasswordBox x:Name="PasswordBox" Padding="8" FontSize="13" Margin="0,0,0,20"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             KeyDown="PasswordBox_KeyDown" />
+
+                <!-- Error message -->
+                <TextBlock x:Name="ErrorText" Text="" FontSize="12"
+                           Foreground="Red" Margin="0,0,0,8"
+                           TextWrapping="Wrap" Visibility="Collapsed" />
+
+                <!-- Login button -->
+                <Button x:Name="LoginButton" Content="Anmelden"
+                        Style="{StaticResource PrimaryButton}"
+                        Click="LoginButton_Click"
+                        HorizontalAlignment="Stretch" Height="38" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

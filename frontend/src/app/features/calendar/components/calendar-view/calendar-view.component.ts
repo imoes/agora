@@ -240,29 +240,6 @@ interface CalendarEvent {
         </div>
       </div>
 
-      <!-- Pending Invitations -->
-      <div class="invitations-section" *ngIf="pendingInvitations.length > 0">
-        <h3 class="events-title">Einladungen ({{ pendingInvitations.length }})</h3>
-        <div *ngFor="let inv of pendingInvitations" class="invitation-card">
-          <div class="event-time">
-            {{ formatDate(inv.start_time) }} {{ formatTime(inv.start_time) }} - {{ formatTime(inv.end_time) }}
-          </div>
-          <div class="event-title">{{ inv.title }}</div>
-          <div class="event-location" *ngIf="inv.location">
-            <mat-icon class="event-location-icon">place</mat-icon>
-            <span>{{ inv.location }}</span>
-          </div>
-          <div class="invitation-actions">
-            <button class="btn btn-accept" (click)="respondInvitation(inv, 'accepted')">
-              <mat-icon>check</mat-icon> Annehmen
-            </button>
-            <button class="btn btn-decline" (click)="respondInvitation(inv, 'declined')">
-              <mat-icon>close</mat-icon> Ablehnen
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- Events List for Selected Day -->
       <div class="events-section">
         <h3 class="events-title">
@@ -804,7 +781,6 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   // Events
   events: CalendarEvent[] = [];
   selectedDayEvents: CalendarEvent[] = [];
-  pendingInvitations: CalendarEvent[] = [];
 
   // Event form
   showEventForm = false;
@@ -881,7 +857,6 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
       })
     );
     this.loadEvents();
-    this.loadInvitations();
     this.loadIntegration();
     this.handleGoogleCallback();
   }
@@ -1040,25 +1015,12 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     });
   }
 
-  loadInvitations(): void {
-    this.apiService.getCalendarInvitations().subscribe({
-      next: (invitations) => {
-        this.pendingInvitations = invitations;
-      },
-      error: () => {
-        this.pendingInvitations = [];
-      },
-    });
-  }
-
   respondInvitation(event: CalendarEvent, rsvpStatus: string): void {
     this.apiService.rsvpCalendarEvent(event.id, rsvpStatus).subscribe({
       next: () => {
         const msg = rsvpStatus === 'accepted' ? 'Einladung angenommen' : 'Einladung abgelehnt';
         this.snackBar.open(msg, 'OK', { duration: 3000 });
-        this.pendingInvitations = this.pendingInvitations.filter((inv) => inv.id !== event.id);
         this.loadEvents();
-        this.loadInvitations();
       },
       error: () => {
         this.snackBar.open('Fehler bei der Antwort', 'OK', { duration: 4000 });

@@ -13,6 +13,8 @@ Agora is a self-hosted collaboration platform with chat, video conferencing, fil
 - **LDAP/Active Directory** - Optional user authentication via LDAP
 - **Email Invitations** - Invitations via email with ICS calendar attachment
 - **Admin Panel** - User management and system statistics
+- **Windows Desktop App** - Native .NET/WPF client for Windows
+- **Linux Desktop App** - Native GTK3 client for Linux (X Server)
 
 ---
 
@@ -167,6 +169,16 @@ agora/
 │   ├── Dockerfile            # Production build
 │   ├── Dockerfile.dev        # Development server
 │   └── angular.json
+├── desktop/                  # Native desktop clients
+│   ├── AgoraWindows/         # .NET/WPF Windows application
+│   │   ├── Models/           # Data models (User, Channel, Message)
+│   │   ├── Services/         # API client, WebSocket client
+│   │   ├── Views/            # WPF windows (Login, Main)
+│   │   └── AgoraWindows.csproj
+│   └── agora-linux/          # GTK3 Linux application (X Server)
+│       ├── src/              # C source files
+│       ├── resources/        # Desktop entry, icons
+│       └── Makefile
 ├── nginx/
 │   ├── Dockerfile            # Nginx with self-signed certs
 │   └── nginx.conf            # Reverse proxy config
@@ -406,6 +418,81 @@ For Microsoft Exchange Server (on-premise):
    ```
    https://mail.company.com/EWS/Exchange.asmx
    ```
+
+---
+
+## Desktop Applications
+
+In addition to the web frontend, Agora provides native desktop clients for Windows and Linux.
+
+### Windows (.NET/WPF)
+
+A native Windows desktop application built with .NET 8 and WPF.
+
+**Prerequisites:**
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+
+**Build & Run:**
+
+```bash
+cd desktop/AgoraWindows
+dotnet build
+dotnet run
+```
+
+**Publish (standalone executable):**
+
+```bash
+dotnet publish -c Release -r win-x64 --self-contained
+```
+
+**Features:**
+- Login with server URL, username, and password
+- Channel list with unread badges
+- Real-time chat via WebSocket
+- Message sending via Enter key or button
+
+### Linux (GTK3 / X Server)
+
+A native Linux desktop application built with GTK3 and libsoup, designed for X Server environments.
+
+**Prerequisites (Debian/Ubuntu):**
+
+```bash
+sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev
+```
+
+**Prerequisites (Fedora):**
+
+```bash
+sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel
+```
+
+**Prerequisites (Arch Linux):**
+
+```bash
+sudo pacman -S base-devel gtk3 json-glib libsoup
+```
+
+**Build & Run:**
+
+```bash
+cd desktop/agora-linux
+make
+./agora-linux
+```
+
+**Install (system-wide):**
+
+```bash
+sudo make install
+```
+
+**Features:**
+- Login with server URL, username, and password
+- Channel list sidebar with member count and unread indicators
+- Message display and sending
+- Native X Server integration with `.desktop` file
 
 ---
 

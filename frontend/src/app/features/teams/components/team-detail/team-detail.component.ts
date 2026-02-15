@@ -10,6 +10,7 @@ import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subject, Subscription, of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
@@ -50,7 +51,7 @@ export class CreateChannelDialogComponent {
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatListModule, MatIconModule, MatButtonModule,
-    MatTabsModule, MatChipsModule, MatSnackBarModule,
+    MatTabsModule, MatChipsModule, MatTooltipModule, MatSnackBarModule,
   ],
   template: `
     <div class="team-detail">
@@ -129,6 +130,27 @@ export class CreateChannelDialogComponent {
                 </button>
               </mat-list-item>
             </mat-list>
+          </div>
+        </mat-tab>
+
+        <mat-tab label="Dateien">
+          <div class="tab-content">
+            <div *ngIf="teamFiles.length === 0" class="no-files">
+              <mat-icon class="no-files-icon">folder_open</mat-icon>
+              <p>Keine Dateien in diesem Team</p>
+            </div>
+            <div class="files-list">
+              <div *ngFor="let f of teamFiles" class="file-item">
+                <mat-icon class="file-icon">{{ getFileIcon(f.file?.mime_type) }}</mat-icon>
+                <div class="file-info">
+                  <a [href]="getDownloadUrl(f.id)" target="_blank" class="file-name">{{ f.original_filename }}</a>
+                  <span class="file-meta">{{ formatFileSize(f.file?.file_size) }} &middot; {{ formatDate(f.created_at) }}</span>
+                </div>
+                <a [href]="getDownloadUrl(f.id)" target="_blank" mat-icon-button matTooltip="Herunterladen">
+                  <mat-icon>download</mat-icon>
+                </a>
+              </div>
+            </div>
           </div>
         </mat-tab>
       </mat-tab-group>
@@ -271,12 +293,68 @@ export class CreateChannelDialogComponent {
       color: var(--text-secondary);
       font-size: 13px;
     }
+    .no-files {
+      text-align: center;
+      padding: 40px 16px;
+      color: var(--text-secondary);
+    }
+    .no-files-icon {
+      font-size: 48px;
+      width: 48px;
+      height: 48px;
+      color: #ccc;
+    }
+    .no-files p {
+      margin: 8px 0 0;
+      font-size: 14px;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .file-item:last-child {
+      border-bottom: none;
+    }
+    .file-icon {
+      color: var(--primary);
+      font-size: 28px;
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+    .file-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .file-name {
+      display: block;
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-name:hover {
+      text-decoration: underline;
+    }
+    .file-meta {
+      display: block;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
   `],
 })
 export class TeamDetailComponent implements OnInit, OnDestroy {
   team: any;
   channels: any[] = [];
   members: any[] = [];
+  teamFiles: any[] = [];
   teamId: string = '';
   memberSearchQuery = '';
   memberSearchResults: any[] = [];
@@ -308,6 +386,7 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
     this.loadTeam();
     this.loadChannels();
     this.loadMembers();
+    this.loadFiles();
 
     this.subscriptions.push(
       this.searchSubject.pipe(
@@ -412,6 +491,44 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
         const detail = err.error?.detail || 'Fehler beim Entfernen';
         this.snackBar.open(detail, 'OK', { duration: 4000 });
       },
+    });
+  }
+
+  loadFiles(): void {
+    this.apiService.getTeamFiles(this.teamId).subscribe({
+      next: (files) => { this.teamFiles = files; },
+      error: () => { this.teamFiles = []; },
+    });
+  }
+
+  getDownloadUrl(refId: string): string {
+    return this.apiService.getFileDownloadUrl(refId);
+  }
+
+  getFileIcon(mimeType: string): string {
+    if (!mimeType) return 'insert_drive_file';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'movie';
+    if (mimeType.startsWith('audio/')) return 'audiotrack';
+    if (mimeType.includes('pdf')) return 'picture_as_pdf';
+    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('tar')) return 'folder_zip';
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return 'table_chart';
+    if (mimeType.includes('document') || mimeType.includes('word')) return 'description';
+    if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return 'slideshow';
+    return 'insert_drive_file';
+  }
+
+  formatFileSize(bytes: number): string {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  formatDate(dateStr: string): string {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleDateString('de-DE', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
   }
 }

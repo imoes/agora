@@ -21,6 +21,7 @@ from app.schemas.calendar import (
 from app.services.auth import get_current_user
 from app.services import calendar_sync
 from app.services.calendar_sync import ProviderError, GOOGLE_AUTH_URL, GOOGLE_SCOPES, GOOGLE_TOKEN_URL
+from app.websocket.manager import manager
 from app.config import settings
 
 import os
@@ -396,8 +397,36 @@ async def delete_event(
         except (ProviderError, Exception) as exc:
             logger.warning("Failed to delete event from provider: %s", exc)
 
+    # Delete the associated meeting channel (and its members via cascade)
+    channel_id = event.channel_id
     await db.delete(event)
     await db.flush()
+
+    if channel_id:
+        channel = await db.get(Channel, channel_id)
+        if channel and channel.channel_type == "meeting":
+            # Collect member IDs before deleting so we can notify them
+            member_result = await db.execute(
+                select(ChannelMember.user_id).where(
+                    ChannelMember.channel_id == channel_id
+                )
+            )
+            member_user_ids = [str(row[0]) for row in member_result.all()]
+
+            from sqlalchemy import delete as sa_delete
+            from app.models.feed import FeedEvent
+            await db.execute(
+                sa_delete(FeedEvent).where(FeedEvent.channel_id == channel_id)
+            )
+            await db.delete(channel)
+            await db.flush()
+
+            # Notify all members that the channel was deleted
+            for uid in member_user_ids:
+                await manager.send_to_user(uid, {
+                    "type": "channel_deleted",
+                    "channel_id": str(channel_id),
+                })
 
 
 # ---------------------------------------------------------------------------
