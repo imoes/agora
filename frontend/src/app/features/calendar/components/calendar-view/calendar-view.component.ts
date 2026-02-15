@@ -211,9 +211,6 @@ interface CalendarEvent {
                      (focus)="showAttendeeSuggestions = true"
                      placeholder="Name oder E-Mail suchen..."
                      (keydown.enter)="addAttendeeFromQuery()">
-              <button class="btn btn-small" (click)="addAttendeeFromQuery()" [disabled]="!attendeeQuery.trim()">
-                <mat-icon>person_add</mat-icon>
-              </button>
             </div>
             <div class="attendee-suggestions" *ngIf="showAttendeeSuggestions && attendeeQuery && attendeeQuery.length >= 2 && attendeeSuggestions.length > 0">
               <div *ngFor="let u of attendeeSuggestions" class="attendee-suggestion" (click)="addAttendeeUser(u)">
