@@ -10,8 +10,9 @@ export const appConfig: ApplicationConfig = {
     provideRouter(
       routes,
       withNavigationErrorHandler((error) => {
-        if (error?.message?.includes('Failed to fetch dynamically imported module') ||
-            error?.message?.includes('Loading chunk')) {
+        const msg = (error as any)?.error?.message || String((error as any)?.error || '');
+        if (msg.includes('Failed to fetch dynamically imported module') ||
+            msg.includes('Loading chunk')) {
           window.location.reload();
         }
       }),
