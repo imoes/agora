@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -12,8 +12,9 @@ import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatBadgeModule } from '@angular/material/badge';
-import { debounceTime, Subject } from 'rxjs';
+import { debounceTime, Subject, Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
+import { WebSocketService } from '@services/websocket.service';
 
 @Component({
   selector: 'app-new-chat-dialog',
@@ -200,18 +201,29 @@ export class NewChatDialogComponent {
     }
   `],
 })
-export class ChatListComponent implements OnInit {
+export class ChatListComponent implements OnInit, OnDestroy {
   channels: any[] = [];
   loading = false;
+  private globalMsgSub?: Subscription;
 
   constructor(
     private apiService: ApiService,
     private router: Router,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private wsService: WebSocketService,
   ) {}
 
   ngOnInit(): void {
     this.loadChannels();
+    this.globalMsgSub = this.wsService.globalMessages$.subscribe((msg) => {
+      if (msg.type === 'channel_deleted' && msg.channel_id) {
+        this.channels = this.channels.filter((ch) => ch.id !== msg.channel_id);
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.globalMsgSub?.unsubscribe();
   }
 
   loadChannels(): void {
