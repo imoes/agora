@@ -229,6 +229,29 @@ interface CalendarEvent {
         </div>
       </div>
 
+      <!-- Pending Invitations -->
+      <div class="invitations-section" *ngIf="pendingInvitations.length > 0">
+        <h3 class="events-title">Einladungen ({{ pendingInvitations.length }})</h3>
+        <div *ngFor="let inv of pendingInvitations" class="invitation-card">
+          <div class="event-time">
+            {{ formatDate(inv.start_time) }} {{ formatTime(inv.start_time) }} - {{ formatTime(inv.end_time) }}
+          </div>
+          <div class="event-title">{{ inv.title }}</div>
+          <div class="event-location" *ngIf="inv.location">
+            <mat-icon class="event-location-icon">place</mat-icon>
+            <span>{{ inv.location }}</span>
+          </div>
+          <div class="invitation-actions">
+            <button class="btn btn-accept" (click)="respondInvitation(inv, 'accepted')">
+              <mat-icon>check</mat-icon> Annehmen
+            </button>
+            <button class="btn btn-decline" (click)="respondInvitation(inv, 'declined')">
+              <mat-icon>close</mat-icon> Ablehnen
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Events List for Selected Day -->
       <div class="events-section">
         <h3 class="events-title">
@@ -560,6 +583,56 @@ interface CalendarEvent {
     }
 
     /* Events List */
+    .invitations-section {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .invitation-card {
+      background: white;
+      border: 1px solid #ffe58f;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 8px;
+    }
+    .invitation-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .btn-accept {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #52c41a;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn-accept:hover { background: #389e0d; }
+    .btn-decline {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #ff4d4f;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn-decline:hover { background: #cf1322; }
+    .btn-accept mat-icon, .btn-decline mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
     .events-section {
       background: white;
       border: 1px solid var(--border);
@@ -643,6 +716,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   // Events
   events: CalendarEvent[] = [];
   selectedDayEvents: CalendarEvent[] = [];
+  pendingInvitations: CalendarEvent[] = [];
 
   // Event form
   showEventForm = false;
@@ -686,6 +760,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.buildCalendar();
     this.loadEvents();
+    this.loadInvitations();
     this.loadIntegration();
     this.handleGoogleCallback();
   }
@@ -842,6 +917,38 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
         this.events = [];
       },
     });
+  }
+
+  loadInvitations(): void {
+    this.apiService.getCalendarInvitations().subscribe({
+      next: (invitations) => {
+        this.pendingInvitations = invitations;
+      },
+      error: () => {
+        this.pendingInvitations = [];
+      },
+    });
+  }
+
+  respondInvitation(event: CalendarEvent, rsvpStatus: string): void {
+    this.apiService.rsvpCalendarEvent(event.id, rsvpStatus).subscribe({
+      next: () => {
+        const msg = rsvpStatus === 'accepted' ? 'Einladung angenommen' : 'Einladung abgelehnt';
+        this.snackBar.open(msg, 'OK', { duration: 3000 });
+        this.pendingInvitations = this.pendingInvitations.filter((inv) => inv.id !== event.id);
+        if (rsvpStatus === 'accepted') {
+          this.loadEvents();
+        }
+      },
+      error: () => {
+        this.snackBar.open('Fehler bei der Antwort', 'OK', { duration: 4000 });
+      },
+    });
+  }
+
+  formatDate(isoStr: string): string {
+    const d = new Date(isoStr);
+    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
   }
 
   private markDaysWithEvents(): void {
