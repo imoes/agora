@@ -33,10 +33,10 @@ class Channel(Base, UUIDPrimaryKey, TimestampMixin):
         String(64), unique=True, nullable=False, default=_generate_invite_token
     )
     is_hidden: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false"
+        Boolean, nullable=False, default=False, server_default="false"
     )  # Hidden until first message (e.g. auto-created for video calls)
     custom_name: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false"
+        Boolean, nullable=False, default=False, server_default="false"
     )  # True when the user explicitly set the channel name
 
     team = relationship("Team", back_populates="channels")
