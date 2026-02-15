@@ -114,6 +114,22 @@ async def create_event(
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
+    try:
+        return await _create_event_impl(data, background_tasks, db, current_user)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to create calendar event")
+        raise HTTPException(status_code=500, detail=f"Event creation failed: {exc}")
+
+
+async def _create_event_impl(
+    data: CalendarEventCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession,
+    current_user: User,
+) -> CalendarEvent:
+
     location = data.location
     channel_id = data.channel_id
 

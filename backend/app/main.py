@@ -56,6 +56,22 @@ def _add_missing_columns(connection):
                 "ALTER TABLE calendar_integrations ADD COLUMN google_token_expiry TIMESTAMP"
             ))
 
+    # Widen calendar_events.location from 200 to 500 chars
+    if "calendar_events" in inspector.get_table_names():
+        cal_event_cols = {c["name"]: c for c in inspector.get_columns("calendar_events")}
+        if "location" in cal_event_cols:
+            connection.execute(text(
+                "ALTER TABLE calendar_events ALTER COLUMN location TYPE VARCHAR(500)"
+            ))
+
+    # Ensure event_attendees.status column exists
+    if "event_attendees" in inspector.get_table_names():
+        att_cols = {c["name"] for c in inspector.get_columns("event_attendees")}
+        if "status" not in att_cols:
+            connection.execute(text(
+                "ALTER TABLE event_attendees ADD COLUMN status VARCHAR(20) DEFAULT 'pending' NOT NULL"
+            ))
+
     user_cols = {c["name"] for c in inspector.get_columns("users")}
     if "is_admin" not in user_cols:
         connection.execute(text(
