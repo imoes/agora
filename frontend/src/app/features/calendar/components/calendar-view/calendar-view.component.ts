@@ -11,6 +11,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subject, Subscription, of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { ApiService } from '@services/api.service';
+import { AuthService } from '@core/services/auth.service';
 
 interface CalendarDay {
   date: Date;
@@ -23,6 +24,7 @@ interface CalendarDay {
 
 interface EventAttendee {
   id: string;
+  user_id?: string;
   email: string;
   display_name?: string;
   status: string;
@@ -31,6 +33,7 @@ interface EventAttendee {
 
 interface CalendarEvent {
   id: string;
+  user_id: string;
   title: string;
   description?: string;
   start_time: string;
@@ -233,7 +236,7 @@ interface CalendarEvent {
         <div class="form-actions">
           <button class="btn btn-primary" (click)="saveEvent()">Speichern</button>
           <button class="btn btn-secondary" (click)="cancelEventForm()">Abbrechen</button>
-          <button *ngIf="editingEvent" class="btn btn-danger" (click)="deleteEvent()">Loeschen</button>
+          <button *ngIf="editingEvent && isOwnEvent(editingEvent)" class="btn btn-danger" (click)="deleteEvent()">Loeschen</button>
         </div>
       </div>
 
@@ -268,12 +271,25 @@ interface CalendarEvent {
         <div *ngIf="selectedDayEvents.length === 0" class="no-events">
           Keine Termine
         </div>
-        <div *ngFor="let ev of selectedDayEvents" class="event-card" (click)="editEvent(ev)">
+        <div *ngFor="let ev of selectedDayEvents"
+             class="event-card"
+             [class.pending-event]="isPendingInvitation(ev)"
+             (click)="isOwnEvent(ev) ? editEvent(ev) : null">
           <div class="event-time">
             <span *ngIf="!ev.all_day">{{ formatTime(ev.start_time) }} - {{ formatTime(ev.end_time) }}</span>
             <span *ngIf="ev.all_day">Ganztaegig</span>
           </div>
           <div class="event-title">{{ ev.title }}</div>
+          <div class="event-pending-badge" *ngIf="isPendingInvitation(ev)">
+            <mat-icon class="event-location-icon">schedule</mat-icon>
+            <span>Einladung ausstehend</span>
+            <button class="btn btn-accept btn-inline" (click)="respondInvitation(ev, 'accepted'); $event.stopPropagation()">
+              <mat-icon>check</mat-icon> Annehmen
+            </button>
+            <button class="btn btn-decline btn-inline" (click)="respondInvitation(ev, 'declined'); $event.stopPropagation()">
+              <mat-icon>close</mat-icon> Ablehnen
+            </button>
+          </div>
           <div class="event-location" *ngIf="ev.location">
             <mat-icon class="event-location-icon">{{ isVideoLink(ev.location) ? 'videocam' : 'place' }}</mat-icon>
             <a *ngIf="isVideoLink(ev.location)" [routerLink]="getVideoLink(ev.location)" class="video-link">Video-Call beitreten</a>
@@ -710,6 +726,31 @@ interface CalendarEvent {
     .event-card:hover {
       background: #f0f0ff;
     }
+    .event-card.pending-event {
+      border-left-color: #faad14;
+      background: #fffbe6;
+      cursor: default;
+    }
+    .event-card.pending-event:hover {
+      background: #fff7cc;
+    }
+    .event-pending-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #ad6800;
+      margin: 4px 0;
+    }
+    .btn-inline {
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+    .btn-inline mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+    }
     .event-time {
       font-size: 11px;
       color: var(--primary);
@@ -800,13 +841,19 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   syncing = false;
 
+  currentUserId = '';
+
   constructor(
     private apiService: ApiService,
+    private authService: AuthService,
     private snackBar: MatSnackBar,
     private route: ActivatedRoute,
     private router: Router,
     private elementRef: ElementRef,
-  ) {}
+  ) {
+    const user = this.authService.getCurrentUser();
+    if (user) this.currentUserId = user.id;
+  }
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
@@ -1010,9 +1057,8 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
         const msg = rsvpStatus === 'accepted' ? 'Einladung angenommen' : 'Einladung abgelehnt';
         this.snackBar.open(msg, 'OK', { duration: 3000 });
         this.pendingInvitations = this.pendingInvitations.filter((inv) => inv.id !== event.id);
-        if (rsvpStatus === 'accepted') {
-          this.loadEvents();
-        }
+        this.loadEvents();
+        this.loadInvitations();
       },
       error: () => {
         this.snackBar.open('Fehler bei der Antwort', 'OK', { duration: 4000 });
@@ -1061,6 +1107,16 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   formatAttendees(attendees: EventAttendee[]): string {
     return attendees.map(a => a.display_name || a.email).join(', ');
+  }
+
+  isPendingInvitation(ev: CalendarEvent): boolean {
+    if (ev.user_id === this.currentUserId) return false;
+    const myAttendee = ev.attendees?.find(a => a.user_id === this.currentUserId);
+    return myAttendee?.status === 'pending';
+  }
+
+  isOwnEvent(ev: CalendarEvent): boolean {
+    return ev.user_id === this.currentUserId;
   }
 
   // ---------- Event Form ----------

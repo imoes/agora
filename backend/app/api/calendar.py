@@ -64,7 +64,8 @@ async def list_events(
 ):
     """List calendar events for the current user within an optional date range.
 
-    Includes events the user owns AND events where the user is an accepted attendee.
+    Includes events the user owns AND events where the user is an attendee
+    (accepted or pending).
     """
     if start is None:
         start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -75,7 +76,7 @@ async def list_events(
 
     from sqlalchemy import or_
 
-    # Own events OR events where user is an accepted attendee
+    # Own events OR events where user is an attendee (accepted or pending)
     query = (
         select(CalendarEvent)
         .outerjoin(
@@ -83,7 +84,7 @@ async def list_events(
             and_(
                 EventAttendee.event_id == CalendarEvent.id,
                 EventAttendee.user_id == current_user.id,
-                EventAttendee.status == "accepted",
+                EventAttendee.status.in_(["accepted", "pending"]),
             ),
         )
         .options(selectinload(CalendarEvent.attendees))
@@ -191,15 +192,8 @@ async def _create_event_impl(
                     is_external=False,
                 )
                 db.add(attendee)
-                # Add internal user to meeting channel
-                existing_member = await db.execute(
-                    select(ChannelMember).where(
-                        and_(ChannelMember.channel_id == channel_id,
-                             ChannelMember.user_id == internal_user.id)
-                    )
-                )
-                if not existing_member.scalar_one_or_none():
-                    db.add(ChannelMember(channel_id=channel_id, user_id=internal_user.id))
+                # NOTE: internal users are NOT added to the meeting channel
+                # until they accept the invitation via the RSVP endpoint.
             else:
                 guest_token = _secrets.token_urlsafe(32)
                 attendee = EventAttendee(
@@ -263,7 +257,7 @@ async def list_invitations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List calendar events where the current user is invited (as attendee)."""
+    """List calendar events where the current user has a pending invitation."""
     result = await db.execute(
         select(CalendarEvent)
         .join(EventAttendee, EventAttendee.event_id == CalendarEvent.id)
@@ -272,6 +266,7 @@ async def list_invitations(
             and_(
                 EventAttendee.user_id == current_user.id,
                 EventAttendee.is_external == False,  # noqa: E712
+                EventAttendee.status == "pending",
                 CalendarEvent.user_id != current_user.id,
                 CalendarEvent.start_time >= datetime.now(timezone.utc),
             )
@@ -306,6 +301,22 @@ async def rsvp_event(
         raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
 
     attendee.status = rsvp_status
+
+    # When accepting, add the user to the meeting channel (if any)
+    if rsvp_status == "accepted":
+        event = await db.get(CalendarEvent, event_id)
+        if event and event.channel_id:
+            existing = await db.execute(
+                select(ChannelMember).where(
+                    and_(
+                        ChannelMember.channel_id == event.channel_id,
+                        ChannelMember.user_id == current_user.id,
+                    )
+                )
+            )
+            if not existing.scalar_one_or_none():
+                db.add(ChannelMember(channel_id=event.channel_id, user_id=current_user.id))
+
     await db.flush()
     return {"status": rsvp_status}
 

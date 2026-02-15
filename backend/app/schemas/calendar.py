@@ -10,6 +10,7 @@ class AttendeeInput(BaseModel):
 
 class EventAttendeeOut(BaseModel):
     id: uuid.UUID
+    user_id: uuid.UUID | None = None
     email: str
     display_name: str | None = None
     status: str = "pending"
