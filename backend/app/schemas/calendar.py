@@ -4,6 +4,20 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class AttendeeInput(BaseModel):
+    email: str
+
+
+class EventAttendeeOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    display_name: str | None = None
+    status: str = "pending"
+    is_external: bool = False
+
+    model_config = {"from_attributes": True}
+
+
 class CalendarEventCreate(BaseModel):
     title: str
     description: str | None = None
@@ -13,6 +27,7 @@ class CalendarEventCreate(BaseModel):
     location: str | None = None
     channel_id: uuid.UUID | None = None
     create_video_call: bool = False
+    attendees: list[AttendeeInput] = []
 
 
 class CalendarEventUpdate(BaseModel):
@@ -36,6 +51,7 @@ class CalendarEventOut(BaseModel):
     location: str | None = None
     channel_id: uuid.UUID | None = None
     external_id: str | None = None
+    attendees: list[EventAttendeeOut] = []
     created_at: datetime
     updated_at: datetime
 

@@ -2,12 +2,12 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.calendar import CalendarEvent, CalendarIntegration
+from app.models.calendar import CalendarEvent, CalendarIntegration, EventAttendee
 from app.models.channel import Channel, ChannelMember
 from app.models.user import User
 from app.schemas.calendar import (
@@ -87,18 +87,22 @@ async def list_events(
 @router.post("/events", response_model=CalendarEventOut, status_code=status.HTTP_201_CREATED)
 async def create_event(
     data: CalendarEventCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new calendar event."""
+    """Create a new calendar event, optionally inviting attendees."""
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
     location = data.location
     channel_id = data.channel_id
 
+    # If attendees are given, always create a video call
+    create_video = data.create_video_call or bool(data.attendees)
+
     # Create a video call meeting channel and put the link in location
-    if data.create_video_call:
+    if create_video:
         from app.models.channel import _generate_invite_token
 
         meeting_channel = Channel(
@@ -130,6 +134,61 @@ async def create_event(
     db.add(event)
     await db.flush()
 
+    # Process attendees
+    if data.attendees and channel_id:
+        import secrets as _secrets
+        for att in data.attendees:
+            email = att.email.strip().lower()
+            if not email:
+                continue
+            # Look up internal user by email
+            result = await db.execute(
+                select(User).where(User.email == email)
+            )
+            internal_user = result.scalar_one_or_none()
+
+            if internal_user:
+                attendee = EventAttendee(
+                    event_id=event.id,
+                    user_id=internal_user.id,
+                    email=email,
+                    display_name=internal_user.display_name,
+                    is_external=False,
+                )
+                db.add(attendee)
+                # Add internal user to meeting channel
+                existing_member = await db.execute(
+                    select(ChannelMember).where(
+                        and_(ChannelMember.channel_id == channel_id,
+                             ChannelMember.user_id == internal_user.id)
+                    )
+                )
+                if not existing_member.scalar_one_or_none():
+                    db.add(ChannelMember(channel_id=channel_id, user_id=internal_user.id))
+            else:
+                guest_token = _secrets.token_urlsafe(32)
+                attendee = EventAttendee(
+                    event_id=event.id,
+                    email=email,
+                    is_external=True,
+                    guest_token=guest_token,
+                )
+                db.add(attendee)
+        await db.flush()
+
+        # Send invitation emails in background
+        await db.refresh(event, ["attendees"])
+        _schedule_invitation_emails(
+            background_tasks,
+            event_title=event.title,
+            event_start=event.start_time,
+            event_end=event.end_time,
+            inviter_name=current_user.display_name,
+            inviter_email=current_user.email,
+            channel_id=channel_id,
+            attendees=event.attendees,
+        )
+
     # Push to external provider if configured
     integration = await _get_integration(db, current_user.id)
     if integration and integration.provider != "internal":
@@ -138,7 +197,7 @@ async def create_event(
             event.external_id = external_id
             await db.flush()
 
-    await db.refresh(event)
+    await db.refresh(event, ["attendees"])
     return event
 
 
@@ -481,8 +540,142 @@ async def _exchange_google_code(
 
 
 # ---------------------------------------------------------------------------
+# Guest meeting access (no auth required)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/guest/{guest_token}")
+async def guest_meeting_info(
+    guest_token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return meeting info for an external guest (no auth)."""
+    result = await db.execute(
+        select(EventAttendee).where(EventAttendee.guest_token == guest_token)
+    )
+    attendee = result.scalar_one_or_none()
+    if attendee is None:
+        raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
+
+    event = await db.get(CalendarEvent, attendee.event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Termin nicht gefunden")
+
+    return {
+        "event_title": event.title,
+        "event_start": event.start_time.isoformat(),
+        "event_end": event.end_time.isoformat(),
+        "channel_id": str(event.channel_id) if event.channel_id else None,
+    }
+
+
+@router.post("/guest/{guest_token}/join")
+async def guest_join_meeting(
+    guest_token: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """External guest joins a meeting by entering their name.
+
+    Creates a temporary guest user, adds them to the meeting channel,
+    and returns a JWT so they can access the video room.
+    """
+    from app.services.auth import create_access_token, hash_password
+
+    display_name = (body.get("display_name") or "").strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Name ist erforderlich")
+
+    result = await db.execute(
+        select(EventAttendee).where(EventAttendee.guest_token == guest_token)
+    )
+    attendee = result.scalar_one_or_none()
+    if attendee is None:
+        raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
+
+    event = await db.get(CalendarEvent, attendee.event_id)
+    if event is None or event.channel_id is None:
+        raise HTTPException(status_code=404, detail="Termin nicht gefunden")
+
+    import secrets as _secrets
+
+    # Create a temporary guest user
+    guest_username = f"guest_{_secrets.token_hex(8)}"
+    guest_user = User(
+        username=guest_username,
+        email=f"{guest_username}@guest.local",
+        password_hash=hash_password(_secrets.token_urlsafe(16)),
+        display_name=display_name,
+        is_guest=True,
+    )
+    db.add(guest_user)
+    await db.flush()
+
+    # Add guest to the meeting channel
+    db.add(ChannelMember(channel_id=event.channel_id, user_id=guest_user.id))
+
+    # Update attendee record
+    attendee.user_id = guest_user.id
+    attendee.display_name = display_name
+    attendee.status = "accepted"
+    await db.flush()
+
+    token = create_access_token(guest_user.id)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "channel_id": str(event.channel_id),
+        "display_name": display_name,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _schedule_invitation_emails(
+    background_tasks: BackgroundTasks,
+    *,
+    event_title: str,
+    event_start: datetime,
+    event_end: datetime,
+    inviter_name: str,
+    inviter_email: str,
+    channel_id: uuid.UUID,
+    attendees: list[EventAttendee],
+) -> None:
+    """Queue invitation emails for all attendees."""
+    from app.services.email import send_invitation_email
+    from app.services.ics import generate_invitation_ics
+
+    frontend = settings.frontend_url
+
+    for att in attendees:
+        if att.is_external and att.guest_token:
+            join_link = f"{frontend}/meeting/guest/{att.guest_token}"
+        else:
+            join_link = f"{frontend}/video/{channel_id}"
+
+        ics_content = generate_invitation_ics(
+            channel_name=event_title,
+            inviter_name=inviter_name,
+            inviter_email=inviter_email,
+            invited_email=att.email,
+            invite_link=join_link,
+            start_time=event_start,
+            end_time=event_end,
+        )
+
+        background_tasks.add_task(
+            send_invitation_email,
+            to_email=att.email,
+            channel_name=event_title,
+            inviter_name=inviter_name,
+            invite_link=join_link,
+            ics_content=ics_content,
+            message=f"Termin: {event_title}\nZeit: {event_start.strftime('%d.%m.%Y %H:%M')} - {event_end.strftime('%H:%M')}",
+        )
 
 
 def _integration_to_out(integration: CalendarIntegration) -> CalendarIntegrationOut:

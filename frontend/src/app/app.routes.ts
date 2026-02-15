@@ -24,6 +24,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'meeting/guest/:token',
+    loadComponent: () =>
+      import('./features/guest/components/guest-join/guest-join.component').then(
+        (m) => m.GuestJoinComponent
+      ),
+  },
+  {
     path: '',
     loadComponent: () =>
       import('./features/layout/layout.component').then(

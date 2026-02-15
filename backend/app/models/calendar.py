@@ -36,6 +36,34 @@ class CalendarEvent(Base, UUIDPrimaryKey, TimestampMixin):
 
     user = relationship("User", back_populates="calendar_events")
     channel = relationship("Channel")
+    attendees = relationship("EventAttendee", back_populates="event", cascade="all, delete-orphan")
+
+
+class EventAttendee(Base, UUIDPrimaryKey, TimestampMixin):
+    """Tracks invited participants for a calendar event."""
+
+    __tablename__ = "event_attendees"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType(), ForeignKey("calendar_events.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="pending"
+    )  # 'pending', 'accepted', 'declined'
+    is_external: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    guest_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True
+    )
+
+    event = relationship("CalendarEvent", back_populates="attendees")
+    user = relationship("User")
 
 
 class CalendarIntegration(Base, UUIDPrimaryKey, TimestampMixin):
