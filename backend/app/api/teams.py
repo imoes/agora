@@ -39,10 +39,13 @@ async def create_team(
         name="General",
         channel_type="team",
         team_id=team.id,
-        sqlite_db_path=f"{team.id}_general.db",
+        sqlite_db_path="",  # will be set after flush
     )
     db.add(channel)
     await db.flush()
+
+    # Set the sqlite_db_path to match what init_chat_db expects
+    channel.sqlite_db_path = f"{channel.id}.db"
 
     ch_member = ChannelMember(channel_id=channel.id, user_id=current_user.id)
     db.add(ch_member)
