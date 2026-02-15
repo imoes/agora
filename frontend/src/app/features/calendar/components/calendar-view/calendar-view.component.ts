@@ -1084,7 +1084,8 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     this.eventAllDay = false;
     this.eventCreateVideoCall = false;
     this.eventAttendees = [];
-    this.attendeeEmail = '';
+    this.attendeeNames = {};
+    this.attendeeQuery = '';
     setTimeout(() => {
       const formEl = this.elementRef.nativeElement.querySelector('.event-form');
       if (formEl) {
