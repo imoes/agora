@@ -276,6 +276,31 @@ async def list_invitations(
     return result.scalars().unique().all()
 
 
+@router.get("/invitations/count")
+async def invitation_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the number of pending calendar invitations for the current user."""
+    from sqlalchemy import func
+
+    result = await db.execute(
+        select(func.count())
+        .select_from(EventAttendee)
+        .join(CalendarEvent, CalendarEvent.id == EventAttendee.event_id)
+        .where(
+            and_(
+                EventAttendee.user_id == current_user.id,
+                EventAttendee.is_external == False,  # noqa: E712
+                EventAttendee.status == "pending",
+                CalendarEvent.user_id != current_user.id,
+                CalendarEvent.start_time >= datetime.now(timezone.utc),
+            )
+        )
+    )
+    return {"count": result.scalar()}
+
+
 @router.post("/events/{event_id}/rsvp")
 async def rsvp_event(
     event_id: uuid.UUID,
