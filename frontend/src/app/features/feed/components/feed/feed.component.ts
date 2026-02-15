@@ -26,14 +26,14 @@ import { ApiService } from '@services/api.service';
       </div>
 
       <mat-tab-group (selectedTabChange)="onTabChange($event)">
-        <mat-tab label="Alle">
-          <ng-container *ngTemplateOutlet="feedList"></ng-container>
-        </mat-tab>
         <mat-tab>
           <ng-template mat-tab-label>
             Ungelesen
             <span *ngIf="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
           </ng-template>
+          <ng-container *ngTemplateOutlet="feedList"></ng-container>
+        </mat-tab>
+        <mat-tab label="Alle">
           <ng-container *ngTemplateOutlet="feedList"></ng-container>
         </mat-tab>
       </mat-tab-group>
@@ -161,7 +161,7 @@ export class FeedComponent implements OnInit {
   events: any[] = [];
   unreadCount = 0;
   loading = false;
-  showUnreadOnly = false;
+  showUnreadOnly = true;
   offset = 0;
 
   constructor(private apiService: ApiService, private router: Router) {}
@@ -193,7 +193,7 @@ export class FeedComponent implements OnInit {
   }
 
   onTabChange(event: any): void {
-    this.showUnreadOnly = event.index === 1;
+    this.showUnreadOnly = event.index === 0;
     this.loadFeed();
   }
 
