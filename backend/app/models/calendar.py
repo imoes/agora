@@ -24,7 +24,7 @@ class CalendarEvent(Base, UUIDPrimaryKey, TimestampMixin):
     all_day: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
-    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(500), nullable=True)
     channel_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType(),
         ForeignKey("channels.id", ondelete="SET NULL"),
