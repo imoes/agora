@@ -120,7 +120,7 @@ async def create_event(
         db.add(ChannelMember(channel_id=meeting_channel.id, user_id=current_user.id))
         await db.flush()
         channel_id = meeting_channel.id
-        video_link = f"/video/{meeting_channel.id}"
+        video_link = f"{settings.frontend_url}/video/{meeting_channel.id}"
         location = video_link if not location else f"{location} | {video_link}"
 
     event = CalendarEvent(

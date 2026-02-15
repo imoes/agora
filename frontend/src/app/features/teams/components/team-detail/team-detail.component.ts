@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -10,6 +10,9 @@ import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { Subject, Subscription, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { ApiService } from '@services/api.service';
 
 @Component({
@@ -47,7 +50,7 @@ export class CreateChannelDialogComponent {
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatListModule, MatIconModule, MatButtonModule,
-    MatTabsModule, MatChipsModule,
+    MatTabsModule, MatChipsModule, MatSnackBarModule,
   ],
   template: `
     <div class="team-detail">
@@ -84,6 +87,33 @@ export class CreateChannelDialogComponent {
 
         <mat-tab label="Mitglieder">
           <div class="tab-content">
+            <div class="tab-header">
+              <div class="member-search">
+                <mat-icon class="search-icon">search</mat-icon>
+                <input type="text" [(ngModel)]="memberSearchQuery"
+                       (ngModelChange)="onMemberSearchChange($event)"
+                       placeholder="Benutzer suchen und hinzufuegen...">
+              </div>
+            </div>
+            <div *ngIf="memberSearchQuery && memberSearchQuery.length >= 2" class="search-results">
+              <div *ngIf="memberSearchLoading" class="search-hint">Suche...</div>
+              <div *ngFor="let u of memberSearchResults" class="search-result-item">
+                <div class="member-avatar">
+                  {{ u.display_name?.charAt(0)?.toUpperCase() }}
+                </div>
+                <div class="search-result-info">
+                  <span class="search-result-name">{{ u.display_name }}</span>
+                  <span class="search-result-email">{{ u.email }}</span>
+                </div>
+                <button mat-raised-button color="primary" class="add-btn"
+                        (click)="addMember(u)" [disabled]="addingUserId === u.id">
+                  <mat-icon>person_add</mat-icon> Hinzufuegen
+                </button>
+              </div>
+              <div *ngIf="!memberSearchLoading && memberSearchResults.length === 0" class="search-hint">
+                Keine Benutzer gefunden
+              </div>
+            </div>
             <mat-list>
               <mat-list-item *ngFor="let m of members">
                 <div matListItemAvatar class="member-avatar">
@@ -91,6 +121,11 @@ export class CreateChannelDialogComponent {
                 </div>
                 <div matListItemTitle>{{ m.user?.display_name }}</div>
                 <div matListItemLine>{{ m.role }} &middot; {{ m.user?.email }}</div>
+                <button mat-icon-button matListItemMeta
+                        *ngIf="m.role !== 'admin'"
+                        (click)="removeMember(m.user?.id, m.user?.display_name)">
+                  <mat-icon>remove_circle_outline</mat-icon>
+                </button>
               </mat-list-item>
             </mat-list>
           </div>
@@ -162,19 +197,96 @@ export class CreateChannelDialogComponent {
       justify-content: center;
       font-weight: 500;
     }
+    .member-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f9f9f9;
+    }
+    .search-icon {
+      color: #999;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
+    .member-search input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .search-results {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .search-result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+    .search-result-info {
+      flex: 1;
+    }
+    .search-result-name {
+      display: block;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .search-result-email {
+      display: block;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .add-btn {
+      font-size: 12px;
+      padding: 0 12px;
+      height: 32px;
+      line-height: 32px;
+    }
+    .add-btn mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      margin-right: 4px;
+    }
+    .search-hint {
+      text-align: center;
+      padding: 16px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
   `],
 })
-export class TeamDetailComponent implements OnInit {
+export class TeamDetailComponent implements OnInit, OnDestroy {
   team: any;
   channels: any[] = [];
   members: any[] = [];
   teamId: string = '';
+  memberSearchQuery = '';
+  memberSearchResults: any[] = [];
+  memberSearchLoading = false;
+  addingUserId: string | null = null;
+  private searchSubject = new Subject<string>();
+  private subscriptions: Subscription[] = [];
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private apiService: ApiService,
     private dialog: MatDialog,
+    private snackBar: MatSnackBar,
   ) {}
 
   ngOnInit(): void {
@@ -182,6 +294,29 @@ export class TeamDetailComponent implements OnInit {
     this.loadTeam();
     this.loadChannels();
     this.loadMembers();
+
+    this.subscriptions.push(
+      this.searchSubject.pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((query) => {
+          if (query.length < 2) {
+            this.memberSearchLoading = false;
+            return of([]);
+          }
+          this.memberSearchLoading = true;
+          return this.apiService.searchUsers(query);
+        }),
+      ).subscribe((users) => {
+        const memberIds = new Set(this.members.map((m: any) => m.user?.id));
+        this.memberSearchResults = users.filter((u: any) => !memberIds.has(u.id));
+        this.memberSearchLoading = false;
+      })
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.forEach((s) => s.unsubscribe());
   }
 
   loadTeam(): void {
@@ -221,6 +356,46 @@ export class TeamDetailComponent implements OnInit {
           this.loadChannels();
         });
       }
+    });
+  }
+
+  onMemberSearchChange(query: string): void {
+    if (!query) {
+      this.memberSearchResults = [];
+      this.memberSearchLoading = false;
+      return;
+    }
+    this.searchSubject.next(query);
+  }
+
+  addMember(user: any): void {
+    this.addingUserId = user.id;
+    this.apiService.addTeamMember(this.teamId, user.id).subscribe({
+      next: () => {
+        this.snackBar.open(`${user.display_name} wurde hinzugefuegt`, 'OK', { duration: 3000 });
+        this.memberSearchResults = this.memberSearchResults.filter((u: any) => u.id !== user.id);
+        this.addingUserId = null;
+        this.loadMembers();
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Hinzufuegen';
+        this.snackBar.open(detail, 'OK', { duration: 4000 });
+        this.addingUserId = null;
+      },
+    });
+  }
+
+  removeMember(userId: string, displayName: string): void {
+    if (!confirm(`${displayName} wirklich aus dem Team entfernen?`)) return;
+    this.apiService.removeTeamMember(this.teamId, userId).subscribe({
+      next: () => {
+        this.snackBar.open(`${displayName} wurde entfernt`, 'OK', { duration: 3000 });
+        this.loadMembers();
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Entfernen';
+        this.snackBar.open(detail, 'OK', { duration: 4000 });
+      },
     });
   }
 }
