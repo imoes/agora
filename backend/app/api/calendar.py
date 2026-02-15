@@ -212,7 +212,12 @@ async def _create_event_impl(
         await db.flush()
 
         # Send invitation emails in background
-        await db.refresh(event, ["attendees"])
+        result = await db.execute(
+            select(CalendarEvent)
+            .options(selectinload(CalendarEvent.attendees))
+            .where(CalendarEvent.id == event.id)
+        )
+        event = result.scalar_one()
         _schedule_invitation_emails(
             background_tasks,
             event_title=event.title,
@@ -235,8 +240,12 @@ async def _create_event_impl(
         except (ProviderError, Exception) as exc:
             logger.warning("Failed to push event to provider: %s", exc)
 
-    await db.refresh(event, ["attendees"])
-    return event
+    result = await db.execute(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.attendees))
+        .where(CalendarEvent.id == event.id)
+    )
+    return result.scalar_one()
 
 
 @router.get("/events/{event_id}", response_model=CalendarEventOut)
@@ -327,8 +336,12 @@ async def update_event(
         except (ProviderError, Exception) as exc:
             logger.warning("Failed to update event in provider: %s", exc)
 
-    await db.refresh(event)
-    return event
+    result = await db.execute(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.attendees))
+        .where(CalendarEvent.id == event.id)
+    )
+    return result.scalar_one()
 
 
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -509,9 +522,16 @@ async def sync_events(
     integration.last_sync_at = now
     await db.flush()
 
-    for ev in imported:
-        await db.refresh(ev, ["attendees"])
-    return imported
+    # Re-query imported events with all attributes and attendees loaded
+    if imported:
+        result = await db.execute(
+            select(CalendarEvent)
+            .options(selectinload(CalendarEvent.attendees))
+            .where(CalendarEvent.id.in_([ev.id for ev in imported]))
+            .order_by(CalendarEvent.start_time)
+        )
+        return result.scalars().all()
+    return []
 
 
 # ---------------------------------------------------------------------------
