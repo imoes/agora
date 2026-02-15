@@ -43,7 +43,8 @@ import { WebSocketService } from '@services/websocket.service';
             <mat-icon>groups</mat-icon>
             <span>Teams</span>
           </a>
-          <a routerLink="/calendar" routerLinkActive="active" class="nav-item">
+          <a routerLink="/calendar" routerLinkActive="active" class="nav-item"
+             [matBadge]="pendingInvitationsCount > 0 ? pendingInvitationsCount : null" matBadgeColor="accent" matBadgeSize="small">
             <mat-icon>calendar_today</mat-icon>
             <span>Kalender</span>
           </a>
@@ -708,6 +709,7 @@ import { WebSocketService } from '@services/websocket.service';
 export class LayoutComponent implements OnInit, OnDestroy {
   currentUser: User | null = null;
   unreadCount = 0;
+  pendingInvitationsCount = 0;
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
   chatChannels: any[] = [];
@@ -783,6 +785,18 @@ export class LayoutComponent implements OnInit, OnDestroy {
     // Initial load
     this.apiService.getUnreadCount().subscribe((res) => {
       this.unreadCount = res.unread_count;
+    });
+
+    // Poll pending calendar invitations every 10 seconds
+    this.subscriptions.push(
+      interval(10000).pipe(
+        switchMap(() => this.apiService.getCalendarInvitationCount())
+      ).subscribe((res) => {
+        this.pendingInvitationsCount = res.count;
+      })
+    );
+    this.apiService.getCalendarInvitationCount().subscribe((res) => {
+      this.pendingInvitationsCount = res.count;
     });
 
     // Pre-create ringtone audio and unlock on first user gesture
