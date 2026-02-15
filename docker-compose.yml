@@ -51,6 +51,7 @@ services:
       # Google Calendar OAuth2
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/calendar/google/callback}
       # LDAP / Active Directory
       LDAP_ENABLED: ${LDAP_ENABLED:-false}
       LDAP_SERVER: ${LDAP_SERVER:-}

@@ -336,13 +336,13 @@ Agora can sync events with Google Calendar. This requires a one-time setup of OA
 4. Name: e.g. `Agora Web Client`
 5. **Authorized redirect URIs** - add:
    ```
-   http://localhost/calendar/google/callback
+   http://localhost:8000/api/calendar/google/callback
    ```
    > **Important:** Google does NOT allow `https://localhost` as a redirect URI.
-   > For localhost you MUST use `http://`. Agora handles this automatically.
-   > - Docker (default): `http://localhost/calendar/google/callback`
-   > - Without Docker (ng serve): `http://localhost:4200/calendar/google/callback`
-   > - Production: `https://agora.your-domain.com/calendar/google/callback`
+   > For localhost you MUST use `http://`. The callback goes directly to the
+   > backend on port 8000, which then redirects back to the HTTPS frontend.
+   > - Docker (default): `http://localhost:8000/api/calendar/google/callback`
+   > - Production: `https://agora.your-domain.com/api/calendar/google/callback`
 6. Click **"Create"**
 7. Copy the **Client ID** and **Client Secret**
 

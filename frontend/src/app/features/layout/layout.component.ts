@@ -125,15 +125,6 @@ import { WebSocketService } from '@services/websocket.service';
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
               <span>{{ sidebarMode === 'teams' ? 'Teams' : 'Chats' }}</span>
-              <div class="header-actions">
-                <button mat-icon-button (click)="openNewMeeting()" matTooltip="Neuer Termin" class="call-search-btn">
-                  <mat-icon>event</mat-icon>
-                </button>
-                <button mat-icon-button (click)="toggleCallSearch($event)" class="call-search-btn"
-                        [class.active]="showCallSearch">
-                  <mat-icon>add_call</mat-icon>
-                </button>
-              </div>
             </div>
 
             <!-- User search for calling -->

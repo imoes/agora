@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # Google OAuth2 for Calendar
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""  # Override for OAuth redirect URI
 
     # LDAP / Active Directory settings
     ldap_enabled: bool = False

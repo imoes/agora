@@ -33,16 +33,19 @@ router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 def _google_redirect_uri() -> str:
     """Build the Google OAuth redirect URI.
 
-    Google rejects https://localhost as a redirect URI for OAuth.
-    For localhost development, we must use http:// instead.
-    The nginx config serves the app on both HTTP and HTTPS,
-    so the redirect back to http://localhost/... still works.
+    Google rejects https://localhost as a redirect URI.  For localhost
+    the redirect must use http://.  When GOOGLE_OAUTH_REDIRECT_URI is set
+    (e.g. http://localhost:8000/api/calendar/google/callback) we use it
+    directly so the callback goes straight to the backend, bypassing any
+    port-80 issues.
     """
+    if settings.google_oauth_redirect_uri:
+        return settings.google_oauth_redirect_uri
     base = settings.frontend_url
     parsed = urllib.parse.urlparse(base)
     if parsed.hostname == "localhost" and parsed.scheme == "https":
         base = base.replace("https://", "http://", 1)
-    return f"{base}/calendar/google/callback"
+    return f"{base}/api/calendar/google/callback"
 
 # ---------------------------------------------------------------------------
 # Calendar Events
@@ -378,13 +381,53 @@ async def google_auth_redirect(
     return {"auth_url": url}
 
 
+@router.get("/google/callback")
+async def google_callback_get(
+    code: str = Query(...),
+    state: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle Google OAuth2 redirect (GET from Google).
+
+    Google redirects here with code + state.  We extract the user_id from
+    the state parameter, exchange the code for tokens, store them, and
+    redirect the browser back to the HTTPS frontend.
+    """
+    from starlette.responses import RedirectResponse
+
+    # Extract user_id from state  (format: "<uuid>:<random>")
+    user_id_str = state.split(":")[0] if state else ""
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+
+    # Verify user exists
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+
+    google_email, _ = await _exchange_google_code(db, code, user_id)
+
+    redirect_url = f"{settings.frontend_url}/calendar?google_connected=true"
+    return RedirectResponse(url=redirect_url, status_code=302)
+
+
 @router.post("/google/callback")
-async def google_callback(
+async def google_callback_post(
     code: str = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exchange the OAuth2 authorization code for tokens."""
+    """Exchange the OAuth2 authorization code for tokens (called by frontend)."""
+    google_email, _ = await _exchange_google_code(db, code, current_user.id)
+    return {"ok": True, "google_email": google_email}
+
+
+async def _exchange_google_code(
+    db: AsyncSession, code: str, user_id: uuid.UUID
+) -> tuple[str | None, CalendarIntegration]:
+    """Exchange a Google authorization code for tokens and persist them."""
     import httpx as _httpx
 
     async with _httpx.AsyncClient(timeout=15) as client:
@@ -411,9 +454,9 @@ async def google_callback(
         )
     google_email = me.json().get("email") if me.status_code == 200 else None
 
-    integration = await _get_integration(db, current_user.id)
+    integration = await _get_integration(db, user_id)
     if integration is None:
-        integration = CalendarIntegration(user_id=current_user.id)
+        integration = CalendarIntegration(user_id=user_id)
         db.add(integration)
 
     integration.provider = "google"
@@ -421,12 +464,11 @@ async def google_callback(
     integration.google_access_token = access_token
     if refresh_token:
         integration.google_refresh_token = refresh_token
-    from datetime import timedelta
     integration.google_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
     await db.flush()
     await db.refresh(integration)
-    return {"ok": True, "google_email": google_email}
+    return google_email, integration
 
 
 # ---------------------------------------------------------------------------
