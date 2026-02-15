@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -8,7 +8,8 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatDividerModule } from '@angular/material/divider';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { ApiService } from '@services/api.service';
 
 interface CalendarDay {
@@ -201,26 +202,36 @@ interface CalendarEvent {
           </label>
           <span class="hint" *ngIf="eventCreateVideoCall">Ein Video-Call-Link wird automatisch im Ort eingetragen</span>
         </div>
-        <div class="field">
+        <div class="field attendee-field">
           <label>Teilnehmer einladen:</label>
-          <div class="attendee-input-row">
-            <input type="email" [(ngModel)]="attendeeEmail"
-                   placeholder="E-Mail-Adresse eingeben"
-                   (keydown.enter)="addAttendee()">
-            <button class="btn btn-small" (click)="addAttendee()" [disabled]="!attendeeEmail.trim()">
-              <mat-icon>person_add</mat-icon>
-            </button>
+          <div class="attendee-search-container">
+            <div class="attendee-input-row">
+              <input type="text" [(ngModel)]="attendeeQuery"
+                     (ngModelChange)="onAttendeeSearch($event)"
+                     (focus)="showAttendeeSuggestions = true"
+                     placeholder="Name oder E-Mail suchen..."
+                     (keydown.enter)="addAttendeeFromQuery()">
+              <button class="btn btn-small" (click)="addAttendeeFromQuery()" [disabled]="!attendeeQuery.trim()">
+                <mat-icon>person_add</mat-icon>
+              </button>
+            </div>
+            <div class="attendee-suggestions" *ngIf="showAttendeeSuggestions && attendeeQuery && attendeeQuery.length >= 2 && attendeeSuggestions.length > 0">
+              <div *ngFor="let u of attendeeSuggestions" class="attendee-suggestion" (click)="addAttendeeUser(u)">
+                <div class="suggestion-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
+                <div class="suggestion-info">
+                  <span class="suggestion-name">{{ u.display_name }}</span>
+                  <span class="suggestion-email">{{ u.email }}</span>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="attendee-chips" *ngIf="eventAttendees.length > 0">
             <div class="attendee-chip" *ngFor="let email of eventAttendees; let i = index">
               <mat-icon class="chip-icon">person</mat-icon>
-              <span>{{ email }}</span>
+              <span>{{ attendeeNames[email] || email }}</span>
               <mat-icon class="chip-remove" (click)="removeAttendee(i)">close</mat-icon>
             </div>
           </div>
-          <span class="hint" *ngIf="eventAttendees.length > 0">
-            Externe Teilnehmer koennen dem Termin ohne Account beitreten
-          </span>
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" (click)="saveEvent()">Speichern</button>
@@ -443,6 +454,45 @@ interface CalendarEvent {
       cursor: pointer; color: #999;
     }
     .chip-remove:hover { color: #d32f2f; }
+    .attendee-search-container { position: relative; }
+    .attendee-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+      z-index: 10;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .attendee-suggestion {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .attendee-suggestion:hover { background: #f5f5f5; }
+    .suggestion-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .suggestion-info { flex: 1; min-width: 0; }
+    .suggestion-name { display: block; font-size: 13px; font-weight: 500; }
+    .suggestion-email { display: block; font-size: 11px; color: #999; }
+    .attendee-field { position: relative; }
     .event-attendees {
       display: flex;
       align-items: center;
@@ -729,7 +779,11 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   eventAllDay = false;
   eventCreateVideoCall = false;
   eventAttendees: string[] = [];
-  attendeeEmail = '';
+  attendeeNames: { [email: string]: string } = {};
+  attendeeQuery = '';
+  attendeeSuggestions: any[] = [];
+  showAttendeeSuggestions = false;
+  private attendeeSearchSubject = new Subject<string>();
 
   // Settings
   showSettings = false;
@@ -757,8 +811,31 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     private elementRef: ElementRef,
   ) {}
 
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    const container = this.elementRef.nativeElement.querySelector('.attendee-search-container');
+    if (container && !container.contains(event.target)) {
+      this.showAttendeeSuggestions = false;
+    }
+  }
+
   ngOnInit(): void {
     this.buildCalendar();
+
+    this.subscriptions.push(
+      this.attendeeSearchSubject.pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((query) => {
+          if (query.length < 2) return of([]);
+          return this.apiService.searchUsers(query);
+        }),
+      ).subscribe((users) => {
+        this.attendeeSuggestions = users.filter(
+          (u: any) => !this.eventAttendees.includes(u.email)
+        );
+      })
+    );
     this.loadEvents();
     this.loadInvitations();
     this.loadIntegration();
@@ -1016,12 +1093,34 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     });
   }
 
-  addAttendee(): void {
-    const email = this.attendeeEmail.trim().toLowerCase();
+  onAttendeeSearch(query: string): void {
+    if (!query) {
+      this.attendeeSuggestions = [];
+      this.showAttendeeSuggestions = false;
+      return;
+    }
+    this.showAttendeeSuggestions = true;
+    this.attendeeSearchSubject.next(query);
+  }
+
+  addAttendeeUser(user: any): void {
+    if (!this.eventAttendees.includes(user.email)) {
+      this.eventAttendees.push(user.email);
+      this.attendeeNames[user.email] = user.display_name || user.email;
+    }
+    this.attendeeQuery = '';
+    this.attendeeSuggestions = [];
+    this.showAttendeeSuggestions = false;
+  }
+
+  addAttendeeFromQuery(): void {
+    const email = this.attendeeQuery.trim().toLowerCase();
     if (email && email.includes('@') && !this.eventAttendees.includes(email)) {
       this.eventAttendees.push(email);
     }
-    this.attendeeEmail = '';
+    this.attendeeQuery = '';
+    this.attendeeSuggestions = [];
+    this.showAttendeeSuggestions = false;
   }
 
   removeAttendee(index: number): void {
@@ -1096,7 +1195,9 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     this.showEventForm = false;
     this.editingEvent = null;
     this.eventAttendees = [];
-    this.attendeeEmail = '';
+    this.attendeeNames = {};
+    this.attendeeQuery = '';
+    this.attendeeSuggestions = [];
   }
 
   private toLocalDatetime(d: Date): string {
