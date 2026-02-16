@@ -25,6 +25,9 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     is_guest: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )  # True for temporary guest participants
+    language: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default="en"
+    )  # ISO 639-1 language code
 
     owned_teams = relationship("Team", back_populates="owner")
     team_memberships = relationship("TeamMember", back_populates="user")

@@ -23,13 +23,13 @@ static void on_login_clicked(GtkButton *button, gpointer user_data)
     const char *password = gtk_entry_get_text(win->password_entry);
 
     if (!server[0] || !username[0] || !password[0]) {
-        gtk_label_set_text(win->error_label, "Bitte alle Felder ausfuellen.");
+        gtk_label_set_text(win->error_label, "Please fill in all fields.");
         gtk_widget_show(GTK_WIDGET(win->error_label));
         return;
     }
 
     gtk_widget_set_sensitive(GTK_WIDGET(win->login_button), FALSE);
-    gtk_button_set_label(win->login_button, "Anmelden...");
+    gtk_button_set_label(win->login_button, "Signing in...");
     gtk_widget_hide(GTK_WIDGET(win->error_label));
 
     GError *error = NULL;
@@ -37,15 +37,15 @@ static void on_login_clicked(GtkButton *button, gpointer user_data)
     JsonNode *result = agora_api_client_login(client, username, password, &error);
 
     if (!result) {
-        char *msg = g_strdup_printf("Anmeldung fehlgeschlagen: %s",
-                                     error ? error->message : "Unbekannter Fehler");
+        char *msg = g_strdup_printf("Login failed: %s",
+                                     error ? error->message : "Unknown error");
         gtk_label_set_text(win->error_label, msg);
         gtk_widget_show(GTK_WIDGET(win->error_label));
         g_free(msg);
         if (error) g_error_free(error);
         agora_api_client_free(client);
         gtk_widget_set_sensitive(GTK_WIDGET(win->login_button), TRUE);
-        gtk_button_set_label(win->login_button, "Anmelden");
+        gtk_button_set_label(win->login_button, "Sign in");
         return;
     }
 
@@ -55,8 +55,10 @@ static void on_login_clicked(GtkButton *button, gpointer user_data)
     JsonObject *user_obj = json_object_get_object_member(obj, "user");
     const char *user_id = json_object_get_string_member(user_obj, "id");
     const char *display_name = json_object_get_string_member(user_obj, "display_name");
+    const char *language = json_object_has_member(user_obj, "language")
+        ? json_object_get_string_member(user_obj, "language") : "en";
 
-    agora_app_set_session(app, server, token, user_id, display_name);
+    agora_app_set_session(app, server, token, user_id, display_name, language);
     json_node_unref(result);
     agora_api_client_free(client);
 
@@ -79,7 +81,7 @@ static void agora_login_window_class_init(AgoraLoginWindowClass *klass)
 
 static void agora_login_window_init(AgoraLoginWindow *win)
 {
-    gtk_window_set_title(GTK_WINDOW(win), "Agora - Anmeldung");
+    gtk_window_set_title(GTK_WINDOW(win), "Agora - Sign in");
     gtk_window_set_default_size(GTK_WINDOW(win), 380, 420);
     gtk_window_set_resizable(GTK_WINDOW(win), FALSE);
     gtk_window_set_position(GTK_WINDOW(win), GTK_WIN_POS_CENTER);
@@ -104,19 +106,19 @@ static void agora_login_window_init(AgoraLoginWindow *win)
     gtk_box_pack_start(GTK_BOX(box), gtk_label_new(""), FALSE, FALSE, 4);
 
     /* Server URL */
-    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Server-URL:"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Server URL:"), FALSE, FALSE, 0);
     win->server_entry = GTK_ENTRY(gtk_entry_new());
     gtk_entry_set_text(win->server_entry, "https://localhost");
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(win->server_entry), FALSE, FALSE, 0);
 
     /* Username */
-    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Benutzername:"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Username:"), FALSE, FALSE, 0);
     win->username_entry = GTK_ENTRY(gtk_entry_new());
-    gtk_entry_set_placeholder_text(win->username_entry, "Benutzername");
+    gtk_entry_set_placeholder_text(win->username_entry, "Username");
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(win->username_entry), FALSE, FALSE, 0);
 
     /* Password */
-    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Passwort:"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Password:"), FALSE, FALSE, 0);
     win->password_entry = GTK_ENTRY(gtk_entry_new());
     gtk_entry_set_visibility(win->password_entry, FALSE);
     gtk_entry_set_input_purpose(win->password_entry, GTK_INPUT_PURPOSE_PASSWORD);
@@ -134,7 +136,7 @@ static void agora_login_window_init(AgoraLoginWindow *win)
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(win->error_label), FALSE, FALSE, 0);
 
     /* Login button */
-    win->login_button = GTK_BUTTON(gtk_button_new_with_label("Anmelden"));
+    win->login_button = GTK_BUTTON(gtk_button_new_with_label("Sign in"));
     g_signal_connect(win->login_button, "clicked",
                      G_CALLBACK(on_login_clicked), win);
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(win->login_button), FALSE, FALSE, 8);

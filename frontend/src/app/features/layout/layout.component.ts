@@ -16,6 +16,7 @@ import { switchMap, filter, debounceTime, distinctUntilChanged } from 'rxjs/oper
 import { AuthService, User, UserStatus, STATUS_LABELS, STATUS_ICONS } from '@core/services/auth.service';
 import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
+import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
 
 @Component({
   selector: 'app-layout',
@@ -33,24 +34,24 @@ import { WebSocketService } from '@services/websocket.service';
           <a routerLink="/feed" routerLinkActive="active" class="nav-item"
              [matBadge]="unreadCount > 0 ? unreadCount : null" matBadgeColor="warn" matBadgeSize="small">
             <mat-icon>dynamic_feed</mat-icon>
-            <span>Feed</span>
+            <span>{{ i18n.t('nav.feed') }}</span>
           </a>
           <a routerLink="/chat" routerLinkActive="active" class="nav-item">
             <mat-icon>chat</mat-icon>
-            <span>Chat</span>
+            <span>{{ i18n.t('nav.chat') }}</span>
           </a>
           <a routerLink="/teams" routerLinkActive="active" class="nav-item">
             <mat-icon>groups</mat-icon>
-            <span>Teams</span>
+            <span>{{ i18n.t('nav.teams') }}</span>
           </a>
           <a routerLink="/calendar" routerLinkActive="active" class="nav-item"
              [matBadge]="pendingInvitationsCount > 0 ? pendingInvitationsCount : null" matBadgeColor="accent" matBadgeSize="small">
             <mat-icon>calendar_today</mat-icon>
-            <span>Kalender</span>
+            <span>{{ i18n.t('nav.calendar') }}</span>
           </a>
           <a *ngIf="currentUser?.is_admin" routerLink="/admin" routerLinkActive="active" class="nav-item">
             <mat-icon>admin_panel_settings</mat-icon>
-            <span>Admin</span>
+            <span>{{ i18n.t('nav.admin') }}</span>
           </a>
         </div>
         <div class="sidebar-bottom">
@@ -69,22 +70,34 @@ import { WebSocketService } from '@services/websocket.service';
               <small>{{ currentUser?.email }}</small>
             </div>
             <mat-divider></mat-divider>
-            <div class="status-section-label">Status</div>
+            <div class="status-section-label">{{ i18n.t('status.label') }}</div>
             <button mat-menu-item *ngFor="let s of statusOptions"
                     (click)="setStatus(s.value)"
                     [class.active-status]="currentUser?.status === s.value">
               <mat-icon [class]="'status-icon-' + s.value">{{ s.icon }}</mat-icon>
-              <span>{{ s.label }}</span>
+              <span>{{ i18n.t('status.' + s.value) }}</span>
             </button>
             <mat-divider></mat-divider>
             <button mat-menu-item [matMenuTriggerFor]="deviceMenu">
               <mat-icon>settings</mat-icon>
-              <span>Geraeteeinstellungen</span>
+              <span>{{ i18n.t('menu.device_settings') }}</span>
+            </button>
+            <button mat-menu-item [matMenuTriggerFor]="languageMenu">
+              <mat-icon>language</mat-icon>
+              <span>{{ i18n.t('menu.language') }}</span>
             </button>
             <mat-divider></mat-divider>
             <button mat-menu-item (click)="logout()">
               <mat-icon>logout</mat-icon>
-              <span>Abmelden</span>
+              <span>{{ i18n.t('menu.logout') }}</span>
+            </button>
+          </mat-menu>
+
+          <mat-menu #languageMenu="matMenu" class="language-menu">
+            <button mat-menu-item *ngFor="let lang of availableLanguages"
+                    (click)="setLanguage(lang.code)"
+                    [class.active-status]="i18n.lang === lang.code">
+              <span>{{ lang.nativeName }}</span>
             </button>
           </mat-menu>
 
@@ -92,11 +105,11 @@ import { WebSocketService } from '@services/websocket.service';
             <div class="device-section" (click)="$event.stopPropagation()">
               <div class="device-section-label">
                 <mat-icon>mic</mat-icon>
-                Mikrofon
+                {{ i18n.t('menu.microphone') }}
               </div>
               <select class="device-select" [value]="selectedAudioInput"
                       (change)="onAudioInputChange($event)">
-                <option value="">Standard</option>
+                <option value="">{{ i18n.t('menu.default') }}</option>
                 <option *ngFor="let d of audioInputDevices" [value]="d.deviceId">{{ d.label || 'Mikrofon ' + d.deviceId.slice(0, 5) }}</option>
               </select>
             </div>
@@ -104,11 +117,11 @@ import { WebSocketService } from '@services/websocket.service';
             <div class="device-section" (click)="$event.stopPropagation()">
               <div class="device-section-label">
                 <mat-icon>videocam</mat-icon>
-                Kamera
+                {{ i18n.t('menu.camera') }}
               </div>
               <select class="device-select" [value]="selectedVideoInput"
                       (change)="onVideoInputChange($event)">
-                <option value="">Standard</option>
+                <option value="">{{ i18n.t('menu.default') }}</option>
                 <option *ngFor="let d of videoInputDevices" [value]="d.deviceId">{{ d.label || 'Kamera ' + d.deviceId.slice(0, 5) }}</option>
               </select>
             </div>
@@ -116,11 +129,11 @@ import { WebSocketService } from '@services/websocket.service';
             <div class="device-section" (click)="$event.stopPropagation()">
               <div class="device-section-label">
                 <mat-icon>volume_up</mat-icon>
-                Lautsprecher
+                {{ i18n.t('menu.speaker') }}
               </div>
               <select class="device-select" [value]="selectedAudioOutput"
                       (change)="onAudioOutputChange($event)">
-                <option value="">Standard</option>
+                <option value="">{{ i18n.t('menu.default') }}</option>
                 <option *ngFor="let d of audioOutputDevices" [value]="d.deviceId">{{ d.label || 'Lautsprecher ' + d.deviceId.slice(0, 5) }}</option>
               </select>
             </div>
@@ -134,7 +147,7 @@ import { WebSocketService } from '@services/websocket.service';
         <div class="top-bar">
           <div class="search-wrapper" #searchWrapper>
             <mat-icon class="search-icon">search</mat-icon>
-            <input type="text" class="search-input" placeholder="Benutzer suchen..."
+            <input type="text" class="search-input" [placeholder]="i18n.t('search.placeholder')"
                    [(ngModel)]="searchQuery" (input)="onSearchInput()" (focus)="onSearchFocus()">
             <mat-icon *ngIf="searchQuery" class="search-clear" (click)="clearSearch()">close</mat-icon>
             <!-- Search dropdown -->
@@ -146,19 +159,19 @@ import { WebSocketService } from '@services/websocket.service';
                   <span class="search-result-username">{{'@' + user.username}}</span>
                 </div>
                 <div class="search-result-actions">
-                  <button mat-icon-button (click)="callUserFromSearch(user, true, $event)" matTooltip="Audioanruf" class="search-action-btn">
+                  <button mat-icon-button (click)="callUserFromSearch(user, true, $event)" [matTooltip]="i18n.t('search.audio_call')" class="search-action-btn">
                     <mat-icon>call</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="callUserFromSearch(user, false, $event)" matTooltip="Videoanruf" class="search-action-btn">
+                  <button mat-icon-button (click)="callUserFromSearch(user, false, $event)" [matTooltip]="i18n.t('search.video_call')" class="search-action-btn">
                     <mat-icon>videocam</mat-icon>
                   </button>
-                  <button mat-icon-button matTooltip="Chat starten" class="search-action-btn">
+                  <button mat-icon-button [matTooltip]="i18n.t('search.start_chat')" class="search-action-btn">
                     <mat-icon>chat</mat-icon>
                   </button>
                 </div>
               </div>
               <div *ngIf="searchQuery.length >= 2 && searchResults.length === 0 && !searchLoading" class="search-empty">
-                Keine Benutzer gefunden
+                {{ i18n.t('search.no_results') }}
               </div>
             </div>
           </div>
@@ -168,13 +181,13 @@ import { WebSocketService } from '@services/websocket.service';
           <!-- Chat Sidebar -->
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
-              <span>{{ sidebarMode === 'teams' ? 'Teams' : 'Chats' }}</span>
+              <span>{{ sidebarMode === 'teams' ? i18n.t('nav.teams') : i18n.t('chat.chats') }}</span>
             </div>
 
             <!-- User search for calling -->
             <div class="call-search-panel" *ngIf="showCallSearch" #callSearchPanel>
               <input class="call-search-input" [(ngModel)]="callSearchQuery"
-                     (input)="onCallSearch()" placeholder="Benutzer suchen...">
+                     (input)="onCallSearch()" [placeholder]="i18n.t('search.placeholder')">
               <div class="call-search-results">
                 <div *ngFor="let u of callSearchResults" class="call-search-item">
                   <div class="call-search-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
@@ -182,15 +195,15 @@ import { WebSocketService } from '@services/websocket.service';
                     <span class="call-search-name">{{ u.display_name }}</span>
                     <span class="call-search-username">{{'@' + u.username}}</span>
                   </div>
-                  <button mat-icon-button (click)="callUser(u, false)" matTooltip="Videoanruf" class="call-action-btn">
+                  <button mat-icon-button (click)="callUser(u, false)" [matTooltip]="i18n.t('search.video_call')" class="call-action-btn">
                     <mat-icon>videocam</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="callUser(u, true)" matTooltip="Audioanruf" class="call-action-btn">
+                  <button mat-icon-button (click)="callUser(u, true)" [matTooltip]="i18n.t('search.audio_call')" class="call-action-btn">
                     <mat-icon>call</mat-icon>
                   </button>
                 </div>
                 <div *ngIf="callSearchQuery && callSearchResults.length === 0" class="call-search-empty">
-                  Keine Benutzer gefunden
+                  {{ i18n.t('search.no_results') }}
                 </div>
               </div>
             </div>
@@ -209,13 +222,13 @@ import { WebSocketService } from '@services/websocket.service';
                 </div>
                 <div class="chat-sidebar-info">
                   <span class="chat-sidebar-name">{{ ch.team_name ? ch.team_name + ' / ' : '' }}{{ ch.name }}</span>
-                  <span class="chat-sidebar-meta" *ngIf="ch.channel_type !== 'meeting'">{{ ch.member_count }} Mitglieder</span>
+                  <span class="chat-sidebar-meta" *ngIf="ch.channel_type !== 'meeting'">{{ ch.member_count }} {{ i18n.t('chat.members') }}</span>
                   <span class="chat-sidebar-meta" *ngIf="ch.channel_type === 'meeting' && ch.scheduled_at">{{ ch.scheduled_at | date:'dd.MM.yyyy HH:mm' }}</span>
                 </div>
                 <span *ngIf="ch.unread_count > 0" class="chat-unread-badge">{{ ch.unread_count }}</span>
               </div>
               <div *ngIf="filteredChannels.length === 0" class="chat-sidebar-empty">
-                {{ sidebarMode === 'teams' ? 'Keine Team-Chats' : 'Keine Chats' }}
+                {{ sidebarMode === 'teams' ? i18n.t('chat.no_team_chats') : i18n.t('chat.no_chats_available') }}
               </div>
             </div>
           </aside>
@@ -225,11 +238,11 @@ import { WebSocketService } from '@services/websocket.service';
                [style.top.px]="contextMenu.y" [style.left.px]="contextMenu.x">
             <button class="context-menu-item" (click)="renameChat()">
               <mat-icon>edit</mat-icon>
-              <span>Umbenennen</span>
+              <span>{{ i18n.t('chat.rename') }}</span>
             </button>
             <button class="context-menu-item delete" (click)="deleteChat()">
               <mat-icon>delete</mat-icon>
-              <span>Chat loeschen</span>
+              <span>{{ i18n.t('chat.delete_chat') }}</span>
             </button>
           </div>
 
@@ -248,7 +261,7 @@ import { WebSocketService } from '@services/websocket.service';
           </div>
           <div class="incoming-call-info">
             <span class="incoming-call-name">{{ incomingCall.displayName }}</span>
-            <span class="incoming-call-label">{{ incomingCall.audioOnly ? 'Audioanruf' : 'Videoanruf' }}...</span>
+            <span class="incoming-call-label">{{ incomingCall.audioOnly ? i18n.t('incoming_call.audio') : i18n.t('incoming_call.video') }}</span>
           </div>
           <div class="incoming-call-actions">
             <button mat-fab color="primary" (click)="acceptCall()" class="call-btn accept">
@@ -895,11 +908,14 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private audioUnlocked = false;
   private unlockHandler = () => this.unlockAudio();
 
+  availableLanguages = EU_LANGUAGES;
+
   constructor(
     private authService: AuthService,
     private apiService: ApiService,
     private wsService: WebSocketService,
     private router: Router,
+    public i18n: I18nService,
   ) {
     const allStatuses: UserStatus[] = ['online', 'busy', 'away', 'dnd', 'offline'];
     this.statusOptions = allStatuses.map((s) => ({
@@ -1147,13 +1163,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   openNewMeeting(): void {
-    const name = prompt('Termin-Name:');
+    const name = prompt(this.i18n.t('meeting.name_prompt'));
     if (!name) return;
-    const dateStr = prompt('Datum und Uhrzeit (z.B. 2026-03-15 14:00):');
+    const dateStr = prompt(this.i18n.t('meeting.date_prompt'));
     if (!dateStr) return;
     const scheduledAt = new Date(dateStr);
     if (isNaN(scheduledAt.getTime())) {
-      alert('Ungueltiges Datum');
+      alert(this.i18n.t('meeting.invalid_date'));
       return;
     }
     this.apiService.createChannel({
@@ -1182,7 +1198,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     if (!this.contextMenu.channel) return;
     const ch = this.contextMenu.channel;
     this.contextMenu.show = false;
-    const newName = prompt('Chat umbenennen:', ch.name);
+    const newName = prompt(this.i18n.t('chat.rename_prompt'), ch.name);
     if (newName && newName.trim() && newName.trim() !== ch.name) {
       this.apiService.updateChannel(ch.id, { name: newName.trim() }).subscribe({
         next: (updated) => {
@@ -1197,7 +1213,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     if (!this.contextMenu.channel) return;
     const ch = this.contextMenu.channel;
     this.contextMenu.show = false;
-    if (confirm(`Chat "${ch.name}" wirklich loeschen?`)) {
+    if (confirm(`${this.i18n.t('chat.confirm_delete_chat')} "${ch.name}"?`)) {
       this.apiService.deleteChannel(ch.id).subscribe(() => {
         this.chatChannels = this.chatChannels.filter((c) => c.id !== ch.id);
         this.updateFilteredChannels();
@@ -1360,6 +1376,17 @@ export class LayoutComponent implements OnInit, OnDestroy {
     const value = (event.target as HTMLSelectElement).value;
     this.selectedAudioOutput = value;
     localStorage.setItem('agora_audio_output', value);
+  }
+
+  setLanguage(code: string): void {
+    this.i18n.setLanguage(code);
+    // Persist to backend
+    this.apiService.updateProfile({ language: code }).subscribe({
+      next: () => {
+        this.authService.updateLocalUser({ language: code } as any);
+      },
+      error: () => {},
+    });
   }
 
   logout(): void {

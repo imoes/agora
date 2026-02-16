@@ -85,6 +85,10 @@ def _add_missing_columns(connection):
         connection.execute(text(
             "ALTER TABLE users ADD COLUMN is_guest BOOLEAN DEFAULT false"
         ))
+    if "language" not in user_cols:
+        connection.execute(text(
+            "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'en'"
+        ))
 
 
 @asynccontextmanager

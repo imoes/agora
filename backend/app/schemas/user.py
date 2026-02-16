@@ -26,6 +26,7 @@ class UserOut(BaseModel):
     status_message: str | None = None
     is_admin: bool = False
     auth_source: str = "local"
+    language: str = "en"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -35,6 +36,7 @@ class UserUpdate(BaseModel):
     display_name: str | None = None
     status_message: str | None = None
     status: str | None = None
+    language: str | None = None
 
 
 class Token(BaseModel):

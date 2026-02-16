@@ -16,6 +16,7 @@ import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
 import { AuthService, User } from '@core/services/auth.service';
 import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component';
+import { I18nService } from '@services/i18n.service';
 
 @Component({
   selector: 'app-chat-room',
@@ -46,7 +47,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         </button>
         <div class="channel-info">
           <h3 *ngIf="!editingName" (click)="startEditName()" class="channel-name-editable"
-              matTooltip="Klicken zum Umbenennen">{{ channel?.name }}</h3>
+              [matTooltip]="i18n.t('chat.rename_tooltip')">{{ channel?.name }}</h3>
           <div *ngIf="editingName" class="edit-name-row">
             <input class="edit-name-input" [(ngModel)]="editNameValue"
                    (keydown.enter)="saveChannelName()"
@@ -64,19 +65,19 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
           </span>
         </div>
         <div class="header-actions">
-          <button mat-icon-button matTooltip="Mitglied hinzufuegen" (click)="openInviteDialog()">
+          <button mat-icon-button [matTooltip]="i18n.t('chat.add_member')" (click)="openInviteDialog()">
             <mat-icon>group_add</mat-icon>
           </button>
-          <button mat-icon-button matTooltip="Audioanruf" (click)="startAudioCall()">
+          <button mat-icon-button [matTooltip]="i18n.t('chat.audio_call')" (click)="startAudioCall()">
             <mat-icon>call</mat-icon>
           </button>
-          <button mat-icon-button matTooltip="Videoanruf" (click)="startVideoCall()">
+          <button mat-icon-button [matTooltip]="i18n.t('chat.video_call')" (click)="startVideoCall()">
             <mat-icon>videocam</mat-icon>
           </button>
-          <button mat-icon-button matTooltip="Dateien" (click)="showFiles = !showFiles">
+          <button mat-icon-button [matTooltip]="i18n.t('chat.files')" (click)="showFiles = !showFiles">
             <mat-icon>attach_file</mat-icon>
           </button>
-          <button mat-icon-button matTooltip="Chat verlassen" (click)="leaveChannel()"
+          <button mat-icon-button [matTooltip]="i18n.t('chat.leave')" (click)="leaveChannel()"
                   *ngIf="channel?.channel_type === 'group' || channel?.channel_type === 'meeting'">
             <mat-icon>logout</mat-icon>
           </button>
@@ -86,7 +87,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       <!-- Files sidebar -->
       <div class="files-panel" *ngIf="showFiles">
         <div class="files-header">
-          <h4>Dateien</h4>
+          <h4>{{ i18n.t('chat.files') }}</h4>
           <button mat-icon-button (click)="showFiles = false">
             <mat-icon>close</mat-icon>
           </button>
@@ -98,7 +99,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
             <small>{{ formatFileSize(f.file?.file_size) }}</small>
           </div>
         </div>
-        <p *ngIf="files.length === 0" class="no-files">Keine Dateien</p>
+        <p *ngIf="files.length === 0" class="no-files">{{ i18n.t('chat.no_files') }}</p>
       </div>
 
       <!-- Messages -->
@@ -179,7 +180,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                     </div>
                   </div>
                 </ng-container>
-                <span *ngIf="msg.edited_at" class="edited">(bearbeitet)</span>
+                <span *ngIf="msg.edited_at" class="edited">{{ i18n.t('chat.edited') }}</span>
               </div>
               <!-- Reactions display -->
               <div class="reactions-row" *ngIf="msg.reactions && msg.reactions.length > 0">
@@ -197,7 +198,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         </ng-container>
 
         <div *ngIf="typingUsers.length > 0" class="typing-indicator">
-          {{ typingUsers.join(', ') }} {{ typingUsers.length === 1 ? 'tippt...' : 'tippen...' }}
+          {{ typingUsers.join(', ') }} {{ typingUsers.length === 1 ? i18n.t('chat.typing_one') : i18n.t('chat.typing_many') }}
         </div>
       </div>
 
@@ -222,21 +223,21 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         <div class="context-actions">
           <button class="context-action-btn" (click)="replyToMessage(emojiPickerMsg)">
             <mat-icon>reply</mat-icon>
-            <span>Antworten</span>
+            <span>{{ i18n.t('chat.reply') }}</span>
           </button>
           <button class="context-action-btn" (click)="forwardMessage(emojiPickerMsg)">
             <mat-icon>forward</mat-icon>
-            <span>Weiterleiten</span>
+            <span>{{ i18n.t('chat.forward') }}</span>
           </button>
           <button class="context-action-btn" (click)="startEditMessage(emojiPickerMsg)"
                   *ngIf="emojiPickerMsg.sender_id === currentUser?.id && emojiPickerMsg.message_type === 'text'">
             <mat-icon>edit</mat-icon>
-            <span>Bearbeiten</span>
+            <span>{{ i18n.t('chat.edit') }}</span>
           </button>
           <button class="context-action-btn delete" (click)="confirmDeleteMessage(emojiPickerMsg)"
                   *ngIf="emojiPickerMsg.sender_id === currentUser?.id && emojiPickerMsg.message_type !== 'system'">
             <mat-icon>delete</mat-icon>
-            <span>Loeschen</span>
+            <span>{{ i18n.t('chat.delete') }}</span>
           </button>
         </div>
       </div>
@@ -244,15 +245,15 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       <!-- Forward dialog -->
       <div class="forward-overlay" *ngIf="forwardingMsg" (click)="cancelForward()">
         <div class="forward-dialog" (click)="$event.stopPropagation()">
-          <h3>Weiterleiten an</h3>
+          <h3>{{ i18n.t('chat.forward_to') }}</h3>
           <div class="forward-list">
             <div *ngFor="let ch of forwardChannels" class="forward-item" (click)="doForward(ch)">
               <div class="forward-avatar">{{ ch.name?.charAt(0)?.toUpperCase() }}</div>
               <span>{{ ch.name }}</span>
             </div>
-            <p *ngIf="forwardChannels.length === 0" class="no-files">Keine Chats verfuegbar</p>
+            <p *ngIf="forwardChannels.length === 0" class="no-files">{{ i18n.t('chat.no_chats') }}</p>
           </div>
-          <button mat-button (click)="cancelForward()" class="forward-cancel">Abbrechen</button>
+          <button mat-button (click)="cancelForward()" class="forward-cancel">{{ i18n.t('common.cancel') }}</button>
         </div>
       </div>
 
@@ -287,17 +288,17 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       <div class="pending-file-bar" *ngIf="pendingFile">
         <div class="pending-file-preview">
           <img *ngIf="pendingFile.isImage" [src]="getInlineUrl(pendingFile.ref.id)"
-               class="pending-thumb" alt="Vorschau">
+               class="pending-thumb" [alt]="i18n.t('chat.preview')">
           <mat-icon *ngIf="!pendingFile.isImage && !pendingFile.isVideo">insert_drive_file</mat-icon>
           <mat-icon *ngIf="pendingFile.isVideo">videocam</mat-icon>
           <span class="pending-filename">{{ pendingFile.ref.original_filename }}</span>
         </div>
-        <button mat-icon-button (click)="cancelPendingFile()" matTooltip="Abbrechen">
+        <button mat-icon-button (click)="cancelPendingFile()" [matTooltip]="i18n.t('common.cancel')"
           <mat-icon>close</mat-icon>
         </button>
       </div>
       <div class="message-input-container">
-        <button mat-icon-button (click)="fileInput.click()" matTooltip="Datei hochladen">
+        <button mat-icon-button (click)="fileInput.click()" [matTooltip]="i18n.t('chat.upload_file')">
           <mat-icon>attach_file</mat-icon>
         </button>
         <input type="file" #fileInput hidden (change)="onFileSelected($event)">
@@ -306,7 +307,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                  [(ngModel)]="messageText"
                  (keydown)="onKeydown($event)"
                  (input)="onInput()"
-                 [placeholder]="pendingFile ? 'Kommentar hinzufuegen (optional)...' : 'Nachricht eingeben... (@  fuer Erwaehnung)'">
+                 [placeholder]="pendingFile ? i18n.t('chat.caption_placeholder') : i18n.t('chat.input_placeholder')">
         </mat-form-field>
         <button mat-icon-button color="primary" (click)="sendMessage()" [disabled]="!messageText.trim() && !pendingFile">
           <mat-icon>send</mat-icon>
@@ -1115,6 +1116,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     private authService: AuthService,
     private dialog: MatDialog,
     private snackBar: MatSnackBar,
+    public i18n: I18nService,
   ) {}
 
   ngOnInit(): void {
@@ -1592,14 +1594,14 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   doForward(targetChannel: any): void {
     if (!this.forwardingMsg) return;
     const fwd = this.forwardingMsg;
-    const senderName = fwd.sender_name || 'Unbekannt';
-    const content = `[Weitergeleitet von ${senderName}]\n${fwd.content}`;
+    const senderName = fwd.sender_name || this.i18n.t('chat.unknown');
+    const content = `[${this.i18n.t('chat.forwarded_from')} ${senderName}]\n${fwd.content}`;
     this.apiService.sendMessage(targetChannel.id, {
       content,
       message_type: fwd.message_type === 'file' ? 'file' : 'text',
       file_reference_id: fwd.file_reference_id || undefined,
     }).subscribe(() => {
-      this.snackBar.open(`Weitergeleitet an "${targetChannel.name}"`, 'OK', { duration: 2000 });
+      this.snackBar.open(`${this.i18n.t('chat.forwarded_to')} "${targetChannel.name}"`, this.i18n.t('common.ok'), { duration: 2000 });
     });
     this.cancelForward();
   }
@@ -1634,12 +1636,12 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!this.channelId) return;
     this.apiService.leaveChannel(this.channelId).subscribe({
       next: () => {
-        this.snackBar.open('Chat verlassen', 'OK', { duration: 2000 });
+        this.snackBar.open(this.i18n.t('chat.left'), this.i18n.t('common.ok'), { duration: 2000 });
         this.router.navigate(['/chat']);
       },
       error: (err) => {
-        const detail = err.error?.detail || 'Fehler beim Verlassen';
-        this.snackBar.open(detail, 'OK', { duration: 3000 });
+        const detail = err.error?.detail || this.i18n.t('chat.leave_error');
+        this.snackBar.open(detail, this.i18n.t('common.ok'), { duration: 3000 });
       },
     });
   }
@@ -1685,8 +1687,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.editingName = false;
       },
       error: (err) => {
-        const detail = err.error?.detail || 'Fehler beim Umbenennen';
-        this.snackBar.open(detail, 'OK', { duration: 3000 });
+        const detail = err.error?.detail || this.i18n.t('chat.rename_error');
+        this.snackBar.open(detail, this.i18n.t('common.ok'), { duration: 3000 });
         this.editingName = false;
       },
     });
@@ -1737,7 +1739,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   confirmDeleteMessage(msg: any): void {
     this.closeEmojiPicker();
-    if (confirm('Nachricht wirklich loeschen?')) {
+    if (confirm(this.i18n.t('chat.confirm_delete'))) {
       this.wsService.send(this.channelId, {
         type: 'delete_message',
         message_id: msg.id,
@@ -1754,7 +1756,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   getFileName(content: string): string {
-    if (!content) return 'Datei herunterladen';
+    if (!content) return this.i18n.t('chat.download_file');
     // Strip mime: line if present
     const firstLine = content.split('\n')[0];
     if (firstLine.startsWith('Datei: ')) {
@@ -1810,7 +1812,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   formatTime(dateStr: string): string {
     const d = new Date(dateStr);
-    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(this.i18n.lang, { hour: '2-digit', minute: '2-digit' });
   }
 
   formatFileSize(bytes: number): string {

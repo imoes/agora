@@ -21,6 +21,9 @@ public class User
 
     [JsonPropertyName("is_admin")]
     public bool IsAdmin { get; set; }
+
+    [JsonPropertyName("language")]
+    public string Language { get; set; } = "en";
 }
 
 public class LoginRequest
