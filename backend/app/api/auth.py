@@ -105,6 +105,32 @@ async def update_me(
         current_user.status = data.status
     if data.language is not None:
         current_user.language = data.language
+    if data.email is not None:
+        # Check email uniqueness
+        dup = await db.execute(
+            select(User).where(
+                func.lower(User.email) == data.email.lower(),
+                User.id != current_user.id,
+            )
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already in use",
+            )
+        current_user.email = data.email
+    if data.password is not None:
+        if not data.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password required",
+            )
+        if not verify_password(data.current_password, current_user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Current password is incorrect",
+            )
+        current_user.password_hash = hash_password(data.password)
     await db.flush()
     await db.refresh(current_user)
     return UserOut.model_validate(current_user)

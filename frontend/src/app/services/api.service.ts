@@ -66,7 +66,7 @@ export class ApiService {
   }
 
   // Profile
-  updateProfile(data: { display_name?: string; status_message?: string; status?: string; language?: string }): Observable<any> {
+  updateProfile(data: { display_name?: string; email?: string; status_message?: string; status?: string; language?: string; password?: string; current_password?: string }): Observable<any> {
     return this.http.patch(`${this.baseUrl}/auth/me`, data);
   }
 

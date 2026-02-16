@@ -192,6 +192,7 @@ import { I18nService } from '@services/i18n.service';
               <div class="reactions-row" *ngIf="msg.reactions && msg.reactions.length > 0">
                 <span *ngFor="let r of getGroupedReactions(msg)"
                       class="reaction-badge" [class.own]="r.hasOwn"
+                      [matTooltip]="r.names"
                       (click)="toggleReaction(msg, r.emoji)">
                   {{ r.emoji }}<span class="reaction-count">{{ r.count }}</span>
                 </span>
@@ -1547,7 +1548,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.removeReaction(msg, emoji);
       return;
     }
-    msg.reactions.push({ emoji, user_id: this.currentUser?.id, message_id: msg.id });
+    msg.reactions.push({ emoji, user_id: this.currentUser?.id, display_name: this.currentUser?.display_name || '', message_id: msg.id });
 
     // Send via WebSocket for real-time broadcast
     this.wsService.send(this.channelId, {
@@ -1583,14 +1584,17 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
-  getGroupedReactions(msg: any): { emoji: string; count: number; hasOwn: boolean }[] {
+  getGroupedReactions(msg: any): { emoji: string; count: number; hasOwn: boolean; names: string }[] {
     if (!msg.reactions || msg.reactions.length === 0) return [];
-    const groups: { [key: string]: { count: number; hasOwn: boolean } } = {};
+    const groups: { [key: string]: { count: number; hasOwn: boolean; names: string[] } } = {};
     for (const r of msg.reactions) {
       if (!groups[r.emoji]) {
-        groups[r.emoji] = { count: 0, hasOwn: false };
+        groups[r.emoji] = { count: 0, hasOwn: false, names: [] };
       }
       groups[r.emoji].count++;
+      if (r.display_name) {
+        groups[r.emoji].names.push(r.display_name);
+      }
       if (r.user_id === this.currentUser?.id) {
         groups[r.emoji].hasOwn = true;
       }
@@ -1599,6 +1603,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       emoji,
       count: data.count,
       hasOwn: data.hasOwn,
+      names: data.names.join(', '),
     }));
   }
 
@@ -1613,7 +1618,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         (r: any) => r.emoji === data.emoji && r.user_id === data.user_id
       );
       if (!exists) {
-        msg.reactions.push({ emoji: data.emoji, user_id: data.user_id, message_id: data.message_id });
+        msg.reactions.push({ emoji: data.emoji, user_id: data.user_id, display_name: data.display_name || '', message_id: data.message_id });
       }
     } else {
       msg.reactions = msg.reactions.filter(

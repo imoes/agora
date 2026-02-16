@@ -34,9 +34,12 @@ class UserOut(BaseModel):
 
 class UserUpdate(BaseModel):
     display_name: str | None = None
+    email: str | None = None
     status_message: str | None = None
     status: str | None = None
     language: str | None = None
+    password: str | None = None
+    current_password: str | None = None
 
 
 class Token(BaseModel):
