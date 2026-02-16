@@ -11,6 +11,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription, Subject, interval, of } from 'rxjs';
 import { switchMap, filter, debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { AuthService, User, UserStatus, STATUS_LABELS, STATUS_ICONS } from '@core/services/auth.service';
@@ -25,6 +28,7 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
     CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive,
     MatSidenavModule, MatToolbarModule, MatListModule, MatIconModule,
     MatBadgeModule, MatButtonModule, MatMenuModule, MatTooltipModule, MatDividerModule,
+    MatFormFieldModule, MatInputModule, MatSnackBarModule,
   ],
   template: `
     <div class="layout">
@@ -36,11 +40,13 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
             <mat-icon>dynamic_feed</mat-icon>
             <span>{{ i18n.t('nav.feed') }}</span>
           </a>
-          <a routerLink="/chat" routerLinkActive="active" class="nav-item">
+          <a routerLink="/chat" routerLinkActive="active" class="nav-item"
+             [matBadge]="chatUnreadCount > 0 ? chatUnreadCount : null" matBadgeColor="warn" matBadgeSize="small">
             <mat-icon>chat</mat-icon>
             <span>{{ i18n.t('nav.chat') }}</span>
           </a>
-          <a routerLink="/teams" routerLinkActive="active" class="nav-item">
+          <a routerLink="/teams" routerLinkActive="active" class="nav-item"
+             [matBadge]="teamsUnreadCount > 0 ? teamsUnreadCount : null" matBadgeColor="warn" matBadgeSize="small">
             <mat-icon>groups</mat-icon>
             <span>{{ i18n.t('nav.teams') }}</span>
           </a>
@@ -78,6 +84,10 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
               <span>{{ i18n.t('status.' + s.value) }}</span>
             </button>
             <mat-divider></mat-divider>
+            <button mat-menu-item (click)="openProfileSettings()">
+              <mat-icon>account_circle</mat-icon>
+              <span>{{ i18n.t('menu.profile') }}</span>
+            </button>
             <button mat-menu-item [matMenuTriggerFor]="deviceMenu">
               <mat-icon>settings</mat-icon>
               <span>{{ i18n.t('menu.device_settings') }}</span>
@@ -250,6 +260,52 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
           <main class="content">
             <router-outlet></router-outlet>
           </main>
+        </div>
+      </div>
+
+      <!-- Profile Settings Modal -->
+      <div class="profile-overlay" *ngIf="showProfileSettings" (click)="showProfileSettings = false">
+        <div class="profile-card" (click)="$event.stopPropagation()">
+          <div class="profile-header">
+            <h3>{{ i18n.t('profile.title') }}</h3>
+            <button mat-icon-button (click)="showProfileSettings = false">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+          <div class="profile-form">
+            <mat-form-field appearance="outline" class="profile-field">
+              <mat-label>{{ i18n.t('profile.display_name') }}</mat-label>
+              <input matInput [(ngModel)]="profileForm.display_name">
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="profile-field">
+              <mat-label>{{ i18n.t('profile.email') }}</mat-label>
+              <input matInput type="email" [(ngModel)]="profileForm.email">
+            </mat-form-field>
+            <div class="profile-actions">
+              <button mat-raised-button color="primary" (click)="saveProfile()" [disabled]="savingProfile">
+                {{ i18n.t('admin.save') }}
+              </button>
+            </div>
+            <mat-divider></mat-divider>
+            <h4>{{ i18n.t('profile.change_password') }}</h4>
+            <mat-form-field appearance="outline" class="profile-field">
+              <mat-label>{{ i18n.t('profile.current_password') }}</mat-label>
+              <input matInput type="password" [(ngModel)]="profileForm.current_password">
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="profile-field">
+              <mat-label>{{ i18n.t('profile.new_password') }}</mat-label>
+              <input matInput type="password" [(ngModel)]="profileForm.new_password">
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="profile-field">
+              <mat-label>{{ i18n.t('profile.confirm_password') }}</mat-label>
+              <input matInput type="password" [(ngModel)]="profileForm.confirm_password">
+            </mat-form-field>
+            <div class="profile-actions">
+              <button mat-raised-button color="primary" (click)="changePassword()" [disabled]="savingProfile">
+                {{ i18n.t('profile.change_password') }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -797,6 +853,42 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       border-color: var(--primary);
     }
 
+    /* Profile settings modal */
+    .profile-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .profile-card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      width: 400px;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .profile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .profile-header h3 { margin: 0; color: #333; }
+    .profile-form { display: flex; flex-direction: column; gap: 4px; }
+    .profile-form h4 { margin: 12px 0 4px 0; color: #333; }
+    .profile-field { width: 100%; }
+    .profile-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 8px;
+    }
+
     /* ============ Mobile responsive ============ */
     @media (max-width: 768px) {
       .layout {
@@ -874,6 +966,8 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
 export class LayoutComponent implements OnInit, OnDestroy {
   currentUser: User | null = null;
   unreadCount = 0;
+  chatUnreadCount = 0;
+  teamsUnreadCount = 0;
   pendingInvitationsCount = 0;
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
@@ -910,11 +1004,17 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   availableLanguages = EU_LANGUAGES;
 
+  // Profile settings
+  showProfileSettings = false;
+  savingProfile = false;
+  profileForm = { display_name: '', email: '', current_password: '', new_password: '', confirm_password: '' };
+
   constructor(
     private authService: AuthService,
     private apiService: ApiService,
     private wsService: WebSocketService,
     private router: Router,
+    private snackBar: MatSnackBar,
     public i18n: I18nService,
   ) {
     const allStatuses: UserStatus[] = ['online', 'busy', 'away', 'dnd', 'offline'];
@@ -1085,6 +1185,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
     } else {
       this.filteredChannels = this.chatChannels.filter((ch) => !ch.team_id && ch.channel_type !== 'team');
     }
+    // Compute unread counts for nav badges
+    this.chatUnreadCount = this.chatChannels
+      .filter((ch) => !ch.team_id && ch.channel_type !== 'team')
+      .reduce((sum, ch) => sum + (ch.unread_count || 0), 0);
+    this.teamsUnreadCount = this.chatChannels
+      .filter((ch) => ch.team_id || ch.channel_type === 'team')
+      .reduce((sum, ch) => sum + (ch.unread_count || 0), 0);
   }
 
   toggleCallSearch(event: MouseEvent): void {
@@ -1386,6 +1493,68 @@ export class LayoutComponent implements OnInit, OnDestroy {
         this.authService.updateLocalUser({ language: code } as any);
       },
       error: () => {},
+    });
+  }
+
+  openProfileSettings(): void {
+    this.showProfileSettings = true;
+    this.profileForm = {
+      display_name: this.currentUser?.display_name || '',
+      email: this.currentUser?.email || '',
+      current_password: '',
+      new_password: '',
+      confirm_password: '',
+    };
+  }
+
+  saveProfile(): void {
+    const updates: any = {};
+    if (this.profileForm.display_name && this.profileForm.display_name !== this.currentUser?.display_name) {
+      updates.display_name = this.profileForm.display_name;
+    }
+    if (this.profileForm.email && this.profileForm.email !== this.currentUser?.email) {
+      updates.email = this.profileForm.email;
+    }
+    if (Object.keys(updates).length === 0) return;
+    this.savingProfile = true;
+    this.apiService.updateProfile(updates).subscribe({
+      next: (user) => {
+        this.authService.updateLocalUser(updates);
+        this.snackBar.open(this.i18n.t('profile.saved'), this.i18n.t('common.ok'), { duration: 3000 });
+        this.savingProfile = false;
+      },
+      error: (err) => {
+        this.savingProfile = false;
+        this.snackBar.open(err.error?.detail || this.i18n.t('common.error'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+    });
+  }
+
+  changePassword(): void {
+    if (!this.profileForm.current_password || !this.profileForm.new_password) {
+      this.snackBar.open(this.i18n.t('profile.fill_password_fields'), this.i18n.t('common.ok'), { duration: 3000 });
+      return;
+    }
+    if (this.profileForm.new_password !== this.profileForm.confirm_password) {
+      this.snackBar.open(this.i18n.t('profile.passwords_mismatch'), this.i18n.t('common.ok'), { duration: 3000 });
+      return;
+    }
+    this.savingProfile = true;
+    this.apiService.updateProfile({
+      password: this.profileForm.new_password,
+      current_password: this.profileForm.current_password,
+    }).subscribe({
+      next: () => {
+        this.snackBar.open(this.i18n.t('profile.password_changed'), this.i18n.t('common.ok'), { duration: 3000 });
+        this.profileForm.current_password = '';
+        this.profileForm.new_password = '';
+        this.profileForm.confirm_password = '';
+        this.savingProfile = false;
+      },
+      error: (err) => {
+        this.savingProfile = false;
+        this.snackBar.open(err.error?.detail || this.i18n.t('common.error'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
     });
   }
 

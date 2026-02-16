@@ -198,12 +198,16 @@ async def add_member(
     member = TeamMember(team_id=team_id, user_id=data.user_id, role=data.role)
     db.add(member)
 
-    # Add to all team channels
+    # Add to all team channels (unsubscribed by default so they don't flood the feed)
     channels = await db.execute(
         select(Channel).where(Channel.team_id == team_id)
     )
     for channel in channels.scalars().all():
-        ch_member = ChannelMember(channel_id=channel.id, user_id=data.user_id)
+        ch_member = ChannelMember(
+            channel_id=channel.id,
+            user_id=data.user_id,
+            is_subscribed=False,
+        )
         db.add(ch_member)
 
     await db.flush()

@@ -1,21 +1,20 @@
-import { Component, OnInit } from '@angular/core';
+import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { AuthService } from '@core/services/auth.service';
-import { ApiService } from '@services/api.service';
 import { I18nService } from '@services/i18n.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, RouterLink,
+    CommonModule, FormsModule,
     MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatSnackBarModule,
   ],
   template: `
@@ -45,9 +44,6 @@ import { I18nService } from '@services/i18n.service';
             </button>
           </form>
         </mat-card-content>
-        <mat-card-actions align="end" *ngIf="registrationEnabled">
-          <a routerLink="/register">{{ i18n.t('login.register_link') }}</a>
-        </mat-card-actions>
       </mat-card>
     </div>
   `,
@@ -90,25 +86,17 @@ import { I18nService } from '@services/i18n.service';
     }
   `],
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent {
   username = '';
   password = '';
   loading = false;
-  registrationEnabled = true;
 
   constructor(
     private authService: AuthService,
-    private apiService: ApiService,
     private router: Router,
     private snackBar: MatSnackBar,
     public i18n: I18nService,
   ) {}
-
-  ngOnInit(): void {
-    this.apiService.getAuthConfig().subscribe((config) => {
-      this.registrationEnabled = config.registration_enabled;
-    });
-  }
 
   onLogin(): void {
     if (!this.username || !this.password) return;

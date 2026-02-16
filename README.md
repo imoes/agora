@@ -48,7 +48,16 @@ Agora is a self-hosted collaboration platform with chat, video conferencing, fil
    docker compose up -d --build
    ```
 
-5. Open in browser: [https://localhost](https://localhost)
+5. Create the initial admin user:
+   ```bash
+   docker compose exec backend python scripts/create_admin.py \
+     --username admin \
+     --email admin@agora.local \
+     --name "Administrator" \
+     --password YourSecurePassword123!
+   ```
+
+6. Open in browser: [https://localhost](https://localhost) and log in with the admin credentials.
 
 ### Services
 
@@ -529,11 +538,75 @@ pytest
 
 ---
 
+## Admin User & User Management
+
+Self-registration is **disabled**. All users must be created by an administrator. The first admin user must be created via the CLI script.
+
+### Creating the First Admin User
+
+**Inside Docker (recommended):**
+
+```bash
+docker compose exec backend python scripts/create_admin.py \
+  --username admin \
+  --email admin@agora.local \
+  --name "Administrator" \
+  --password YourSecurePassword123!
+```
+
+**Interactive mode** (prompts for password):
+
+```bash
+docker compose exec backend python scripts/create_admin.py \
+  --username admin \
+  --email admin@agora.local \
+  --name "Administrator"
+```
+
+**Outside Docker** (direct database access):
+
+```bash
+cd backend
+python scripts/create_admin.py \
+  --username admin \
+  --email admin@agora.local \
+  --name "Administrator" \
+  --password YourSecurePassword123! \
+  --db-url postgresql://agora:agora_secret@localhost:5432/agora
+```
+
+If the user already exists, the script will promote them to admin.
+
+### Managing Users via Admin Panel
+
+1. Log in with an admin account
+2. Click the **Admin** icon in the sidebar (visible only to admins)
+3. In the **User Management** section you can:
+   - **Create users** - Click "Create User" and fill in username, display name, email, and password
+   - **Edit users** - Click the edit icon to change display name, email, or admin status
+   - **Reset passwords** - Click the lock icon to set a new password for a user
+   - **Delete users** - Click the delete icon (you cannot delete your own account)
+
+### Admin API Endpoints
+
+| Method   | Endpoint                                 | Description                 |
+|----------|------------------------------------------|-----------------------------|
+| `GET`    | `/api/admin/users`                       | List all users              |
+| `POST`   | `/api/admin/users`                       | Create a new user           |
+| `PUT`    | `/api/admin/users/{id}`                  | Update a user               |
+| `DELETE` | `/api/admin/users/{id}`                  | Delete a user               |
+| `POST`   | `/api/admin/users/{id}/reset-password`   | Reset a user's password     |
+| `GET`    | `/api/admin/stats`                       | System statistics           |
+
+All admin endpoints require a valid JWT token from an admin user.
+
+---
+
 ## Authentication Flows
 
 ### Local Authentication
-1. User registers (`POST /api/auth/register`)
-2. Login with email/password (`POST /api/auth/login`) → JWT token
+1. Admin creates user via Admin Panel or CLI script
+2. Login with username/password (`POST /api/auth/login`) → JWT token
 3. All API calls include `Authorization: Bearer <token>`
 4. Token is valid for 24 hours
 

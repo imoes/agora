@@ -95,6 +95,10 @@ def _add_missing_columns(connection):
         connection.execute(text(
             "ALTER TABLE channel_members ADD COLUMN last_read_message_id VARCHAR(36)"
         ))
+    if "is_subscribed" not in cm_cols:
+        connection.execute(text(
+            "ALTER TABLE channel_members ADD COLUMN is_subscribed BOOLEAN DEFAULT true NOT NULL"
+        ))
 
 
 @asynccontextmanager

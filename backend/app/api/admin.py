@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -6,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
-from app.services.auth import get_current_user
+from app.schemas.user import UserOut
+from app.services.auth import get_current_user, hash_password
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -97,8 +100,6 @@ async def toggle_user_admin(
     db: AsyncSession = Depends(get_db),
 ):
     """Toggle admin status for a user (admin only)."""
-    import uuid
-
     result = await db.execute(select(User).where(User.id == uuid.UUID(data.user_id)))
     user = result.scalar_one_or_none()
     if not user:
@@ -107,3 +108,154 @@ async def toggle_user_admin(
     user.is_admin = data.is_admin
     await db.flush()
     return {"status": "ok", "user_id": str(user.id), "is_admin": user.is_admin}
+
+
+# ── User Management (CRUD) ──────────────────────────────────────────
+
+
+class AdminUserCreate(BaseModel):
+    username: str
+    email: str
+    password: str
+    display_name: str
+    is_admin: bool = False
+
+
+class AdminUserUpdate(BaseModel):
+    display_name: str | None = None
+    email: str | None = None
+    is_admin: bool | None = None
+
+
+class AdminResetPassword(BaseModel):
+    password: str
+
+
+@router.get("/users", response_model=list[UserOut])
+async def admin_list_users(
+    search: str | None = None,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all users (admin only)."""
+    query = select(User)
+    if search:
+        query = query.where(
+            User.username.ilike(f"%{search}%")
+            | User.display_name.ilike(f"%{search}%")
+            | User.email.ilike(f"%{search}%")
+        )
+    query = query.order_by(User.display_name)
+    result = await db.execute(query)
+    users = result.scalars().all()
+    return [UserOut.model_validate(u) for u in users]
+
+
+@router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def admin_create_user(
+    data: AdminUserCreate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new user (admin only)."""
+    existing = await db.execute(
+        select(User).where(
+            (func.lower(User.username) == data.username.lower())
+            | (func.lower(User.email) == data.email.lower())
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email already exists",
+        )
+
+    user = User(
+        username=data.username,
+        email=data.email,
+        password_hash=hash_password(data.password),
+        display_name=data.display_name,
+        is_admin=data.is_admin,
+    )
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+    return UserOut.model_validate(user)
+
+
+@router.put("/users/{user_id}", response_model=UserOut)
+async def admin_update_user(
+    user_id: str,
+    data: AdminUserUpdate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a user (admin only)."""
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if data.display_name is not None:
+        user.display_name = data.display_name
+    if data.email is not None:
+        # Check email uniqueness
+        dup = await db.execute(
+            select(User).where(
+                func.lower(User.email) == data.email.lower(),
+                User.id != user.id,
+            )
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already in use",
+            )
+        user.email = data.email
+    if data.is_admin is not None:
+        user.is_admin = data.is_admin
+
+    await db.flush()
+    await db.refresh(user)
+    return UserOut.model_validate(user)
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_user(
+    user_id: str,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a user (admin only). Cannot delete yourself."""
+    uid = uuid.UUID(user_id)
+    if uid == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account",
+        )
+
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await db.delete(user)
+    await db.flush()
+
+
+@router.post("/users/{user_id}/reset-password")
+async def admin_reset_password(
+    user_id: str,
+    data: AdminResetPassword,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset a user's password (admin only)."""
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password_hash = hash_password(data.password)
+    await db.flush()
+    return {"status": "ok", "user_id": str(user.id)}

@@ -66,7 +66,7 @@ export class ApiService {
   }
 
   // Profile
-  updateProfile(data: { display_name?: string; status_message?: string; status?: string; language?: string }): Observable<any> {
+  updateProfile(data: { display_name?: string; email?: string; status_message?: string; status?: string; language?: string; password?: string; current_password?: string }): Observable<any> {
     return this.http.patch(`${this.baseUrl}/auth/me`, data);
   }
 
@@ -170,6 +170,10 @@ export class ApiService {
 
   leaveChannel(channelId: string): Observable<any> {
     return this.http.delete(`${this.baseUrl}/channels/${channelId}/members/me`);
+  }
+
+  toggleChannelSubscription(channelId: string): Observable<{ is_subscribed: boolean }> {
+    return this.http.post<{ is_subscribed: boolean }>(`${this.baseUrl}/channels/${channelId}/subscribe`, null);
   }
 
   // Invitations
@@ -311,5 +315,27 @@ export class ApiService {
 
   toggleUserAdmin(userId: string, isAdmin: boolean): Observable<any> {
     return this.http.post(`${this.baseUrl}/admin/toggle-admin`, { user_id: userId, is_admin: isAdmin });
+  }
+
+  adminGetUsers(search?: string): Observable<any[]> {
+    let params = new HttpParams();
+    if (search) params = params.set('search', search);
+    return this.http.get<any[]>(`${this.baseUrl}/admin/users`, { params });
+  }
+
+  adminCreateUser(data: { username: string; email: string; password: string; display_name: string; is_admin: boolean }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/admin/users`, data);
+  }
+
+  adminUpdateUser(userId: string, data: { display_name?: string; email?: string; is_admin?: boolean }): Observable<any> {
+    return this.http.put(`${this.baseUrl}/admin/users/${userId}`, data);
+  }
+
+  adminDeleteUser(userId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/admin/users/${userId}`);
+  }
+
+  adminResetPassword(userId: string, password: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/admin/users/${userId}/reset-password`, { password });
   }
 }

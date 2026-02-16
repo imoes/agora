@@ -27,6 +27,7 @@ async def create_feed_events(
                 and_(
                     ChannelMember.channel_id == channel_id,
                     ChannelMember.user_id != sender_id,
+                    ChannelMember.is_subscribed == True,
                 )
             )
         )

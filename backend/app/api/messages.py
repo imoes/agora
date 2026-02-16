@@ -66,6 +66,27 @@ async def list_messages(
     msg_ids = [m["id"] for m in messages]
     reactions_map = await get_reactions_for_messages(str(channel_id), msg_ids)
 
+    # Enrich reactions with display names
+    reaction_user_ids = set()
+    for rlist in reactions_map.values():
+        for r in rlist:
+            reaction_user_ids.add(r.get("user_id"))
+    reaction_user_ids -= set(sender_names.keys())
+    for rid in reaction_user_ids:
+        try:
+            result = await db.execute(select(User).where(User.id == uuid.UUID(rid)))
+            user = result.scalar_one_or_none()
+            if user:
+                sender_names[rid] = user.display_name
+        except ValueError:
+            pass
+    enriched_reactions: dict[str, list[dict]] = {}
+    for mid, rlist in reactions_map.items():
+        enriched_reactions[mid] = [
+            {**r, "display_name": sender_names.get(r.get("user_id"), "")}
+            for r in rlist
+        ]
+
     return [
         MessageOut(
             id=m["id"],
@@ -74,7 +95,7 @@ async def list_messages(
             content=m["content"],
             message_type=m["message_type"],
             file_reference_id=m["file_reference_id"],
-            reactions=reactions_map.get(m["id"], []),
+            reactions=enriched_reactions.get(m["id"], []),
             created_at=m["created_at"],
             edited_at=m["edited_at"],
         )

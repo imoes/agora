@@ -11,10 +11,8 @@ export const routes: Routes = [
   },
   {
     path: 'register',
-    loadComponent: () =>
-      import('./features/auth/components/register/register.component').then(
-        (m) => m.RegisterComponent
-      ),
+    redirectTo: 'login',
+    pathMatch: 'full',
   },
   {
     path: 'invite/:token',
