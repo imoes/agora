@@ -84,6 +84,10 @@ export class ApiService {
     return `${this.baseUrl}/files/download/${refId}`;
   }
 
+  getFileInlineUrl(refId: string): string {
+    return `${this.baseUrl}/files/inline/${refId}`;
+  }
+
   // Feed
   getFeed(limit: number = 50, offset: number = 0, unreadOnly: boolean = false): Observable<any> {
     const params = new HttpParams()
