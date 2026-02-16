@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import async_session
 from app.models.channel import ChannelMember
 from app.models.user import User
-from app.services.chat_db import add_message
+from app.services.chat_db import add_message, add_reaction, remove_reaction
 from app.services.feed import create_feed_events
 from app.services.mentions import extract_mentions, resolve_mentions
 from app.websocket.manager import manager
@@ -203,6 +203,40 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     },
                     exclude_user=user_id,
                 )
+
+            elif msg_type == "reaction":
+                emoji = data.get("emoji", "")
+                message_id = data.get("message_id", "")
+                action = data.get("action", "add")
+
+                if emoji and message_id:
+                    if action == "add":
+                        added = await add_reaction(channel_id, message_id, user_id, emoji)
+                        if added:
+                            async with async_session() as db:
+                                await create_feed_events(
+                                    db,
+                                    uuid.UUID(channel_id),
+                                    user.id,
+                                    event_type="reaction",
+                                    preview_text=f"{emoji} Reaktion",
+                                    message_id=message_id,
+                                )
+                                await db.commit()
+                    else:
+                        await remove_reaction(channel_id, message_id, user_id, emoji)
+
+                    await manager.send_to_channel(
+                        channel_id,
+                        {
+                            "type": "reaction_update",
+                            "message_id": message_id,
+                            "user_id": user_id,
+                            "display_name": user.display_name,
+                            "emoji": emoji,
+                            "action": action,
+                        },
+                    )
 
             elif msg_type == "read":
                 await manager.send_to_channel(

@@ -51,9 +51,12 @@ import { ApiService } from '@services/api.service';
                          [class.unread]="!event.is_read"
                          [class.call-event]="event.event_type === 'call'"
                          (click)="openEvent(event)">
-            <div matListItemAvatar class="event-avatar" [class.call-avatar]="event.event_type === 'call'">
+            <div matListItemAvatar class="event-avatar"
+                 [class.call-avatar]="event.event_type === 'call'"
+                 [class.reaction-avatar]="event.event_type === 'reaction'">
               <mat-icon *ngIf="event.event_type === 'call'">videocam</mat-icon>
-              <span *ngIf="event.event_type !== 'call'">{{ event.sender_name?.charAt(0)?.toUpperCase() || '?' }}</span>
+              <mat-icon *ngIf="event.event_type === 'reaction'">add_reaction</mat-icon>
+              <span *ngIf="event.event_type !== 'call' && event.event_type !== 'reaction'">{{ event.sender_name?.charAt(0)?.toUpperCase() || '?' }}</span>
             </div>
             <div matListItemTitle>
               <strong>{{ event.sender_name }}</strong>
@@ -61,6 +64,7 @@ import { ApiService } from '@services/api.service';
             </div>
             <div matListItemLine class="preview">
               <mat-icon *ngIf="event.event_type === 'call'" class="preview-icon">call</mat-icon>
+              <mat-icon *ngIf="event.event_type === 'reaction'" class="preview-icon">add_reaction</mat-icon>
               {{ event.preview_text }}
             </div>
             <div matListItemMeta class="event-time">
@@ -162,6 +166,15 @@ import { ApiService } from '@services/api.service';
     }
     .call-avatar {
       background: #e65100 !important;
+    }
+    .reaction-avatar {
+      background: #6264a7 !important;
+    }
+    .reaction-avatar mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: white;
     }
     .call-avatar mat-icon {
       font-size: 18px;

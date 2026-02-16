@@ -262,6 +262,7 @@ import { WebSocketService } from '@services/websocket.service';
     .layout {
       display: flex;
       height: 100vh;
+      height: 100dvh;
     }
     .sidebar {
       width: 68px;
@@ -827,6 +828,7 @@ import { WebSocketService } from '@services/websocket.service';
       .main-wrapper {
         order: 1;
         height: calc(100vh - 56px);
+        height: calc(100dvh - 56px);
         padding-bottom: 0;
       }
       .top-bar {

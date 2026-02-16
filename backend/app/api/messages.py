@@ -15,11 +15,13 @@ from app.services.chat_db import (
     delete_message,
     get_messages,
     get_reactions,
+    get_reactions_for_messages,
     remove_reaction,
     update_message,
 )
 from app.services.feed import create_feed_events
 from app.services.mentions import extract_mentions, resolve_mentions
+from app.websocket.manager import manager
 
 router = APIRouter(prefix="/api/channels/{channel_id}/messages", tags=["messages"])
 
@@ -60,6 +62,10 @@ async def list_messages(
         except ValueError:
             pass
 
+    # Load reactions for all messages
+    msg_ids = [m["id"] for m in messages]
+    reactions_map = await get_reactions_for_messages(str(channel_id), msg_ids)
+
     return [
         MessageOut(
             id=m["id"],
@@ -68,6 +74,7 @@ async def list_messages(
             content=m["content"],
             message_type=m["message_type"],
             file_reference_id=m["file_reference_id"],
+            reactions=reactions_map.get(m["id"], []),
             created_at=m["created_at"],
             edited_at=m["edited_at"],
         )
@@ -178,7 +185,33 @@ async def create_reaction(
     current_user: User = Depends(get_current_user),
 ):
     await _check_membership(db, channel_id, current_user.id)
-    await add_reaction(str(channel_id), message_id, str(current_user.id), data.emoji)
+    added = await add_reaction(str(channel_id), message_id, str(current_user.id), data.emoji)
+
+    if added:
+        # Create feed event for reaction
+        await create_feed_events(
+            db,
+            channel_id,
+            current_user.id,
+            event_type="reaction",
+            preview_text=f"{data.emoji} Reaktion",
+            message_id=message_id,
+        )
+        await db.commit()
+
+        # Broadcast to channel via WebSocket
+        await manager.send_to_channel(
+            str(channel_id),
+            {
+                "type": "reaction_update",
+                "message_id": message_id,
+                "user_id": str(current_user.id),
+                "display_name": current_user.display_name,
+                "emoji": data.emoji,
+                "action": "add",
+            },
+        )
+
     return {"status": "ok"}
 
 
@@ -191,7 +224,20 @@ async def delete_reaction(
     current_user: User = Depends(get_current_user),
 ):
     await _check_membership(db, channel_id, current_user.id)
-    await remove_reaction(str(channel_id), message_id, str(current_user.id), emoji)
+    removed = await remove_reaction(str(channel_id), message_id, str(current_user.id), emoji)
+
+    if removed:
+        await manager.send_to_channel(
+            str(channel_id),
+            {
+                "type": "reaction_update",
+                "message_id": message_id,
+                "user_id": str(current_user.id),
+                "emoji": emoji,
+                "action": "remove",
+            },
+        )
+
     return {"status": "ok"}
 
 

@@ -18,6 +18,7 @@ class MessageOut(BaseModel):
     message_type: str = "text"
     file_reference_id: str | None = None
     mentions: list[str] = []
+    reactions: list[dict] = []
     created_at: str
     edited_at: str | None = None
 
