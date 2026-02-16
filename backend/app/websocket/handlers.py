@@ -153,6 +153,9 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     data.get("content", ""),
                     data.get("message_type", "text"),
                     data.get("file_reference_id"),
+                    reply_to_id=data.get("reply_to_id"),
+                    reply_to_content=data.get("reply_to_content"),
+                    reply_to_sender=data.get("reply_to_sender"),
                 )
                 msg["sender_name"] = user.display_name
 

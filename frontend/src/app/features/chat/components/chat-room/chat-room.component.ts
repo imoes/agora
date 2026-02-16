@@ -115,7 +115,8 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
           </div>
 
           <!-- Normal message -->
-          <div *ngIf="msg.message_type !== 'system'" class="message" [class.own]="msg.sender_id === currentUser?.id">
+          <div *ngIf="msg.message_type !== 'system'" class="message" [class.own]="msg.sender_id === currentUser?.id"
+               [attr.data-msg-id]="msg.id">
             <div class="message-avatar" *ngIf="msg.sender_id !== currentUser?.id">
               {{ msg.sender_name?.charAt(0)?.toUpperCase() || '?' }}
             </div>
@@ -129,6 +130,11 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                    (touchstart)="onTouchStart($event, msg)"
                    (touchend)="onTouchEnd()"
                    (touchmove)="onTouchEnd()">
+                <!-- Quoted reply -->
+                <div *ngIf="msg.reply_to_id" class="reply-quote" (click)="scrollToMessage(msg.reply_to_id)">
+                  <strong>{{ msg.reply_to_sender }}</strong>
+                  <span>{{ msg.reply_to_content?.substring(0, 100) }}</span>
+                </div>
                 <ng-container *ngIf="msg.message_type === 'file' && msg.file_reference_id">
                   <!-- Image preview -->
                   <div *ngIf="isImage(msg.content)" class="media-message">
@@ -199,18 +205,54 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       <div class="msg-context-menu" *ngIf="emojiPickerMsg"
            [style.top.px]="emojiPickerPos.y" [style.left.px]="emojiPickerPos.x">
         <div class="emoji-picker-row">
+          <span class="emoji-option emoji-plus" (click)="openFullEmojiPicker()">+</span>
           <span *ngFor="let emoji of EMOJIS" class="emoji-option"
                 (click)="selectEmoji(emoji)">{{ emoji }}</span>
         </div>
-        <div class="context-actions" *ngIf="emojiPickerMsg.sender_id === currentUser?.id && emojiPickerMsg.message_type !== 'system'">
-          <button class="context-action-btn" (click)="startEditMessage(emojiPickerMsg)" *ngIf="emojiPickerMsg.message_type !== 'file'">
+        <!-- Full emoji grid -->
+        <div class="full-emoji-grid" *ngIf="showFullEmojis">
+          <div *ngFor="let cat of EMOJI_CATEGORIES" class="emoji-category">
+            <div class="emoji-cat-label">{{ cat.label }}</div>
+            <div class="emoji-cat-items">
+              <span *ngFor="let e of cat.emojis" class="emoji-option"
+                    (click)="selectEmoji(e)">{{ e }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="context-actions">
+          <button class="context-action-btn" (click)="replyToMessage(emojiPickerMsg)">
+            <mat-icon>reply</mat-icon>
+            <span>Antworten</span>
+          </button>
+          <button class="context-action-btn" (click)="forwardMessage(emojiPickerMsg)">
+            <mat-icon>forward</mat-icon>
+            <span>Weiterleiten</span>
+          </button>
+          <button class="context-action-btn" (click)="startEditMessage(emojiPickerMsg)"
+                  *ngIf="emojiPickerMsg.sender_id === currentUser?.id && emojiPickerMsg.message_type === 'text'">
             <mat-icon>edit</mat-icon>
             <span>Bearbeiten</span>
           </button>
-          <button class="context-action-btn delete" (click)="confirmDeleteMessage(emojiPickerMsg)">
+          <button class="context-action-btn delete" (click)="confirmDeleteMessage(emojiPickerMsg)"
+                  *ngIf="emojiPickerMsg.sender_id === currentUser?.id && emojiPickerMsg.message_type !== 'system'">
             <mat-icon>delete</mat-icon>
             <span>Loeschen</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Forward dialog -->
+      <div class="forward-overlay" *ngIf="forwardingMsg" (click)="cancelForward()">
+        <div class="forward-dialog" (click)="$event.stopPropagation()">
+          <h3>Weiterleiten an</h3>
+          <div class="forward-list">
+            <div *ngFor="let ch of forwardChannels" class="forward-item" (click)="doForward(ch)">
+              <div class="forward-avatar">{{ ch.name?.charAt(0)?.toUpperCase() }}</div>
+              <span>{{ ch.name }}</span>
+            </div>
+            <p *ngIf="forwardChannels.length === 0" class="no-files">Keine Chats verfuegbar</p>
+          </div>
+          <button mat-button (click)="cancelForward()" class="forward-cancel">Abbrechen</button>
         </div>
       </div>
 
@@ -225,6 +267,20 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
             <span class="mention-username">{{'@' + (user.user || user).username}}</span>
           </div>
         </div>
+      </div>
+
+      <!-- Reply preview -->
+      <div class="reply-bar" *ngIf="replyTo">
+        <div class="reply-bar-content">
+          <mat-icon class="reply-bar-icon">reply</mat-icon>
+          <div class="reply-bar-text">
+            <strong>{{ replyTo.sender_name }}</strong>
+            <span>{{ replyTo.content?.substring(0, 80) }}{{ replyTo.content?.length > 80 ? '...' : '' }}</span>
+          </div>
+        </div>
+        <button mat-icon-button (click)="cancelReply()">
+          <mat-icon>close</mat-icon>
+        </button>
       </div>
 
       <!-- Input -->
@@ -393,6 +449,13 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     .message.own {
       align-self: flex-end;
       flex-direction: row-reverse;
+    }
+    :host ::ng-deep .highlight-msg {
+      animation: msg-flash 1.5s ease-out;
+    }
+    @keyframes msg-flash {
+      0%, 30% { background: rgba(98,100,167,0.15); }
+      100% { background: transparent; }
     }
     .message-avatar {
       width: 32px;
@@ -734,6 +797,153 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       width: 16px;
       height: 16px;
     }
+    /* Reply quote inside message bubble */
+    .reply-quote {
+      background: rgba(0,0,0,0.06);
+      border-left: 3px solid var(--primary, #6264a7);
+      padding: 4px 8px;
+      margin-bottom: 6px;
+      border-radius: 2px 4px 4px 2px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .reply-quote strong {
+      font-size: 11px;
+      color: var(--primary, #6264a7);
+    }
+    .reply-quote span {
+      color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .message-bubble.own .reply-quote {
+      background: rgba(255,255,255,0.35);
+    }
+    /* Reply bar above input */
+    .reply-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 16px;
+      background: #f0f0ff;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .reply-bar-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+    .reply-bar-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--primary, #6264a7);
+    }
+    .reply-bar-text {
+      display: flex;
+      flex-direction: column;
+      font-size: 12px;
+      min-width: 0;
+    }
+    .reply-bar-text strong {
+      font-size: 11px;
+      color: var(--primary, #6264a7);
+    }
+    .reply-bar-text span {
+      color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* Full emoji grid */
+    .emoji-plus {
+      font-weight: 700;
+      font-size: 20px;
+      color: var(--primary, #6264a7);
+      line-height: 1;
+    }
+    .full-emoji-grid {
+      max-height: 200px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border, #e1dfdd);
+      padding: 4px 8px;
+    }
+    .emoji-category {
+      margin-bottom: 4px;
+    }
+    .emoji-cat-label {
+      font-size: 10px;
+      color: #888;
+      padding: 2px 0;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .emoji-cat-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1px;
+    }
+    /* Forward dialog */
+    .forward-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .forward-dialog {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      width: 320px;
+      max-height: 400px;
+      display: flex;
+      flex-direction: column;
+    }
+    .forward-dialog h3 {
+      margin: 0 0 12px 0;
+    }
+    .forward-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .forward-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    .forward-item:hover {
+      background: var(--hover, #f3f2f1);
+    }
+    .forward-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary, #6264a7);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .forward-cancel {
+      margin-top: 8px;
+      align-self: flex-end;
+    }
     /* Reactions row under message bubble */
     .reactions-row {
       display: flex;
@@ -857,6 +1067,25 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   // Pending file upload state
   pendingFile: { ref: any; mimeType: string; isImage: boolean; isVideo: boolean } | null = null;
+
+  // Reply state
+  replyTo: any = null;
+
+  // Forward state
+  forwardingMsg: any = null;
+  forwardChannels: any[] = [];
+
+  // Full emoji picker
+  showFullEmojis = false;
+  readonly EMOJI_CATEGORIES = [
+    { label: 'Smileys', emojis: ['\u{1F600}','\u{1F603}','\u{1F604}','\u{1F601}','\u{1F606}','\u{1F605}','\u{1F602}','\u{1F923}','\u{1F60A}','\u{1F607}','\u{1F642}','\u{1F643}','\u{1F609}','\u{1F60C}','\u{1F60D}','\u{1F970}','\u{1F618}','\u{1F617}','\u{1F619}','\u{1F61A}','\u{1F60B}','\u{1F61B}','\u{1F61C}','\u{1F92A}','\u{1F61D}','\u{1F911}','\u{1F917}','\u{1F92D}','\u{1F92B}','\u{1F914}','\u{1F910}','\u{1F928}'] },
+    { label: 'Gesten', emojis: ['\u{1F44D}','\u{1F44E}','\u{1F44F}','\u{1F64C}','\u{1F91D}','\u{1F64F}','\u{270D}\u{FE0F}','\u{1F4AA}','\u{1F596}','\u{270C}\u{FE0F}','\u{1F91E}','\u{1F91F}','\u{1F918}','\u{1F448}','\u{1F449}','\u{1F446}','\u{1F447}','\u{261D}\u{FE0F}','\u{270B}','\u{1F91A}','\u{1F590}\u{FE0F}','\u{1F44C}','\u{1F44A}'] },
+    { label: 'Herzen', emojis: ['\u{2764}\u{FE0F}','\u{1F9E1}','\u{1F49B}','\u{1F49A}','\u{1F499}','\u{1F49C}','\u{1F5A4}','\u{1F90D}','\u{1F90E}','\u{1F498}','\u{1F49D}','\u{1F496}','\u{1F497}','\u{1F493}','\u{1F49E}','\u{1F495}','\u{1F48C}'] },
+    { label: 'Objekte', emojis: ['\u{1F389}','\u{1F388}','\u{1F381}','\u{1F3C6}','\u{1F525}','\u{2B50}','\u{1F31F}','\u{1F4A5}','\u{1F4AF}','\u{1F3B5}','\u{1F3B6}','\u{1F4A1}','\u{1F4A4}','\u{1F4AC}','\u{1F440}','\u{1F4E2}','\u{1F514}','\u{1F50D}','\u{1F512}','\u{1F4CE}','\u{270F}\u{FE0F}','\u{1F4DD}','\u{2705}','\u{274C}','\u{2753}','\u{2757}'] },
+    { label: 'Essen', emojis: ['\u{1F354}','\u{1F355}','\u{1F32E}','\u{1F37F}','\u{1F370}','\u{1F36B}','\u{1F369}','\u{1F377}','\u{1F37A}','\u{2615}','\u{1F375}','\u{1F9C3}','\u{1F34E}','\u{1F34C}','\u{1F353}','\u{1F352}','\u{1F347}','\u{1F349}','\u{1F951}'] },
+    { label: 'Tiere', emojis: ['\u{1F436}','\u{1F431}','\u{1F42D}','\u{1F439}','\u{1F430}','\u{1F98A}','\u{1F43B}','\u{1F43C}','\u{1F428}','\u{1F42F}','\u{1F981}','\u{1F434}','\u{1F984}','\u{1F42E}','\u{1F437}','\u{1F438}','\u{1F435}','\u{1F427}','\u{1F426}','\u{1F40D}'] },
+    { label: 'Wetter', emojis: ['\u{2600}\u{FE0F}','\u{1F324}\u{FE0F}','\u{26C5}','\u{1F325}\u{FE0F}','\u{2601}\u{FE0F}','\u{1F326}\u{FE0F}','\u{1F327}\u{FE0F}','\u{26C8}\u{FE0F}','\u{1F329}\u{FE0F}','\u{2744}\u{FE0F}','\u{1F32C}\u{FE0F}','\u{1F308}','\u{1F319}','\u{1F31E}'] },
+  ];
 
   // Emoji reaction state
   emojiPickerMsg: any = null;
@@ -1044,6 +1273,14 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     const text = this.messageText.trim();
     this.showMentionPopup = false;
 
+    // Build reply payload
+    const replyPayload: any = {};
+    if (this.replyTo) {
+      replyPayload.reply_to_id = this.replyTo.id;
+      replyPayload.reply_to_content = (this.replyTo.content || '').substring(0, 150);
+      replyPayload.reply_to_sender = this.replyTo.sender_name || '';
+    }
+
     // Send pending file (with optional caption)
     if (this.pendingFile) {
       let content = `Datei: ${this.pendingFile.ref.original_filename}\nmime:${this.pendingFile.mimeType}`;
@@ -1055,10 +1292,12 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         content,
         message_type: 'file',
         file_reference_id: this.pendingFile.ref.id,
+        ...replyPayload,
       });
       this.loadFiles();
       this.pendingFile = null;
       this.messageText = '';
+      this.replyTo = null;
       return;
     }
 
@@ -1068,8 +1307,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       type: 'message',
       content: text,
       message_type: 'text',
+      ...replyPayload,
     });
     this.messageText = '';
+    this.replyTo = null;
   }
 
   onKeydown(event: KeyboardEvent): void {
@@ -1196,6 +1437,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   closeEmojiPicker(): void {
     this.emojiPickerMsg = null;
+    this.showFullEmojis = false;
   }
 
   selectEmoji(emoji: string): void {
@@ -1310,6 +1552,62 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   cancelPendingFile(): void {
     this.pendingFile = null;
+  }
+
+  // ---- Reply methods ----
+
+  replyToMessage(msg: any): void {
+    this.closeEmojiPicker();
+    this.replyTo = msg;
+  }
+
+  cancelReply(): void {
+    this.replyTo = null;
+  }
+
+  scrollToMessage(messageId: string): void {
+    const el = this.messagesContainer?.nativeElement?.querySelector(`[data-msg-id="${messageId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-msg');
+      setTimeout(() => el.classList.remove('highlight-msg'), 1500);
+    }
+  }
+
+  // ---- Forward methods ----
+
+  forwardMessage(msg: any): void {
+    this.closeEmojiPicker();
+    this.forwardingMsg = msg;
+    this.apiService.getChannels().subscribe((channels) => {
+      this.forwardChannels = channels.filter((ch: any) => ch.id !== this.channelId);
+    });
+  }
+
+  cancelForward(): void {
+    this.forwardingMsg = null;
+    this.forwardChannels = [];
+  }
+
+  doForward(targetChannel: any): void {
+    if (!this.forwardingMsg) return;
+    const fwd = this.forwardingMsg;
+    const senderName = fwd.sender_name || 'Unbekannt';
+    const content = `[Weitergeleitet von ${senderName}]\n${fwd.content}`;
+    this.apiService.sendMessage(targetChannel.id, {
+      content,
+      message_type: fwd.message_type === 'file' ? 'file' : 'text',
+      file_reference_id: fwd.file_reference_id || undefined,
+    }).subscribe(() => {
+      this.snackBar.open(`Weitergeleitet an "${targetChannel.name}"`, 'OK', { duration: 2000 });
+    });
+    this.cancelForward();
+  }
+
+  // ---- Full Emoji Picker ----
+
+  openFullEmojiPicker(): void {
+    this.showFullEmojis = !this.showFullEmojis;
   }
 
   openInviteDialog(): void {

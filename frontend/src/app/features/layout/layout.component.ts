@@ -831,8 +831,11 @@ import { WebSocketService } from '@services/websocket.service';
       }
       .main-wrapper {
         order: 1;
-        height: calc(100vh - 56px);
-        height: calc(100dvh - 56px);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 56px;
         padding-bottom: 0;
       }
       .top-bar {

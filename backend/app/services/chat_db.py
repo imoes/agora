@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS messages (
     message_type TEXT NOT NULL DEFAULT 'text',
     file_reference_id TEXT,
     created_at TEXT NOT NULL,
-    edited_at TEXT
+    edited_at TEXT,
+    reply_to_id TEXT,
+    reply_to_content TEXT,
+    reply_to_sender TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reactions (
@@ -41,6 +44,19 @@ async def init_chat_db(channel_id: str) -> None:
     path = _db_path(channel_id)
     async with aiosqlite.connect(path) as db:
         await db.executescript(CHAT_SCHEMA)
+        # Migrate existing databases: add reply columns if missing
+        try:
+            await db.execute("ALTER TABLE messages ADD COLUMN reply_to_id TEXT")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE messages ADD COLUMN reply_to_content TEXT")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE messages ADD COLUMN reply_to_sender TEXT")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -50,6 +66,9 @@ async def add_message(
     content: str,
     message_type: str = "text",
     file_reference_id: str | None = None,
+    reply_to_id: str | None = None,
+    reply_to_content: str | None = None,
+    reply_to_sender: str | None = None,
 ) -> dict:
     msg_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -57,9 +76,9 @@ async def add_message(
 
     async with aiosqlite.connect(path) as db:
         await db.execute(
-            """INSERT INTO messages (id, sender_id, content, message_type, file_reference_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (msg_id, sender_id, content, message_type, file_reference_id, now),
+            """INSERT INTO messages (id, sender_id, content, message_type, file_reference_id, created_at, reply_to_id, reply_to_content, reply_to_sender)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (msg_id, sender_id, content, message_type, file_reference_id, now, reply_to_id, reply_to_content, reply_to_sender),
         )
         await db.commit()
 
@@ -71,6 +90,9 @@ async def add_message(
         "file_reference_id": file_reference_id,
         "created_at": now,
         "edited_at": None,
+        "reply_to_id": reply_to_id,
+        "reply_to_content": reply_to_content,
+        "reply_to_sender": reply_to_sender,
     }
 
 
