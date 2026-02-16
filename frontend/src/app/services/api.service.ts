@@ -64,6 +64,15 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/channels/${channelId}/messages/`, data);
   }
 
+  // Reactions
+  addReaction(channelId: string, messageId: string, emoji: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/channels/${channelId}/messages/${messageId}/reactions`, { emoji });
+  }
+
+  removeReaction(channelId: string, messageId: string, emoji: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
+  }
+
   // Files
   uploadFile(file: File, channelId?: string): Observable<any> {
     const formData = new FormData();

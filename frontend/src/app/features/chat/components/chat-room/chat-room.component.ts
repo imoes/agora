@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -111,7 +111,11 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                 <strong>{{ msg.sender_name }}</strong>
                 <span class="message-time">{{ formatTime(msg.created_at) }}</span>
               </div>
-              <div class="message-bubble" [class.own]="msg.sender_id === currentUser?.id">
+              <div class="message-bubble" [class.own]="msg.sender_id === currentUser?.id"
+                   (contextmenu)="onBubbleContextMenu($event, msg)"
+                   (touchstart)="onTouchStart($event, msg)"
+                   (touchend)="onTouchEnd()"
+                   (touchmove)="onTouchEnd()">
                 <ng-container *ngIf="msg.message_type === 'file' && msg.file_reference_id">
                   <!-- Image preview -->
                   <div *ngIf="isImage(msg.content)" class="media-message">
@@ -140,6 +144,14 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                 <span *ngIf="msg.message_type !== 'file'" [innerHTML]="highlightMentions(msg.content)"></span>
                 <span *ngIf="msg.edited_at" class="edited">(bearbeitet)</span>
               </div>
+              <!-- Reactions display -->
+              <div class="reactions-row" *ngIf="msg.reactions && msg.reactions.length > 0">
+                <span *ngFor="let r of getGroupedReactions(msg)"
+                      class="reaction-badge" [class.own]="r.hasOwn"
+                      (click)="toggleReaction(msg, r.emoji)">
+                  {{ r.emoji }}<span class="reaction-count">{{ r.count }}</span>
+                </span>
+              </div>
               <span class="message-time own-time" *ngIf="msg.sender_id === currentUser?.id">
                 {{ formatTime(msg.created_at) }}
               </span>
@@ -150,6 +162,13 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         <div *ngIf="typingUsers.length > 0" class="typing-indicator">
           {{ typingUsers.join(', ') }} {{ typingUsers.length === 1 ? 'tippt...' : 'tippen...' }}
         </div>
+      </div>
+
+      <!-- Emoji Picker Popup -->
+      <div class="emoji-picker" *ngIf="emojiPickerMsg"
+           [style.top.px]="emojiPickerPos.y" [style.left.px]="emojiPickerPos.x">
+        <span *ngFor="let emoji of EMOJIS" class="emoji-option"
+              (click)="selectEmoji(emoji)">{{ emoji }}</span>
       </div>
 
       <!-- @Mention Autocomplete Popup -->
@@ -499,10 +518,92 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       border-radius: 3px;
     }
 
+    /* Emoji picker popup */
+    .emoji-picker {
+      position: fixed;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      padding: 6px 8px;
+      display: flex;
+      gap: 2px;
+      z-index: 50;
+      flex-wrap: wrap;
+      max-width: 280px;
+    }
+    .emoji-option {
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: background 0.15s;
+      line-height: 1;
+      user-select: none;
+    }
+    .emoji-option:hover {
+      background: #f0f0ff;
+    }
+    /* Reactions row under message bubble */
+    .reactions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: #f0f0f0;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .reaction-badge:hover {
+      background: #e8e5fc;
+      border-color: var(--primary-light);
+    }
+    .reaction-badge.own {
+      background: #e8e5fc;
+      border-color: var(--primary);
+    }
+    .reaction-count {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
     /* ============ Mobile responsive ============ */
     @media (max-width: 768px) {
+      .chat-room {
+        padding-bottom: 56px;
+      }
       .chat-room-header {
         padding: 8px 8px;
+      }
+      .header-actions {
+        gap: 0;
+      }
+      .header-actions button {
+        width: 34px !important;
+        height: 34px !important;
+        padding: 0 !important;
+      }
+      .header-actions mat-icon {
+        font-size: 20px !important;
+        width: 20px !important;
+        height: 20px !important;
+      }
+      .channel-info h3 {
+        font-size: 14px;
+      }
+      .member-count {
+        max-width: 120px;
       }
       .chat-image {
         max-width: 220px;
@@ -526,6 +627,10 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       .message-input-container {
         padding: 6px 8px;
       }
+      .files-panel {
+        width: 100%;
+        left: 0;
+      }
     }
   `],
 })
@@ -542,6 +647,12 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   loadingMessages = false;
   showFiles = false;
   fullscreenMedia: { url: string; name: string; type: 'image' | 'video' } | null = null;
+
+  // Emoji reaction state
+  emojiPickerMsg: any = null;
+  emojiPickerPos = { x: 0, y: 0 };
+  private longPressTimer: any = null;
+  readonly EMOJIS = ['\u{1F44D}', '\u{1F44E}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F621}', '\u{1F389}', '\u{1F525}', '\u{1F44F}'];
 
   // @Mention state
   showMentionPopup = false;
@@ -595,6 +706,16 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   ngAfterViewChecked(): void {
     if (this.shouldScroll) {
       this.scrollToBottom();
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (this.emojiPickerMsg) {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.emoji-picker') && !target.closest('.emoji-option')) {
+        this.closeEmojiPicker();
+      }
     }
   }
 
@@ -664,6 +785,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
               this.typingUsers = this.typingUsers.filter((u) => u !== msg.display_name);
             }, 3000);
           }
+          break;
+        case 'reaction_update':
+          this.handleReactionUpdate(msg);
           break;
         case 'member_added':
           if (this.channel) {
@@ -788,6 +912,135 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     safe = safe.replace(/@"([^"]+)"/g,
       '<span class="mention-highlight">$&</span>');
     return safe;
+  }
+
+  // ---- Emoji Reaction methods ----
+
+  onBubbleContextMenu(event: MouseEvent, msg: any): void {
+    if (msg.message_type === 'system') return;
+    event.preventDefault();
+    this.showEmojiPicker(event.clientX, event.clientY, msg);
+  }
+
+  onTouchStart(event: TouchEvent, msg: any): void {
+    if (msg.message_type === 'system') return;
+    this.longPressTimer = setTimeout(() => {
+      const touch = event.touches[0];
+      if (touch) {
+        this.showEmojiPicker(touch.clientX, touch.clientY - 60, msg);
+      }
+    }, 500);
+  }
+
+  onTouchEnd(): void {
+    clearTimeout(this.longPressTimer);
+  }
+
+  private showEmojiPicker(x: number, y: number, msg: any): void {
+    // Position the picker near the click/touch, but within viewport
+    const pickerWidth = 280;
+    const pickerHeight = 48;
+    const adjustedX = Math.min(x, window.innerWidth - pickerWidth - 8);
+    const adjustedY = Math.max(8, y - pickerHeight - 8);
+    this.emojiPickerMsg = msg;
+    this.emojiPickerPos = { x: Math.max(8, adjustedX), y: adjustedY };
+  }
+
+  closeEmojiPicker(): void {
+    this.emojiPickerMsg = null;
+  }
+
+  selectEmoji(emoji: string): void {
+    if (!this.emojiPickerMsg) return;
+    const msg = this.emojiPickerMsg;
+    this.closeEmojiPicker();
+    this.addReaction(msg, emoji);
+  }
+
+  private addReaction(msg: any, emoji: string): void {
+    // Optimistically add reaction
+    if (!msg.reactions) msg.reactions = [];
+    const existing = msg.reactions.find(
+      (r: any) => r.emoji === emoji && r.user_id === this.currentUser?.id
+    );
+    if (existing) {
+      // Already reacted - remove instead
+      this.removeReaction(msg, emoji);
+      return;
+    }
+    msg.reactions.push({ emoji, user_id: this.currentUser?.id, message_id: msg.id });
+
+    // Send via WebSocket for real-time broadcast
+    this.wsService.send(this.channelId, {
+      type: 'reaction',
+      message_id: msg.id,
+      emoji,
+      action: 'add',
+    });
+  }
+
+  private removeReaction(msg: any, emoji: string): void {
+    if (!msg.reactions) return;
+    msg.reactions = msg.reactions.filter(
+      (r: any) => !(r.emoji === emoji && r.user_id === this.currentUser?.id)
+    );
+
+    this.wsService.send(this.channelId, {
+      type: 'reaction',
+      message_id: msg.id,
+      emoji,
+      action: 'remove',
+    });
+  }
+
+  toggleReaction(msg: any, emoji: string): void {
+    const hasOwn = (msg.reactions || []).some(
+      (r: any) => r.emoji === emoji && r.user_id === this.currentUser?.id
+    );
+    if (hasOwn) {
+      this.removeReaction(msg, emoji);
+    } else {
+      this.addReaction(msg, emoji);
+    }
+  }
+
+  getGroupedReactions(msg: any): { emoji: string; count: number; hasOwn: boolean }[] {
+    if (!msg.reactions || msg.reactions.length === 0) return [];
+    const groups: { [key: string]: { count: number; hasOwn: boolean } } = {};
+    for (const r of msg.reactions) {
+      if (!groups[r.emoji]) {
+        groups[r.emoji] = { count: 0, hasOwn: false };
+      }
+      groups[r.emoji].count++;
+      if (r.user_id === this.currentUser?.id) {
+        groups[r.emoji].hasOwn = true;
+      }
+    }
+    return Object.entries(groups).map(([emoji, data]) => ({
+      emoji,
+      count: data.count,
+      hasOwn: data.hasOwn,
+    }));
+  }
+
+  private handleReactionUpdate(data: any): void {
+    const msg = this.messages.find((m) => m.id === data.message_id);
+    if (!msg) return;
+    if (!msg.reactions) msg.reactions = [];
+
+    if (data.action === 'add') {
+      // Avoid duplicates
+      const exists = msg.reactions.some(
+        (r: any) => r.emoji === data.emoji && r.user_id === data.user_id
+      );
+      if (!exists) {
+        msg.reactions.push({ emoji: data.emoji, user_id: data.user_id, message_id: data.message_id });
+      }
+    } else {
+      msg.reactions = msg.reactions.filter(
+        (r: any) => !(r.emoji === data.emoji && r.user_id === data.user_id)
+      );
+    }
   }
 
   onFileSelected(event: any): void {

@@ -163,3 +163,28 @@ async def get_reactions(channel_id: str, message_id: str) -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+async def get_reactions_for_messages(
+    channel_id: str, message_ids: list[str]
+) -> dict[str, list[dict]]:
+    """Get reactions for multiple messages at once, grouped by message_id."""
+    path = _db_path(channel_id)
+    if not os.path.exists(path) or not message_ids:
+        return {}
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        placeholders = ",".join("?" * len(message_ids))
+        cursor = await db.execute(
+            f"SELECT message_id, user_id, emoji FROM reactions WHERE message_id IN ({placeholders})",
+            message_ids,
+        )
+        rows = await cursor.fetchall()
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        d = dict(row)
+        mid = d["message_id"]
+        if mid not in result:
+            result[mid] = []
+        result[mid].append(d)
+    return result
