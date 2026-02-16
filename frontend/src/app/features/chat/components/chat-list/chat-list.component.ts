@@ -230,7 +230,7 @@ export class ChatListComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.apiService.getChannels().subscribe({
       next: (channels) => {
-        this.channels = channels;
+        this.channels = channels.filter((ch: any) => ch.channel_type !== 'team');
         this.loading = false;
       },
       error: () => { this.loading = false; },

@@ -223,6 +223,10 @@ import { WebSocketService } from '@services/websocket.service';
           <!-- Context Menu -->
           <div class="context-menu" *ngIf="contextMenu.show"
                [style.top.px]="contextMenu.y" [style.left.px]="contextMenu.x">
+            <button class="context-menu-item" (click)="renameChat()">
+              <mat-icon>edit</mat-icon>
+              <span>Umbenennen</span>
+            </button>
             <button class="context-menu-item delete" (click)="deleteChat()">
               <mat-icon>delete</mat-icon>
               <span>Chat loeschen</span>
@@ -846,7 +850,7 @@ import { WebSocketService } from '@services/websocket.service';
       }
       .content {
         flex: 1;
-        overflow-y: auto;
+        overflow: hidden;
       }
     }
   `],
@@ -1058,9 +1062,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   private updateFilteredChannels(): void {
     if (this.sidebarMode === 'teams') {
-      this.filteredChannels = this.chatChannels.filter((ch) => ch.team_id);
+      this.filteredChannels = this.chatChannels.filter((ch) => ch.team_id || ch.channel_type === 'team');
     } else {
-      this.filteredChannels = this.chatChannels.filter((ch) => !ch.team_id);
+      this.filteredChannels = this.chatChannels.filter((ch) => !ch.team_id && ch.channel_type !== 'team');
     }
   }
 
@@ -1169,6 +1173,21 @@ export class LayoutComponent implements OnInit, OnDestroy {
       y: event.clientY,
       channel,
     };
+  }
+
+  renameChat(): void {
+    if (!this.contextMenu.channel) return;
+    const ch = this.contextMenu.channel;
+    this.contextMenu.show = false;
+    const newName = prompt('Chat umbenennen:', ch.name);
+    if (newName && newName.trim() && newName.trim() !== ch.name) {
+      this.apiService.updateChannel(ch.id, { name: newName.trim() }).subscribe({
+        next: (updated) => {
+          ch.name = updated.name;
+        },
+        error: () => {},
+      });
+    }
   }
 
   deleteChat(): void {

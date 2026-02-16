@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import async_session
 from app.models.channel import ChannelMember
 from app.models.user import User
-from app.services.chat_db import add_message, add_reaction, remove_reaction
+from app.services.chat_db import add_message, update_message, delete_message, add_reaction, remove_reaction
 from app.services.feed import create_feed_events
 from app.services.mentions import extract_mentions, resolve_mentions
 from app.websocket.manager import manager
@@ -237,6 +237,37 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                             "action": action,
                         },
                     )
+
+            elif msg_type == "edit_message":
+                message_id = data.get("message_id", "")
+                new_content = data.get("content", "").strip()
+                if message_id and new_content:
+                    updated = await update_message(channel_id, message_id, new_content)
+                    if updated:
+                        await manager.send_to_channel(
+                            channel_id,
+                            {
+                                "type": "message_edited",
+                                "message_id": message_id,
+                                "content": new_content,
+                                "edited_at": updated["edited_at"],
+                                "user_id": user_id,
+                            },
+                        )
+
+            elif msg_type == "delete_message":
+                message_id = data.get("message_id", "")
+                if message_id:
+                    deleted = await delete_message(channel_id, message_id)
+                    if deleted:
+                        await manager.send_to_channel(
+                            channel_id,
+                            {
+                                "type": "message_deleted",
+                                "message_id": message_id,
+                                "user_id": user_id,
+                            },
+                        )
 
             elif msg_type == "read":
                 await manager.send_to_channel(
