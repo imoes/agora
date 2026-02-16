@@ -137,6 +137,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                     <div class="media-filename">
                       <a [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">{{ getFileName(msg.content) }}</a>
                     </div>
+                    <div *ngIf="getCaption(msg.content)" class="media-caption">{{ getCaption(msg.content) }}</div>
                   </div>
                   <!-- Video player -->
                   <div *ngIf="isVideo(msg.content)" class="media-message">
@@ -145,6 +146,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                     <div class="media-filename">
                       <a [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">{{ getFileName(msg.content) }}</a>
                     </div>
+                    <div *ngIf="getCaption(msg.content)" class="media-caption">{{ getCaption(msg.content) }}</div>
                   </div>
                   <!-- Generic file -->
                   <div *ngIf="!isImage(msg.content) && !isVideo(msg.content)" class="file-message">
@@ -152,6 +154,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                     <a [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">
                       {{ getFileName(msg.content) }}
                     </a>
+                    <div *ngIf="getCaption(msg.content)" class="media-caption">{{ getCaption(msg.content) }}</div>
                   </div>
                 </ng-container>
                 <ng-container *ngIf="msg.message_type !== 'file'">
@@ -225,6 +228,18 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       </div>
 
       <!-- Input -->
+      <div class="pending-file-bar" *ngIf="pendingFile">
+        <div class="pending-file-preview">
+          <img *ngIf="pendingFile.isImage" [src]="getInlineUrl(pendingFile.ref.id)"
+               class="pending-thumb" alt="Vorschau">
+          <mat-icon *ngIf="!pendingFile.isImage && !pendingFile.isVideo">insert_drive_file</mat-icon>
+          <mat-icon *ngIf="pendingFile.isVideo">videocam</mat-icon>
+          <span class="pending-filename">{{ pendingFile.ref.original_filename }}</span>
+        </div>
+        <button mat-icon-button (click)="cancelPendingFile()" matTooltip="Abbrechen">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
       <div class="message-input-container">
         <button mat-icon-button (click)="fileInput.click()" matTooltip="Datei hochladen">
           <mat-icon>attach_file</mat-icon>
@@ -235,9 +250,9 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                  [(ngModel)]="messageText"
                  (keydown)="onKeydown($event)"
                  (input)="onInput()"
-                 placeholder="Nachricht eingeben... (@  fuer Erwaehnung)">
+                 [placeholder]="pendingFile ? 'Kommentar hinzufuegen (optional)...' : 'Nachricht eingeben... (@  fuer Erwaehnung)'">
         </mat-form-field>
-        <button mat-icon-button color="primary" (click)="sendMessage()" [disabled]="!messageText.trim()">
+        <button mat-icon-button color="primary" (click)="sendMessage()" [disabled]="!messageText.trim() && !pendingFile">
           <mat-icon>send</mat-icon>
         </button>
       </div>
@@ -532,6 +547,41 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       font-style: italic;
       padding: 4px 0;
     }
+    /* Pending file preview */
+    .pending-file-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 16px;
+      background: #f9f8ff;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .pending-file-preview {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .pending-thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+    .pending-filename {
+      font-size: 13px;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .media-caption {
+      font-size: 13px;
+      margin-top: 4px;
+      color: #333;
+      word-break: break-word;
+    }
     .message-input-container {
       display: flex;
       align-items: center;
@@ -805,6 +855,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   editingMessageId: string | null = null;
   editMessageValue = '';
 
+  // Pending file upload state
+  pendingFile: { ref: any; mimeType: string; isImage: boolean; isVideo: boolean } | null = null;
+
   // Emoji reaction state
   emojiPickerMsg: any = null;
   emojiPickerPos = { x: 0, y: 0 };
@@ -989,8 +1042,28 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   sendMessage(): void {
     const text = this.messageText.trim();
-    if (!text) return;
     this.showMentionPopup = false;
+
+    // Send pending file (with optional caption)
+    if (this.pendingFile) {
+      let content = `Datei: ${this.pendingFile.ref.original_filename}\nmime:${this.pendingFile.mimeType}`;
+      if (text) {
+        content += `\ncaption:${text}`;
+      }
+      this.wsService.send(this.channelId, {
+        type: 'message',
+        content,
+        message_type: 'file',
+        file_reference_id: this.pendingFile.ref.id,
+      });
+      this.loadFiles();
+      this.pendingFile = null;
+      this.messageText = '';
+      return;
+    }
+
+    // Normal text message
+    if (!text) return;
     this.wsService.send(this.channelId, {
       type: 'message',
       content: text,
@@ -1022,8 +1095,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       }
     }
     if (event.key === 'Enter' && !this.showMentionPopup) {
-      event.preventDefault();
-      this.sendMessage();
+      if (this.messageText.trim() || this.pendingFile) {
+        event.preventDefault();
+        this.sendMessage();
+      }
     }
   }
 
@@ -1222,14 +1297,19 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     this.apiService.uploadFile(file, this.channelId).subscribe((ref) => {
       const mimeType = ref.file?.mime_type || file.type || '';
-      this.wsService.send(this.channelId, {
-        type: 'message',
-        content: `Datei: ${ref.original_filename}\nmime:${mimeType}`,
-        message_type: 'file',
-        file_reference_id: ref.id,
-      });
-      this.loadFiles();
+      this.pendingFile = {
+        ref,
+        mimeType,
+        isImage: mimeType.startsWith('image/'),
+        isVideo: mimeType.startsWith('video/'),
+      };
     });
+    // Reset file input so the same file can be selected again
+    event.target.value = '';
+  }
+
+  cancelPendingFile(): void {
+    this.pendingFile = null;
   }
 
   openInviteDialog(): void {
@@ -1385,9 +1465,15 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     return firstLine;
   }
 
+  getCaption(content: string): string {
+    if (!content) return '';
+    const match = content.match(/\ncaption:(.+)$/);
+    return match ? match[1] : '';
+  }
+
   private getMimeFromContent(content: string): string {
     if (!content) return '';
-    const mimeMatch = content.match(/\nmime:(.+)$/);
+    const mimeMatch = content.match(/\nmime:([^\n]+)/);
     return mimeMatch ? mimeMatch[1] : '';
   }
 
