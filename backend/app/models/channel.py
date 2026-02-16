@@ -65,6 +65,9 @@ class ChannelMember(Base, TimestampMixin):
     last_read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    last_read_message_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
 
     channel = relationship("Channel", back_populates="members")
     user = relationship("User", back_populates="channel_memberships")

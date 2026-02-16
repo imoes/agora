@@ -107,7 +107,13 @@ import { I18nService } from '@services/i18n.service';
         <div *ngIf="loadingMessages" class="loading">
           <mat-spinner diameter="30"></mat-spinner>
         </div>
-        <ng-container *ngFor="let msg of messages">
+        <ng-container *ngFor="let msg of messages; let i = index">
+          <!-- New messages divider -->
+          <div *ngIf="lastReadMessageId && msg.id === firstUnreadMessageId" class="new-messages-divider" #newMessagesDivider>
+            <span class="divider-line"></span>
+            <span class="divider-label">{{ i18n.t('chat.new_messages') }}</span>
+            <span class="divider-line"></span>
+          </div>
           <!-- System message (call started/ended) -->
           <div *ngIf="msg.message_type === 'system'" class="system-message">
             <mat-icon class="system-icon">{{ msg.content.includes('beendet') ? 'call_end' : 'call' }}</mat-icon>
@@ -584,6 +590,26 @@ import { I18nService } from '@services/i18n.service';
       color: white;
       margin-top: 12px;
       font-size: 14px;
+    }
+    .new-messages-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 24px;
+      width: 100%;
+    }
+    .new-messages-divider .divider-line {
+      flex: 1;
+      height: 1px;
+      background: #e53935;
+    }
+    .new-messages-divider .divider-label {
+      color: #e53935;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     .system-message {
       display: flex;
@@ -1094,6 +1120,12 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private longPressTimer: any = null;
   readonly EMOJIS = ['\u{1F44D}', '\u{1F44E}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F621}', '\u{1F389}', '\u{1F525}', '\u{1F44F}'];
 
+  // Read position / new messages divider
+  lastReadMessageId: string | null = null;
+  firstUnreadMessageId: string | null = null;
+  private shouldScrollToDivider = false;
+  @ViewChild('newMessagesDivider') private newMessagesDivider?: ElementRef;
+
   // @Mention state
   showMentionPopup = false;
   mentionResults: any[] = [];
@@ -1135,8 +1167,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.messages = [];
         this.files = [];
         this.typingUsers = [];
+        this.lastReadMessageId = null;
+        this.firstUnreadMessageId = null;
         this.loadChannel();
-        this.loadMessages();
+        this.loadReadPositionThenMessages();
         this.loadFiles();
         this.loadChannelMembers();
         this.connectWebSocket();
@@ -1145,7 +1179,13 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   ngAfterViewChecked(): void {
-    if (this.shouldScroll) {
+    if (this.shouldScrollToDivider && this.newMessagesDivider) {
+      this.shouldScrollToDivider = false;
+      this.shouldScroll = false;
+      setTimeout(() => {
+        this.newMessagesDivider?.nativeElement.scrollIntoView({ block: 'start' });
+      });
+    } else if (this.shouldScroll) {
       this.scrollToBottom();
     }
   }
@@ -1161,6 +1201,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   ngOnDestroy(): void {
+    this.saveReadPosition();
     this.paramSubscription?.unsubscribe();
     this.wsSubscription?.unsubscribe();
     this.wsService.disconnect(this.channelId);
@@ -1172,16 +1213,59 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
   }
 
-  loadMessages(): void {
+  loadReadPositionThenMessages(): void {
     this.loadingMessages = true;
+    this.apiService.getReadPosition(this.channelId).subscribe({
+      next: (pos) => {
+        this.lastReadMessageId = pos.last_read_message_id;
+        this.loadMessages();
+      },
+      error: () => {
+        this.lastReadMessageId = null;
+        this.loadMessages();
+      },
+    });
+  }
+
+  loadMessages(): void {
     this.apiService.getMessages(this.channelId).subscribe({
       next: (msgs) => {
         this.messages = msgs;
         this.loadingMessages = false;
-        this.shouldScroll = true;
+        this.computeFirstUnread();
+        if (this.firstUnreadMessageId) {
+          this.shouldScrollToDivider = true;
+        } else {
+          this.shouldScroll = true;
+        }
       },
       error: () => { this.loadingMessages = false; },
     });
+  }
+
+  private computeFirstUnread(): void {
+    this.firstUnreadMessageId = null;
+    if (!this.lastReadMessageId || this.messages.length === 0) return;
+
+    const idx = this.messages.findIndex(m => m.id === this.lastReadMessageId);
+    if (idx === -1) {
+      // Last read message not in current batch - all messages are new
+      this.firstUnreadMessageId = this.messages[0]?.id || null;
+    } else if (idx < this.messages.length - 1) {
+      // There are messages after the last read one
+      this.firstUnreadMessageId = this.messages[idx + 1].id;
+    }
+    // If idx is the last message, there are no unread messages
+  }
+
+  saveReadPosition(): void {
+    if (this.messages.length === 0 || !this.channelId) return;
+    const lastMsg = this.messages[this.messages.length - 1];
+    if (!lastMsg) return;
+    // Only update if position changed
+    if (lastMsg.id !== this.lastReadMessageId) {
+      this.apiService.updateReadPosition(this.channelId, lastMsg.id).subscribe();
+    }
   }
 
   loadFiles(): void {
@@ -1218,6 +1302,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
           this.messages.push(msg.message);
           this.shouldScroll = true;
           this.typingUsers = this.typingUsers.filter((u) => u !== msg.message.sender_name);
+          // Clear the divider since user is actively viewing
+          this.firstUnreadMessageId = null;
+          this.lastReadMessageId = msg.message.id;
           break;
         case 'typing':
           if (!this.typingUsers.includes(msg.display_name)) {

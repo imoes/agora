@@ -90,6 +90,12 @@ def _add_missing_columns(connection):
             "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'en'"
         ))
 
+    cm_cols = {c["name"] for c in inspector.get_columns("channel_members")}
+    if "last_read_message_id" not in cm_cols:
+        connection.execute(text(
+            "ALTER TABLE channel_members ADD COLUMN last_read_message_id VARCHAR(36)"
+        ))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
