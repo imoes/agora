@@ -40,11 +40,13 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
             <mat-icon>dynamic_feed</mat-icon>
             <span>{{ i18n.t('nav.feed') }}</span>
           </a>
-          <a routerLink="/chat" routerLinkActive="active" class="nav-item">
+          <a routerLink="/chat" routerLinkActive="active" class="nav-item"
+             [matBadge]="chatUnreadCount > 0 ? chatUnreadCount : null" matBadgeColor="warn" matBadgeSize="small">
             <mat-icon>chat</mat-icon>
             <span>{{ i18n.t('nav.chat') }}</span>
           </a>
-          <a routerLink="/teams" routerLinkActive="active" class="nav-item">
+          <a routerLink="/teams" routerLinkActive="active" class="nav-item"
+             [matBadge]="teamsUnreadCount > 0 ? teamsUnreadCount : null" matBadgeColor="warn" matBadgeSize="small">
             <mat-icon>groups</mat-icon>
             <span>{{ i18n.t('nav.teams') }}</span>
           </a>
@@ -964,6 +966,8 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
 export class LayoutComponent implements OnInit, OnDestroy {
   currentUser: User | null = null;
   unreadCount = 0;
+  chatUnreadCount = 0;
+  teamsUnreadCount = 0;
   pendingInvitationsCount = 0;
   statusOptions: { value: UserStatus; label: string; icon: string }[] = [];
   incomingCall: { displayName: string; channelId: string; audioOnly: boolean; fromUserId: string } | null = null;
@@ -1181,6 +1185,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
     } else {
       this.filteredChannels = this.chatChannels.filter((ch) => !ch.team_id && ch.channel_type !== 'team');
     }
+    // Compute unread counts for nav badges
+    this.chatUnreadCount = this.chatChannels
+      .filter((ch) => !ch.team_id && ch.channel_type !== 'team')
+      .reduce((sum, ch) => sum + (ch.unread_count || 0), 0);
+    this.teamsUnreadCount = this.chatChannels
+      .filter((ch) => ch.team_id || ch.channel_type === 'team')
+      .reduce((sum, ch) => sum + (ch.unread_count || 0), 0);
   }
 
   toggleCallSearch(event: MouseEvent): void {
