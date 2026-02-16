@@ -154,7 +154,22 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                     </a>
                   </div>
                 </ng-container>
-                <span *ngIf="msg.message_type !== 'file'" [innerHTML]="highlightMentions(msg.content)"></span>
+                <ng-container *ngIf="msg.message_type !== 'file'">
+                  <span *ngIf="editingMessageId !== msg.id" [innerHTML]="highlightMentions(msg.content)"></span>
+                  <div *ngIf="editingMessageId === msg.id" class="inline-edit" (click)="$event.stopPropagation()">
+                    <input class="inline-edit-input" [(ngModel)]="editMessageValue"
+                           (keydown.enter)="saveEditMessage()"
+                           (keydown.escape)="cancelEditMessage()">
+                    <div class="inline-edit-actions">
+                      <button mat-icon-button (click)="saveEditMessage()" class="inline-edit-btn">
+                        <mat-icon>check</mat-icon>
+                      </button>
+                      <button mat-icon-button (click)="cancelEditMessage()" class="inline-edit-btn">
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
+                  </div>
+                </ng-container>
                 <span *ngIf="msg.edited_at" class="edited">(bearbeitet)</span>
               </div>
               <!-- Reactions display -->
@@ -177,11 +192,23 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
         </div>
       </div>
 
-      <!-- Emoji Picker Popup -->
-      <div class="emoji-picker" *ngIf="emojiPickerMsg"
+      <!-- Message Context Menu -->
+      <div class="msg-context-menu" *ngIf="emojiPickerMsg"
            [style.top.px]="emojiPickerPos.y" [style.left.px]="emojiPickerPos.x">
-        <span *ngFor="let emoji of EMOJIS" class="emoji-option"
-              (click)="selectEmoji(emoji)">{{ emoji }}</span>
+        <div class="emoji-picker-row">
+          <span *ngFor="let emoji of EMOJIS" class="emoji-option"
+                (click)="selectEmoji(emoji)">{{ emoji }}</span>
+        </div>
+        <div class="context-actions" *ngIf="emojiPickerMsg.sender_id === currentUser?.id && emojiPickerMsg.message_type !== 'system'">
+          <button class="context-action-btn" (click)="startEditMessage(emojiPickerMsg)" *ngIf="emojiPickerMsg.message_type !== 'file'">
+            <mat-icon>edit</mat-icon>
+            <span>Bearbeiten</span>
+          </button>
+          <button class="context-action-btn delete" (click)="confirmDeleteMessage(emojiPickerMsg)">
+            <mat-icon>delete</mat-icon>
+            <span>Loeschen</span>
+          </button>
+        </div>
       </div>
 
       <!-- @Mention Autocomplete Popup -->
@@ -566,17 +593,21 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       border-radius: 3px;
     }
 
-    /* Emoji picker popup */
-    .emoji-picker {
+    /* Message context menu */
+    .msg-context-menu {
       position: fixed;
       background: white;
       border: 1px solid var(--border);
       border-radius: 12px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-      padding: 6px 8px;
+      z-index: 50;
+      overflow: hidden;
+      min-width: 180px;
+    }
+    .emoji-picker-row {
       display: flex;
       gap: 2px;
-      z-index: 50;
+      padding: 6px 8px;
       flex-wrap: wrap;
       max-width: 280px;
     }
@@ -591,6 +622,67 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     }
     .emoji-option:hover {
       background: #f0f0ff;
+    }
+    .context-actions {
+      border-top: 1px solid var(--border, #e1dfdd);
+    }
+    .context-action-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 14px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      color: #333;
+      transition: background 0.12s;
+    }
+    .context-action-btn:hover {
+      background: var(--hover, #f3f2f1);
+    }
+    .context-action-btn mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: #555;
+    }
+    .context-action-btn.delete:hover {
+      background: #fde8e8;
+    }
+    .context-action-btn.delete mat-icon {
+      color: var(--busy, #c4314b);
+    }
+    /* Inline edit */
+    .inline-edit {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 150px;
+    }
+    .inline-edit-input {
+      width: 100%;
+      font-size: 14px;
+      border: 1px solid var(--primary, #6264a7);
+      border-radius: 4px;
+      padding: 4px 8px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .inline-edit-actions {
+      display: flex;
+      gap: 2px;
+    }
+    .inline-edit-btn {
+      width: 26px !important;
+      height: 26px !important;
+      line-height: 26px !important;
+    }
+    .inline-edit-btn mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
     }
     /* Reactions row under message bubble */
     .reactions-row {
@@ -709,6 +801,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   editingName = false;
   editNameValue = '';
 
+  // Message edit state
+  editingMessageId: string | null = null;
+  editMessageValue = '';
+
   // Emoji reaction state
   emojiPickerMsg: any = null;
   emojiPickerPos = { x: 0, y: 0 };
@@ -774,7 +870,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   onDocumentClick(event: MouseEvent): void {
     if (this.emojiPickerMsg) {
       const target = event.target as HTMLElement;
-      if (!target.closest('.emoji-picker') && !target.closest('.emoji-option')) {
+      if (!target.closest('.msg-context-menu')) {
         this.closeEmojiPicker();
       }
     }
@@ -867,6 +963,17 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
             }
           }
           this.loadChannelMembers();
+          break;
+        case 'message_edited': {
+          const edited = this.messages.find((m) => m.id === msg.message_id);
+          if (edited) {
+            edited.content = msg.content;
+            edited.edited_at = msg.edited_at;
+          }
+          break;
+        }
+        case 'message_deleted':
+          this.messages = this.messages.filter((m) => m.id !== msg.message_id);
           break;
         case 'channel_renamed':
           if (this.channel && msg.channel_name) {
@@ -1210,6 +1317,54 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   cancelEditName(): void {
     this.editingName = false;
     this.editNameValue = '';
+  }
+
+  // ---- Message Edit / Delete methods ----
+
+  startEditMessage(msg: any): void {
+    this.closeEmojiPicker();
+    this.editingMessageId = msg.id;
+    this.editMessageValue = msg.content || '';
+    setTimeout(() => {
+      const input = document.querySelector('.inline-edit-input') as HTMLInputElement;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  }
+
+  saveEditMessage(): void {
+    const newContent = this.editMessageValue.trim();
+    if (!newContent || !this.editingMessageId) {
+      this.cancelEditMessage();
+      return;
+    }
+    const msg = this.messages.find((m) => m.id === this.editingMessageId);
+    if (msg && newContent !== msg.content) {
+      this.wsService.send(this.channelId, {
+        type: 'edit_message',
+        message_id: this.editingMessageId,
+        content: newContent,
+      });
+    }
+    this.editingMessageId = null;
+    this.editMessageValue = '';
+  }
+
+  cancelEditMessage(): void {
+    this.editingMessageId = null;
+    this.editMessageValue = '';
+  }
+
+  confirmDeleteMessage(msg: any): void {
+    this.closeEmojiPicker();
+    if (confirm('Nachricht wirklich loeschen?')) {
+      this.wsService.send(this.channelId, {
+        type: 'delete_message',
+        message_id: msg.id,
+      });
+    }
   }
 
   getDownloadUrl(refId: string): string {
