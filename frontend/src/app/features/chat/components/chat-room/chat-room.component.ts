@@ -498,6 +498,35 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       padding: 1px 3px;
       border-radius: 3px;
     }
+
+    /* ============ Mobile responsive ============ */
+    @media (max-width: 768px) {
+      .chat-room-header {
+        padding: 8px 8px;
+      }
+      .chat-image {
+        max-width: 220px;
+        max-height: 220px;
+      }
+      .chat-video {
+        max-width: 100%;
+        max-height: 240px;
+      }
+      .media-overlay img {
+        max-width: 95vw;
+        max-height: 80vh;
+      }
+      .media-overlay video {
+        max-width: 95vw;
+        max-height: 80vh;
+      }
+      .messages-container {
+        padding: 8px;
+      }
+      .message-input-container {
+        padding: 6px 8px;
+      }
+    }
   `],
 })
 export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {

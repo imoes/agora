@@ -778,6 +778,75 @@ import { WebSocketService } from '@services/websocket.service';
     .device-select:focus {
       border-color: var(--primary);
     }
+
+    /* ============ Mobile responsive ============ */
+    @media (max-width: 768px) {
+      .layout {
+        flex-direction: column;
+      }
+      .sidebar {
+        order: 2;
+        width: 100%;
+        height: 56px;
+        flex-direction: row;
+        padding: 0;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        border-top: 1px solid rgba(255,255,255,0.1);
+      }
+      .sidebar-top {
+        display: flex;
+        flex-direction: row;
+        flex: 1;
+        justify-content: space-around;
+        align-items: center;
+      }
+      .sidebar-bottom {
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+      }
+      .nav-item {
+        padding: 6px 0;
+        font-size: 9px;
+        min-width: 48px;
+      }
+      .nav-item.active {
+        border-left: none;
+        border-top: 2px solid var(--primary);
+      }
+      .nav-item mat-icon {
+        font-size: 22px;
+        width: 22px;
+        height: 22px;
+        margin-bottom: 2px;
+      }
+      .main-wrapper {
+        order: 1;
+        height: calc(100vh - 56px);
+        padding-bottom: 0;
+      }
+      .top-bar {
+        height: 44px;
+        padding: 0 8px;
+      }
+      .search-wrapper {
+        max-width: 100%;
+      }
+      .main-body {
+        flex-direction: column;
+      }
+      .chat-sidebar {
+        display: none;
+      }
+      .content {
+        flex: 1;
+        overflow-y: auto;
+      }
+    }
   `],
 })
 export class LayoutComponent implements OnInit, OnDestroy {
