@@ -57,6 +57,19 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/channels/${channelId}/members`);
   }
 
+  getReadPosition(channelId: string): Observable<{ last_read_message_id: string | null }> {
+    return this.http.get<{ last_read_message_id: string | null }>(`${this.baseUrl}/channels/${channelId}/read-position`);
+  }
+
+  updateReadPosition(channelId: string, lastReadMessageId: string): Observable<any> {
+    return this.http.put(`${this.baseUrl}/channels/${channelId}/read-position`, { last_read_message_id: lastReadMessageId });
+  }
+
+  // Profile
+  updateProfile(data: { display_name?: string; status_message?: string; status?: string; language?: string }): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/auth/me`, data);
+  }
+
   // Messages
   getMessages(channelId: string, limit: number = 50, before?: string): Observable<any[]> {
     let params = new HttpParams().set('limit', limit.toString());
@@ -117,11 +130,6 @@ export class ApiService {
 
   getUnreadCount(): Observable<any> {
     return this.http.get(`${this.baseUrl}/feed/unread-count`);
-  }
-
-  // Profile
-  updateProfile(data: { display_name?: string; status?: string; status_message?: string }): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/auth/me`, data);
   }
 
   // Users

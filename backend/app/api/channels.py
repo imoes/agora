@@ -13,6 +13,7 @@ from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
 from app.schemas.user import UserOut
 from app.services.auth import get_current_user
 from app.services.chat_db import init_chat_db
+from app.services.feed import mark_feed_read
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
@@ -654,3 +655,66 @@ async def find_or_create_direct_chat(
         member_count=2,
         invite_token=channel.invite_token,
     )
+
+
+# ---------------------------------------------------------------------------
+# Read position
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _ReadBase
+
+
+class ReadPositionRequest(_ReadBase):
+    last_read_message_id: str
+
+
+@router.put("/{channel_id}/read-position")
+async def update_read_position(
+    channel_id: uuid.UUID,
+    data: ReadPositionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update the last read message position for the current user in a channel."""
+    result = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == current_user.id,
+            )
+        )
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a channel member")
+
+    member.last_read_message_id = data.last_read_message_id
+    member.last_read_at = func.now()
+    await db.flush()
+
+    # Also mark feed events as read for this channel
+    await mark_feed_read(db, current_user.id, channel_id=channel_id)
+
+    return {"status": "ok", "last_read_message_id": data.last_read_message_id}
+
+
+@router.get("/{channel_id}/read-position")
+async def get_read_position(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get the last read message ID for the current user in a channel."""
+    result = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == current_user.id,
+            )
+        )
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a channel member")
+
+    return {"last_read_message_id": member.last_read_message_id}

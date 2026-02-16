@@ -15,6 +15,7 @@ import { MatBadgeModule } from '@angular/material/badge';
 import { debounceTime, Subject, Subscription } from 'rxjs';
 import { ApiService } from '@services/api.service';
 import { WebSocketService } from '@services/websocket.service';
+import { I18nService } from '@services/i18n.service';
 
 @Component({
   selector: 'app-new-chat-dialog',
@@ -24,14 +25,14 @@ import { WebSocketService } from '@services/websocket.service';
     MatInputModule, MatButtonModule, MatAutocompleteModule, MatChipsModule, MatListModule, MatIconModule,
   ],
   template: `
-    <h2 mat-dialog-title>Neuer Chat</h2>
+    <h2 mat-dialog-title>{{ i18n.t('chat.new_chat') }}</h2>
     <mat-dialog-content>
       <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Chatname</mat-label>
+        <mat-label>{{ i18n.t('chat.chat_name') }}</mat-label>
         <input matInput [(ngModel)]="name" required>
       </mat-form-field>
       <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Benutzer suchen</mat-label>
+        <mat-label>{{ i18n.t('chat.search_users') }}</mat-label>
         <input matInput [(ngModel)]="searchQuery" (ngModelChange)="onSearch($event)">
       </mat-form-field>
       <mat-list dense *ngIf="searchResults.length > 0">
@@ -42,7 +43,7 @@ import { WebSocketService } from '@services/websocket.service';
         </mat-list-item>
       </mat-list>
       <div *ngIf="selectedUsers.length > 0" class="selected">
-        <strong>Ausgewahlt:</strong>
+        <strong>{{ i18n.t('chat.selected') }}</strong>
         <mat-chip-set>
           <mat-chip *ngFor="let u of selectedUsers" (removed)="removeUser(u)">
             {{ u.display_name }}
@@ -52,11 +53,11 @@ import { WebSocketService } from '@services/websocket.service';
       </div>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close>Abbrechen</button>
+      <button mat-button mat-dialog-close>{{ i18n.t('common.cancel') }}</button>
       <button mat-raised-button color="primary"
               [mat-dialog-close]="getDialogResult()"
               [disabled]="!name || selectedUsers.length === 0">
-        Erstellen
+        {{ i18n.t('chat.create') }}
       </button>
     </mat-dialog-actions>
   `,
@@ -68,7 +69,7 @@ export class NewChatDialogComponent {
   searchResults: any[] = [];
   selectedUsers: any[] = [];
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService, public i18n: I18nService) {}
 
   onSearch(query: string): void {
     if (query.length < 2) {
@@ -107,9 +108,9 @@ export class NewChatDialogComponent {
   template: `
     <div class="chat-list-container">
       <div class="chat-header">
-        <h2>Chats</h2>
+        <h2>{{ i18n.t('chat.chats') }}</h2>
         <button mat-raised-button color="primary" (click)="newChat()">
-          <mat-icon>add</mat-icon> Neuer Chat
+          <mat-icon>add</mat-icon> {{ i18n.t('chat.new_chat') }}
         </button>
       </div>
 
@@ -119,9 +120,9 @@ export class NewChatDialogComponent {
 
       <div *ngIf="!loading && channels.length === 0" class="empty-state">
         <mat-icon>chat_bubble_outline</mat-icon>
-        <p>Keine Chats vorhanden</p>
+        <p>{{ i18n.t('chat.no_chats_available') }}</p>
         <button mat-raised-button color="primary" (click)="newChat()">
-          Chat starten
+          {{ i18n.t('chat.start_chat') }}
         </button>
       </div>
 
@@ -135,7 +136,7 @@ export class NewChatDialogComponent {
             {{ ch.name }}
             <span *ngIf="ch.unread_count > 0" class="unread-badge">{{ ch.unread_count }}</span>
           </div>
-          <div matListItemLine>{{ ch.member_count }} Mitglieder</div>
+          <div matListItemLine>{{ ch.member_count }} {{ i18n.t('chat.members') }}</div>
         </mat-list-item>
       </mat-list>
     </div>
@@ -211,6 +212,7 @@ export class ChatListComponent implements OnInit, OnDestroy {
     private router: Router,
     private dialog: MatDialog,
     private wsService: WebSocketService,
+    public i18n: I18nService,
   ) {}
 
   ngOnInit(): void {

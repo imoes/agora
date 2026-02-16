@@ -9,6 +9,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { AuthService } from '@core/services/auth.service';
 import { ApiService } from '@services/api.service';
+import { I18nService } from '@services/i18n.service';
 
 @Component({
   selector: 'app-login',
@@ -27,25 +28,25 @@ import { ApiService } from '@services/api.service';
               <span class="logo-text">Agora</span>
             </div>
           </mat-card-title>
-          <mat-card-subtitle>Melde dich an</mat-card-subtitle>
+          <mat-card-subtitle>{{ i18n.t('login.subtitle') }}</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
           <form (ngSubmit)="onLogin()">
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Benutzername</mat-label>
+              <mat-label>{{ i18n.t('login.username') }}</mat-label>
               <input matInput [(ngModel)]="username" name="username" required>
             </mat-form-field>
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Passwort</mat-label>
+              <mat-label>{{ i18n.t('login.password') }}</mat-label>
               <input matInput type="password" [(ngModel)]="password" name="password" required>
             </mat-form-field>
             <button mat-raised-button color="primary" type="submit" class="full-width" [disabled]="loading">
-              {{ loading ? 'Anmeldung...' : 'Anmelden' }}
+              {{ loading ? i18n.t('login.submitting') : i18n.t('login.submit') }}
             </button>
           </form>
         </mat-card-content>
         <mat-card-actions align="end" *ngIf="registrationEnabled">
-          <a routerLink="/register">Noch kein Konto? Registrieren</a>
+          <a routerLink="/register">{{ i18n.t('login.register_link') }}</a>
         </mat-card-actions>
       </mat-card>
     </div>
@@ -99,7 +100,8 @@ export class LoginComponent implements OnInit {
     private authService: AuthService,
     private apiService: ApiService,
     private router: Router,
-    private snackBar: MatSnackBar
+    private snackBar: MatSnackBar,
+    public i18n: I18nService,
   ) {}
 
   ngOnInit(): void {
@@ -112,14 +114,18 @@ export class LoginComponent implements OnInit {
     if (!this.username || !this.password) return;
     this.loading = true;
     this.authService.login(this.username, this.password).subscribe({
-      next: () => {
+      next: (res) => {
+        // Init language from user profile
+        if (res.user?.language) {
+          this.i18n.initFromUser(res.user.language);
+        }
         this.router.navigate(['/']);
       },
       error: (err) => {
         this.loading = false;
         this.snackBar.open(
-          err.error?.detail || 'Anmeldung fehlgeschlagen',
-          'OK',
+          err.error?.detail || this.i18n.t('login.error'),
+          this.i18n.t('common.ok'),
           { duration: 3000 }
         );
       },

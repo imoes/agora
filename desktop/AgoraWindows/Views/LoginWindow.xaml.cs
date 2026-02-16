@@ -35,12 +35,12 @@ public partial class LoginWindow : Window
         if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(username) ||
             string.IsNullOrEmpty(password))
         {
-            ShowError("Bitte alle Felder ausfuellen.");
+            ShowError("Please fill in all fields.");
             return;
         }
 
         LoginButton.IsEnabled = false;
-        LoginButton.Content = "Anmelden...";
+        LoginButton.Content = "Signing in...";
         HideError();
 
         try
@@ -54,12 +54,12 @@ public partial class LoginWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"Anmeldung fehlgeschlagen: {ex.Message}");
+            ShowError($"Login failed: {ex.Message}");
         }
         finally
         {
             LoginButton.IsEnabled = true;
-            LoginButton.Content = "Anmelden";
+            LoginButton.Content = "Sign in";
         }
     }
 

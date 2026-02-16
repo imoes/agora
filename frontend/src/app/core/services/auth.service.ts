@@ -32,6 +32,7 @@ export interface User {
   status_message: string | null;
   is_admin: boolean;
   auth_source: string;
+  language: string;
   created_at: string;
 }
 

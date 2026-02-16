@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -27,7 +27,9 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
         )
 
     existing = await db.execute(
-        select(User).where((User.username == data.username) | (User.email == data.email))
+        select(User).where(
+            (func.lower(User.username) == data.username.lower()) | (func.lower(User.email) == data.email.lower())
+        )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -57,7 +59,7 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
         if ldap_user:
             # Find or create local user from LDAP
             result = await db.execute(
-                select(User).where(User.username == ldap_user["username"])
+                select(User).where(func.lower(User.username) == ldap_user["username"].lower())
             )
             user = result.scalar_one_or_none()
 
@@ -93,8 +95,8 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
             detail="Invalid credentials",
         )
 
-    # Local authentication
-    result = await db.execute(select(User).where(User.username == data.username))
+    # Local authentication (case-insensitive)
+    result = await db.execute(select(User).where(func.lower(User.username) == data.username.lower()))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(
@@ -126,6 +128,8 @@ async def update_me(
         current_user.status_message = data.status_message
     if data.status is not None:
         current_user.status = data.status
+    if data.language is not None:
+        current_user.language = data.language
     await db.flush()
     await db.refresh(current_user)
     return UserOut.model_validate(current_user)

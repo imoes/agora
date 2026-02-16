@@ -77,7 +77,7 @@ static void load_channels(AgoraMainWindow *win)
         gtk_box_pack_start(GTK_BOX(row_box), hbox, FALSE, FALSE, 0);
 
         /* Member count */
-        char *members_text = g_strdup_printf("%ld Mitglieder", (long)member_count);
+        char *members_text = g_strdup_printf("%ld members", (long)member_count);
         GtkWidget *members_label = gtk_label_new(members_text);
         g_free(members_text);
         gtk_widget_set_halign(members_label, GTK_ALIGN_START);
@@ -186,7 +186,7 @@ static void send_message(AgoraMainWindow *win)
         AgoraSession *session = agora_app_get_session(app);
 
         char *line = g_strdup_printf("%s: %s\n",
-                                     session->display_name ? session->display_name : "Ich",
+                                     session->display_name ? session->display_name : "Me",
                                      text);
         gtk_text_buffer_insert(win->message_buffer, &iter, line, -1);
         g_free(line);
@@ -282,10 +282,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     GtkWidget *welcome = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(welcome),
-        "<span size='x-large' weight='bold'>Willkommen bei Agora</span>");
+        "<span size='x-large' weight='bold'>Welcome to Agora</span>");
     gtk_box_pack_start(GTK_BOX(empty_box), welcome, FALSE, FALSE, 0);
 
-    GtkWidget *hint = gtk_label_new("Waehle einen Chat aus der Liste");
+    GtkWidget *hint = gtk_label_new("Select a chat from the list");
     gtk_box_pack_start(GTK_BOX(empty_box), hint, FALSE, FALSE, 0);
 
     gtk_stack_add_named(win->content_stack, empty_box, "empty");
@@ -333,12 +333,12 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_container_set_border_width(GTK_CONTAINER(input_box), 8);
 
     win->message_entry = GTK_ENTRY(gtk_entry_new());
-    gtk_entry_set_placeholder_text(win->message_entry, "Nachricht eingeben...");
+    gtk_entry_set_placeholder_text(win->message_entry, "Type a message...");
     g_signal_connect(win->message_entry, "activate",
                      G_CALLBACK(on_entry_activate), win);
     gtk_box_pack_start(GTK_BOX(input_box), GTK_WIDGET(win->message_entry), TRUE, TRUE, 0);
 
-    GtkWidget *send_btn = gtk_button_new_with_label("Senden");
+    GtkWidget *send_btn = gtk_button_new_with_label("Send");
     g_signal_connect(send_btn, "clicked", G_CALLBACK(on_send_clicked), win);
     gtk_box_pack_start(GTK_BOX(input_box), send_btn, FALSE, FALSE, 0);
 
@@ -364,7 +364,7 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
     agora_api_client_set_token(win->api, session->token);
 
     /* Set user info */
-    gtk_label_set_text(win->user_label, session->display_name ? session->display_name : "Benutzer");
+    gtk_label_set_text(win->user_label, session->display_name ? session->display_name : "User");
 
     /* Load channels */
     load_channels(win);

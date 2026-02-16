@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { AuthService } from '@core/services/auth.service';
+import { I18nService } from '@services/i18n.service';
 
 @Component({
   selector: 'app-register',
@@ -26,33 +27,33 @@ import { AuthService } from '@core/services/auth.service';
               <span class="logo-text">Agora</span>
             </div>
           </mat-card-title>
-          <mat-card-subtitle>Erstelle ein Konto</mat-card-subtitle>
+          <mat-card-subtitle>{{ i18n.t('register.subtitle') }}</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
           <form (ngSubmit)="onRegister()">
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Anzeigename</mat-label>
+              <mat-label>{{ i18n.t('register.display_name') }}</mat-label>
               <input matInput [(ngModel)]="displayName" name="displayName" required>
             </mat-form-field>
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Benutzername</mat-label>
+              <mat-label>{{ i18n.t('login.username') }}</mat-label>
               <input matInput [(ngModel)]="username" name="username" required>
             </mat-form-field>
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>E-Mail</mat-label>
+              <mat-label>{{ i18n.t('register.email') }}</mat-label>
               <input matInput type="email" [(ngModel)]="email" name="email" required>
             </mat-form-field>
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Passwort</mat-label>
+              <mat-label>{{ i18n.t('login.password') }}</mat-label>
               <input matInput type="password" [(ngModel)]="password" name="password" required>
             </mat-form-field>
             <button mat-raised-button color="primary" type="submit" class="full-width" [disabled]="loading">
-              {{ loading ? 'Registrierung...' : 'Registrieren' }}
+              {{ loading ? i18n.t('register.submitting') : i18n.t('register.submit') }}
             </button>
           </form>
         </mat-card-content>
         <mat-card-actions align="end">
-          <a routerLink="/login">Bereits registriert? Anmelden</a>
+          <a routerLink="/login">{{ i18n.t('register.login_link') }}</a>
         </mat-card-actions>
       </mat-card>
     </div>
@@ -106,7 +107,8 @@ export class RegisterComponent {
   constructor(
     private authService: AuthService,
     private router: Router,
-    private snackBar: MatSnackBar
+    private snackBar: MatSnackBar,
+    public i18n: I18nService,
   ) {}
 
   onRegister(): void {
@@ -124,8 +126,8 @@ export class RegisterComponent {
       error: (err) => {
         this.loading = false;
         this.snackBar.open(
-          err.error?.detail || 'Registrierung fehlgeschlagen',
-          'OK',
+          err.error?.detail || this.i18n.t('register.error'),
+          this.i18n.t('common.ok'),
           { duration: 3000 }
         );
       },
