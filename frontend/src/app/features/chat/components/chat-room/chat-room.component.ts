@@ -26,6 +26,18 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     MatProgressSpinnerModule, MatDialogModule, MatSnackBarModule,
   ],
   template: `
+    <!-- Fullscreen media overlay -->
+    <div class="media-overlay" *ngIf="fullscreenMedia" (click)="closeMediaFullscreen()">
+      <button mat-icon-button class="overlay-close">
+        <mat-icon>close</mat-icon>
+      </button>
+      <img *ngIf="fullscreenMedia.type === 'image'" [src]="fullscreenMedia.url"
+           [alt]="fullscreenMedia.name" (click)="$event.stopPropagation()">
+      <video *ngIf="fullscreenMedia.type === 'video'" [src]="fullscreenMedia.url"
+             controls autoplay (click)="$event.stopPropagation()"></video>
+      <div class="overlay-filename">{{ fullscreenMedia.name }}</div>
+    </div>
+
     <div class="chat-room">
       <!-- Header -->
       <div class="chat-room-header">
@@ -100,12 +112,31 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                 <span class="message-time">{{ formatTime(msg.created_at) }}</span>
               </div>
               <div class="message-bubble" [class.own]="msg.sender_id === currentUser?.id">
-                <div *ngIf="msg.message_type === 'file'" class="file-message">
-                  <mat-icon>attachment</mat-icon>
-                  <a *ngIf="msg.file_reference_id" [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">
-                    {{ getFileName(msg.content) }}
-                  </a>
-                </div>
+                <ng-container *ngIf="msg.message_type === 'file' && msg.file_reference_id">
+                  <!-- Image preview -->
+                  <div *ngIf="isImage(msg.content)" class="media-message">
+                    <img [src]="getInlineUrl(msg.file_reference_id)" [alt]="getFileName(msg.content)"
+                         class="chat-image" loading="lazy" (click)="openMediaFullscreen(msg)">
+                    <div class="media-filename">
+                      <a [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">{{ getFileName(msg.content) }}</a>
+                    </div>
+                  </div>
+                  <!-- Video player -->
+                  <div *ngIf="isVideo(msg.content)" class="media-message">
+                    <video [src]="getInlineUrl(msg.file_reference_id)" class="chat-video"
+                           controls preload="metadata" playsinline></video>
+                    <div class="media-filename">
+                      <a [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">{{ getFileName(msg.content) }}</a>
+                    </div>
+                  </div>
+                  <!-- Generic file -->
+                  <div *ngIf="!isImage(msg.content) && !isVideo(msg.content)" class="file-message">
+                    <mat-icon>attachment</mat-icon>
+                    <a [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">
+                      {{ getFileName(msg.content) }}
+                    </a>
+                  </div>
+                </ng-container>
                 <span *ngIf="msg.message_type !== 'file'" [innerHTML]="highlightMentions(msg.content)"></span>
                 <span *ngIf="msg.edited_at" class="edited">(bearbeitet)</span>
               </div>
@@ -310,6 +341,77 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     .file-message a {
       color: var(--primary);
     }
+    .media-message {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .chat-image {
+      max-width: 300px;
+      max-height: 300px;
+      border-radius: 8px;
+      cursor: pointer;
+      object-fit: contain;
+      transition: opacity 0.2s;
+    }
+    .chat-image:hover {
+      opacity: 0.9;
+    }
+    .chat-video {
+      max-width: 400px;
+      max-height: 300px;
+      border-radius: 8px;
+      background: #000;
+      outline: none;
+    }
+    .media-filename {
+      font-size: 11px;
+    }
+    .media-filename a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .media-filename a:hover {
+      text-decoration: underline;
+    }
+    /* Fullscreen overlay */
+    .media-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      cursor: pointer;
+    }
+    .media-overlay img {
+      max-width: 90vw;
+      max-height: 85vh;
+      object-fit: contain;
+      cursor: default;
+    }
+    .media-overlay video {
+      max-width: 90vw;
+      max-height: 85vh;
+      cursor: default;
+      outline: none;
+    }
+    .overlay-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      color: white !important;
+    }
+    .overlay-filename {
+      color: white;
+      margin-top: 12px;
+      font-size: 14px;
+    }
     .system-message {
       display: flex;
       align-items: center;
@@ -410,6 +512,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   currentUser: User | null = null;
   loadingMessages = false;
   showFiles = false;
+  fullscreenMedia: { url: string; name: string; type: 'image' | 'video' } | null = null;
 
   // @Mention state
   showMentionPopup = false;
@@ -663,9 +766,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!file) return;
 
     this.apiService.uploadFile(file, this.channelId).subscribe((ref) => {
+      const mimeType = ref.file?.mime_type || file.type || '';
       this.wsService.send(this.channelId, {
         type: 'message',
-        content: `Datei: ${ref.original_filename}`,
+        content: `Datei: ${ref.original_filename}\nmime:${mimeType}`,
         message_type: 'file',
         file_reference_id: ref.id,
       });
@@ -727,11 +831,57 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     return this.apiService.getFileDownloadUrl(refId);
   }
 
+  getInlineUrl(refId: string): string {
+    return this.apiService.getFileInlineUrl(refId);
+  }
+
   getFileName(content: string): string {
-    if (content && content.startsWith('Datei: ')) {
-      return content.substring(7);
+    if (!content) return 'Datei herunterladen';
+    // Strip mime: line if present
+    const firstLine = content.split('\n')[0];
+    if (firstLine.startsWith('Datei: ')) {
+      return firstLine.substring(7);
     }
-    return content || 'Datei herunterladen';
+    return firstLine;
+  }
+
+  private getMimeFromContent(content: string): string {
+    if (!content) return '';
+    const mimeMatch = content.match(/\nmime:(.+)$/);
+    return mimeMatch ? mimeMatch[1] : '';
+  }
+
+  private getExtension(content: string): string {
+    const name = this.getFileName(content);
+    const dot = name.lastIndexOf('.');
+    return dot >= 0 ? name.substring(dot + 1).toLowerCase() : '';
+  }
+
+  private static IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
+  private static VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'ogv', 'mov', 'avi', 'mkv']);
+
+  isImage(content: string): boolean {
+    const mime = this.getMimeFromContent(content);
+    if (mime.startsWith('image/')) return true;
+    return ChatRoomComponent.IMAGE_EXTS.has(this.getExtension(content));
+  }
+
+  isVideo(content: string): boolean {
+    const mime = this.getMimeFromContent(content);
+    if (mime.startsWith('video/')) return true;
+    return ChatRoomComponent.VIDEO_EXTS.has(this.getExtension(content));
+  }
+
+  openMediaFullscreen(msg: any): void {
+    this.fullscreenMedia = {
+      url: this.getInlineUrl(msg.file_reference_id),
+      name: this.getFileName(msg.content),
+      type: this.isVideo(msg.content) ? 'video' : 'image',
+    };
+  }
+
+  closeMediaFullscreen(): void {
+    this.fullscreenMedia = null;
   }
 
   formatTime(dateStr: string): string {

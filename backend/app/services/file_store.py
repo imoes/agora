@@ -71,7 +71,8 @@ async def store_file(
     return db_file, ref
 
 
-async def get_file_path(db: AsyncSession, file_ref_id: uuid.UUID) -> tuple[str, str] | None:
+async def get_file_path(db: AsyncSession, file_ref_id: uuid.UUID) -> tuple[str, str, str] | None:
+    """Return (file_path, original_filename, mime_type) or None."""
     result = await db.execute(
         select(FileReference)
         .where(FileReference.id == file_ref_id)
@@ -86,4 +87,4 @@ async def get_file_path(db: AsyncSession, file_ref_id: uuid.UUID) -> tuple[str, 
     if db_file is None:
         return None
 
-    return db_file.file_path, ref.original_filename
+    return db_file.file_path, ref.original_filename, db_file.mime_type

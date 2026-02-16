@@ -987,9 +987,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   private updateFilteredChannels(): void {
     if (this.sidebarMode === 'teams') {
-      this.filteredChannels = this.chatChannels.filter((ch) => ch.channel_type === 'team');
+      this.filteredChannels = this.chatChannels.filter((ch) => ch.team_id);
     } else {
-      this.filteredChannels = this.chatChannels.filter((ch) => ch.channel_type !== 'team');
+      this.filteredChannels = this.chatChannels.filter((ch) => !ch.team_id);
     }
   }
 

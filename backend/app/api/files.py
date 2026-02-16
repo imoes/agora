@@ -58,11 +58,44 @@ async def download_file(
     if not result:
         raise HTTPException(status_code=404, detail="File not found")
 
-    file_path, original_name = result
+    file_path, original_name, _mime_type = result
     return FileResponse(
         path=file_path,
         filename=original_name,
         media_type="application/octet-stream",
+    )
+
+
+# Allowed MIME prefixes that may be rendered inline by the browser
+_INLINE_PREFIXES = ("image/", "video/", "audio/")
+
+
+@router.get("/inline/{ref_id}")
+async def inline_file(
+    ref_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve a file with its real MIME type so browsers can render it inline."""
+    result = await get_file_path(db, ref_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path, original_name, mime_type = result
+
+    # Only serve known safe media types inline; fall back to download for others
+    if not any(mime_type.startswith(p) for p in _INLINE_PREFIXES):
+        return FileResponse(
+            path=file_path,
+            filename=original_name,
+            media_type="application/octet-stream",
+        )
+
+    return FileResponse(
+        path=file_path,
+        filename=original_name,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'inline; filename="{original_name}"'},
     )
 
 
