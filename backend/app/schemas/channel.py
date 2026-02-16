@@ -40,6 +40,7 @@ class ChannelOut(BaseModel):
     invite_token: str | None = None
     last_activity_at: datetime | None = None
     scheduled_at: datetime | None = None
+    is_subscribed: bool = True
 
     model_config = {"from_attributes": True}
 

@@ -68,6 +68,9 @@ class ChannelMember(Base, TimestampMixin):
     last_read_message_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True
     )
+    is_subscribed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     channel = relationship("Channel", back_populates="members")
     user = relationship("User", back_populates="channel_memberships")

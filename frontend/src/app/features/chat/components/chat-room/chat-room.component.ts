@@ -77,6 +77,12 @@ import { I18nService } from '@services/i18n.service';
           <button mat-icon-button [matTooltip]="i18n.t('chat.files')" (click)="showFiles = !showFiles">
             <mat-icon>attach_file</mat-icon>
           </button>
+          <button mat-icon-button
+                  [matTooltip]="channel?.is_subscribed ? i18n.t('chat.unsubscribe') : i18n.t('chat.subscribe')"
+                  (click)="toggleSubscription()"
+                  *ngIf="channel?.channel_type === 'team'">
+            <mat-icon>{{ channel?.is_subscribed ? 'notifications_active' : 'notifications_off' }}</mat-icon>
+          </button>
           <button mat-icon-button [matTooltip]="i18n.t('chat.leave')" (click)="leaveChannel()"
                   *ngIf="channel?.channel_type === 'group' || channel?.channel_type === 'meeting'">
             <mat-icon>logout</mat-icon>
@@ -1721,6 +1727,20 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       }
       this.loadChannel();
       this.loadChannelMembers();
+    });
+  }
+
+  toggleSubscription(): void {
+    if (!this.channelId || !this.channel) return;
+    this.apiService.toggleChannelSubscription(this.channelId).subscribe({
+      next: (res) => {
+        this.channel.is_subscribed = res.is_subscribed;
+        const msg = res.is_subscribed ? this.i18n.t('chat.subscribed') : this.i18n.t('chat.unsubscribed');
+        this.snackBar.open(msg, this.i18n.t('common.ok'), { duration: 2000 });
+      },
+      error: () => {
+        this.snackBar.open(this.i18n.t('common.error'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
     });
   }
 

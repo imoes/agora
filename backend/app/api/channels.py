@@ -201,6 +201,14 @@ async def list_channels(
         )
         team_names = {tid: tname for tid, tname in team_result.all()}
 
+    # Batch-fetch subscription status for all channels
+    sub_result = await db.execute(
+        select(ChannelMember.channel_id, ChannelMember.is_subscribed).where(
+            ChannelMember.user_id == current_user.id
+        )
+    )
+    sub_map = {row[0]: row[1] for row in sub_result.all()}
+
     channels = []
     for ch, member_count in rows:
         # Calculate unread count
@@ -237,6 +245,7 @@ async def list_channels(
                 invite_token=ch.invite_token,
                 last_activity_at=last_activity or ch.created_at,
                 scheduled_at=ch.scheduled_at,
+                is_subscribed=sub_map.get(ch.id, True),
             )
         )
 
@@ -251,7 +260,7 @@ async def get_channel(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    membership = await db.execute(
+    membership_result = await db.execute(
         select(ChannelMember).where(
             and_(
                 ChannelMember.channel_id == channel_id,
@@ -259,7 +268,8 @@ async def get_channel(
             )
         )
     )
-    if not membership.scalar_one_or_none():
+    membership = membership_result.scalar_one_or_none()
+    if not membership:
         raise HTTPException(status_code=403, detail="Not a channel member")
 
     result = await db.execute(select(Channel).where(Channel.id == channel_id))
@@ -281,6 +291,7 @@ async def get_channel(
         created_at=channel.created_at,
         member_count=count,
         invite_token=channel.invite_token,
+        is_subscribed=membership.is_subscribed,
     )
 
 
@@ -718,3 +729,32 @@ async def get_read_position(
         raise HTTPException(status_code=403, detail="Not a channel member")
 
     return {"last_read_message_id": member.last_read_message_id}
+
+
+# ---------------------------------------------------------------------------
+# Subscription toggle
+# ---------------------------------------------------------------------------
+
+@router.post("/{channel_id}/subscribe")
+async def toggle_subscription(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle channel subscription (controls feed notifications)."""
+    result = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == current_user.id,
+            )
+        )
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a channel member")
+
+    member.is_subscribed = not member.is_subscribed
+    await db.flush()
+
+    return {"is_subscribed": member.is_subscribed}

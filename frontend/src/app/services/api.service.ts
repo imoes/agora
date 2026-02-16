@@ -172,6 +172,10 @@ export class ApiService {
     return this.http.delete(`${this.baseUrl}/channels/${channelId}/members/me`);
   }
 
+  toggleChannelSubscription(channelId: string): Observable<{ is_subscribed: boolean }> {
+    return this.http.post<{ is_subscribed: boolean }>(`${this.baseUrl}/channels/${channelId}/subscribe`, null);
+  }
+
   // Invitations
   sendInvitation(channelId: string, data: { email: string; message?: string }): Observable<any> {
     return this.http.post(`${this.baseUrl}/invitations/channel/${channelId}`, data);
