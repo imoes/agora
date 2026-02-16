@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,8 +20,8 @@ router = APIRouter(prefix="/api/files", tags=["files"])
 @router.post("/upload", response_model=FileReferenceOut, status_code=201)
 async def upload_file(
     file: UploadFile = File(...),
-    channel_id: uuid.UUID | None = None,
-    message_id: str | None = None,
+    channel_id: uuid.UUID | None = Form(None),
+    message_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

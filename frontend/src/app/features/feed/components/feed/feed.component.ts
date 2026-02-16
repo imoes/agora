@@ -49,15 +49,20 @@ import { ApiService } from '@services/api.service';
         <mat-list *ngIf="!loading && events.length > 0">
           <mat-list-item *ngFor="let event of events" class="feed-item"
                          [class.unread]="!event.is_read"
+                         [class.call-event]="event.event_type === 'call'"
                          (click)="openEvent(event)">
-            <div matListItemAvatar class="event-avatar">
-              {{ event.sender_name?.charAt(0)?.toUpperCase() || '?' }}
+            <div matListItemAvatar class="event-avatar" [class.call-avatar]="event.event_type === 'call'">
+              <mat-icon *ngIf="event.event_type === 'call'">videocam</mat-icon>
+              <span *ngIf="event.event_type !== 'call'">{{ event.sender_name?.charAt(0)?.toUpperCase() || '?' }}</span>
             </div>
             <div matListItemTitle>
               <strong>{{ event.sender_name }}</strong>
               <span class="channel-name"> in {{ event.channel_name }}</span>
             </div>
-            <div matListItemLine class="preview">{{ event.preview_text }}</div>
+            <div matListItemLine class="preview">
+              <mat-icon *ngIf="event.event_type === 'call'" class="preview-icon">call</mat-icon>
+              {{ event.preview_text }}
+            </div>
             <div matListItemMeta class="event-time">
               {{ formatTime(event.created_at) }}
             </div>
@@ -155,6 +160,25 @@ import { ApiService } from '@services/api.service';
       text-align: center;
       padding: 8px;
     }
+    .call-avatar {
+      background: #e65100 !important;
+    }
+    .call-avatar mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: white;
+    }
+    .call-event {
+      border-left-color: #e65100 !important;
+    }
+    .preview-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
   `],
 })
 export class FeedComponent implements OnInit {
@@ -202,8 +226,12 @@ export class FeedComponent implements OnInit {
     this.apiService.markFeedRead({ event_ids: [event.id] }).subscribe();
     event.is_read = true;
     this.unreadCount = Math.max(0, this.unreadCount - 1);
-    // Navigate to chat
-    this.router.navigate(['/chat', event.channel_id]);
+    // Navigate to video for call events, otherwise to chat
+    if (event.event_type === 'call') {
+      this.router.navigate(['/video', event.channel_id]);
+    } else {
+      this.router.navigate(['/chat', event.channel_id]);
+    }
   }
 
   formatTime(dateStr: string): string {

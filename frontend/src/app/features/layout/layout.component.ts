@@ -77,10 +77,53 @@ import { WebSocketService } from '@services/websocket.service';
               <span>{{ s.label }}</span>
             </button>
             <mat-divider></mat-divider>
+            <button mat-menu-item [matMenuTriggerFor]="deviceMenu">
+              <mat-icon>settings</mat-icon>
+              <span>Geraeteeinstellungen</span>
+            </button>
+            <mat-divider></mat-divider>
             <button mat-menu-item (click)="logout()">
               <mat-icon>logout</mat-icon>
               <span>Abmelden</span>
             </button>
+          </mat-menu>
+
+          <mat-menu #deviceMenu="matMenu" class="device-menu">
+            <div class="device-section" (click)="$event.stopPropagation()">
+              <div class="device-section-label">
+                <mat-icon>mic</mat-icon>
+                Mikrofon
+              </div>
+              <select class="device-select" [value]="selectedAudioInput"
+                      (change)="onAudioInputChange($event)">
+                <option value="">Standard</option>
+                <option *ngFor="let d of audioInputDevices" [value]="d.deviceId">{{ d.label || 'Mikrofon ' + d.deviceId.slice(0, 5) }}</option>
+              </select>
+            </div>
+            <mat-divider></mat-divider>
+            <div class="device-section" (click)="$event.stopPropagation()">
+              <div class="device-section-label">
+                <mat-icon>videocam</mat-icon>
+                Kamera
+              </div>
+              <select class="device-select" [value]="selectedVideoInput"
+                      (change)="onVideoInputChange($event)">
+                <option value="">Standard</option>
+                <option *ngFor="let d of videoInputDevices" [value]="d.deviceId">{{ d.label || 'Kamera ' + d.deviceId.slice(0, 5) }}</option>
+              </select>
+            </div>
+            <mat-divider></mat-divider>
+            <div class="device-section" (click)="$event.stopPropagation()">
+              <div class="device-section-label">
+                <mat-icon>volume_up</mat-icon>
+                Lautsprecher
+              </div>
+              <select class="device-select" [value]="selectedAudioOutput"
+                      (change)="onAudioOutputChange($event)">
+                <option value="">Standard</option>
+                <option *ngFor="let d of audioOutputDevices" [value]="d.deviceId">{{ d.label || 'Lautsprecher ' + d.deviceId.slice(0, 5) }}</option>
+              </select>
+            </div>
           </mat-menu>
         </div>
       </nav>
@@ -704,6 +747,37 @@ import { WebSocketService } from '@services/websocket.service';
     .context-menu-item.delete { color: #d32f2f; }
     .context-menu-item.delete:hover { background: #fbe9e7; }
     .context-menu-item mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    /* Device settings */
+    .device-section {
+      padding: 8px 16px;
+    }
+    .device-section-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .device-section-label mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+    .device-select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+      background: white;
+      cursor: pointer;
+      outline: none;
+      max-width: 250px;
+    }
+    .device-select:focus {
+      border-color: var(--primary);
+    }
   `],
 })
 export class LayoutComponent implements OnInit, OnDestroy {
@@ -727,6 +801,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private searchSubject = new Subject<string>();
   @ViewChild('searchWrapper') searchWrapper!: ElementRef;
   @ViewChild('callSearchPanel') callSearchPanel!: ElementRef;
+  // Device settings
+  audioInputDevices: MediaDeviceInfo[] = [];
+  videoInputDevices: MediaDeviceInfo[] = [];
+  audioOutputDevices: MediaDeviceInfo[] = [];
+  selectedAudioInput = '';
+  selectedVideoInput = '';
+  selectedAudioOutput = '';
   // Context menu
   contextMenu = { show: false, x: 0, y: 0, channel: null as any };
   private subscriptions: Subscription[] = [];
@@ -767,6 +848,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.loadDevicePreferences();
+    this.enumerateDevices();
+
     this.subscriptions.push(
       this.authService.currentUser$.subscribe((user) => {
         this.currentUser = user;
@@ -1150,6 +1234,39 @@ export class LayoutComponent implements OnInit, OnDestroy {
     }
 
     return new Blob([buffer], { type: 'audio/wav' });
+  }
+
+  enumerateDevices(): void {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      this.audioInputDevices = devices.filter((d) => d.kind === 'audioinput');
+      this.videoInputDevices = devices.filter((d) => d.kind === 'videoinput');
+      this.audioOutputDevices = devices.filter((d) => d.kind === 'audiooutput');
+    }).catch(() => {});
+  }
+
+  private loadDevicePreferences(): void {
+    this.selectedAudioInput = localStorage.getItem('agora_audio_input') || '';
+    this.selectedVideoInput = localStorage.getItem('agora_video_input') || '';
+    this.selectedAudioOutput = localStorage.getItem('agora_audio_output') || '';
+  }
+
+  onAudioInputChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.selectedAudioInput = value;
+    localStorage.setItem('agora_audio_input', value);
+  }
+
+  onVideoInputChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.selectedVideoInput = value;
+    localStorage.setItem('agora_video_input', value);
+  }
+
+  onAudioOutputChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.selectedAudioOutput = value;
+    localStorage.setItem('agora_audio_output', value);
   }
 
   logout(): void {

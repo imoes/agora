@@ -20,7 +20,7 @@ class FeedEvent(Base, UUIDPrimaryKey, TimestampMixin):
     )
     event_type: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="message"
-    )  # 'message', 'file', 'mention', 'reaction'
+    )  # 'message', 'file', 'mention', 'reaction', 'call'
     preview_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     is_read: Mapped[bool] = mapped_column(default=False, nullable=False)
