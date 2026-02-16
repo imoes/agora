@@ -49,6 +49,10 @@ export class ApiService {
     return this.http.get(`${this.baseUrl}/channels/${id}`);
   }
 
+  updateChannel(channelId: string, data: { name?: string; description?: string }): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/channels/${channelId}`, data);
+  }
+
   getChannelMembers(channelId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.baseUrl}/channels/${channelId}/members`);
   }

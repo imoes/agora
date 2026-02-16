@@ -45,7 +45,20 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
           <mat-icon>arrow_back</mat-icon>
         </button>
         <div class="channel-info">
-          <h3>{{ channel?.name }}</h3>
+          <h3 *ngIf="!editingName" (click)="startEditName()" class="channel-name-editable"
+              matTooltip="Klicken zum Umbenennen">{{ channel?.name }}</h3>
+          <div *ngIf="editingName" class="edit-name-row">
+            <input class="edit-name-input" [(ngModel)]="editNameValue"
+                   (keydown.enter)="saveChannelName()"
+                   (keydown.escape)="cancelEditName()"
+                   #editNameInput>
+            <button mat-icon-button (click)="saveChannelName()" class="edit-name-btn">
+              <mat-icon>check</mat-icon>
+            </button>
+            <button mat-icon-button (click)="cancelEditName()" class="edit-name-btn">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
           <span class="member-count" matTooltip="{{ memberNames }}">
             {{ memberNamesShort }} ({{ channel?.member_count }})
           </span>
@@ -226,6 +239,41 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     .channel-info h3 {
       margin: 0;
       font-size: 16px;
+    }
+    .channel-name-editable {
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 2px 4px;
+      margin: -2px -4px;
+      transition: background 0.15s;
+    }
+    .channel-name-editable:hover {
+      background: var(--hover, #f3f2f1);
+    }
+    .edit-name-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .edit-name-input {
+      font-size: 16px;
+      font-weight: 600;
+      border: 1px solid var(--primary, #6264a7);
+      border-radius: 4px;
+      padding: 2px 8px;
+      outline: none;
+      min-width: 120px;
+      max-width: 250px;
+    }
+    .edit-name-btn {
+      width: 28px !important;
+      height: 28px !important;
+      line-height: 28px !important;
+    }
+    .edit-name-btn mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
     }
     .member-count {
       font-size: 12px;
@@ -581,10 +629,13 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
     /* ============ Mobile responsive ============ */
     @media (max-width: 768px) {
       .chat-room {
-        padding-bottom: 56px;
+        height: 100%;
+        max-height: 100%;
+        overflow: hidden;
       }
       .chat-room-header {
         padding: 8px 8px;
+        flex-shrink: 0;
       }
       .header-actions {
         gap: 0;
@@ -626,6 +677,12 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
       }
       .message-input-container {
         padding: 6px 8px;
+        flex-shrink: 0;
+      }
+      .messages-container {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
       }
       .files-panel {
         width: 100%;
@@ -647,6 +704,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   loadingMessages = false;
   showFiles = false;
   fullscreenMedia: { url: string; name: string; type: 'image' | 'video' } | null = null;
+
+  // Rename state
+  editingName = false;
+  editNameValue = '';
 
   // Emoji reaction state
   emojiPickerMsg: any = null;
@@ -806,6 +867,11 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
             }
           }
           this.loadChannelMembers();
+          break;
+        case 'channel_renamed':
+          if (this.channel && msg.channel_name) {
+            this.channel.name = msg.channel_name;
+          }
           break;
         case 'user_joined':
         case 'user_left':
@@ -1107,6 +1173,43 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     } else {
       this.router.navigate(['/chat']);
     }
+  }
+
+  startEditName(): void {
+    if (!this.channel) return;
+    this.editingName = true;
+    this.editNameValue = this.channel.name || '';
+    setTimeout(() => {
+      const input = document.querySelector('.edit-name-input') as HTMLInputElement;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  }
+
+  saveChannelName(): void {
+    const newName = this.editNameValue.trim();
+    if (!newName || !this.channel || newName === this.channel.name) {
+      this.cancelEditName();
+      return;
+    }
+    this.apiService.updateChannel(this.channelId, { name: newName }).subscribe({
+      next: (updated) => {
+        this.channel.name = updated.name;
+        this.editingName = false;
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Umbenennen';
+        this.snackBar.open(detail, 'OK', { duration: 3000 });
+        this.editingName = false;
+      },
+    });
+  }
+
+  cancelEditName(): void {
+    this.editingName = false;
+    this.editNameValue = '';
   }
 
   getDownloadUrl(refId: string): string {

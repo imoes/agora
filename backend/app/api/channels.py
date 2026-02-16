@@ -283,6 +283,69 @@ async def get_channel(
     )
 
 
+@router.patch("/{channel_id}", response_model=ChannelOut)
+async def update_channel(
+    channel_id: uuid.UUID,
+    data: ChannelUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update channel name or description. Only members can update."""
+    membership = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == current_user.id,
+            )
+        )
+    )
+    if not membership.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Not a channel member")
+
+    result = await db.execute(select(Channel).where(Channel.id == channel_id))
+    channel = result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    if data.name is not None:
+        new_name = data.name.strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Name darf nicht leer sein")
+        channel.name = new_name
+        channel.custom_name = True
+
+    if data.description is not None:
+        channel.description = data.description
+
+    await db.flush()
+    await db.refresh(channel)
+
+    count_result = await db.execute(
+        select(func.count()).where(ChannelMember.channel_id == channel_id)
+    )
+    count = count_result.scalar()
+
+    # Broadcast channel_renamed event via WebSocket
+    await manager.send_to_channel(
+        str(channel_id),
+        {
+            "type": "channel_renamed",
+            "channel_name": channel.name,
+        },
+    )
+
+    return ChannelOut(
+        id=channel.id,
+        name=channel.name,
+        description=channel.description,
+        channel_type=channel.channel_type,
+        team_id=channel.team_id,
+        created_at=channel.created_at,
+        member_count=count,
+        invite_token=channel.invite_token,
+    )
+
+
 @router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel(
     channel_id: uuid.UUID,
