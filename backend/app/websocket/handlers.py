@@ -251,7 +251,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     },
                     exclude_user=user_id,
                 )
-                # Create a system chat message when a call starts
+                # Create a system chat message and feed event when a call starts
                 if is_first:
                     audio_only = data.get("audio_only", False)
                     call_label = "Audioanruf" if audio_only else "Videoanruf"
@@ -266,6 +266,18 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         channel_id,
                         {"type": "new_message", "message": sys_msg},
                     )
+
+                    # Create feed events for channel members
+                    async with async_session() as db:
+                        await create_feed_events(
+                            db,
+                            uuid.UUID(channel_id),
+                            user.id,
+                            event_type="call",
+                            preview_text=f"{user.display_name} hat einen {call_label} gestartet",
+                            message_id=sys_msg["id"],
+                        )
+                        await db.commit()
 
             elif msg_type == "video_call_invite":
                 target_user = data.get("target_user_id")

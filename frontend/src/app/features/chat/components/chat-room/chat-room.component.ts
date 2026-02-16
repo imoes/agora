@@ -103,7 +103,7 @@ import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component'
                 <div *ngIf="msg.message_type === 'file'" class="file-message">
                   <mat-icon>attachment</mat-icon>
                   <a *ngIf="msg.file_reference_id" [href]="getDownloadUrl(msg.file_reference_id)" target="_blank">
-                    Datei herunterladen
+                    {{ getFileName(msg.content) }}
                   </a>
                 </div>
                 <span *ngIf="msg.message_type !== 'file'" [innerHTML]="highlightMentions(msg.content)"></span>
@@ -725,6 +725,13 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   getDownloadUrl(refId: string): string {
     return this.apiService.getFileDownloadUrl(refId);
+  }
+
+  getFileName(content: string): string {
+    if (content && content.startsWith('Datei: ')) {
+      return content.substring(7);
+    }
+    return content || 'Datei herunterladen';
   }
 
   formatTime(dateStr: string): string {

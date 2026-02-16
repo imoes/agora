@@ -63,9 +63,22 @@ export class WebRTCService {
     }
 
     try {
+      // Build constraints using user-selected devices from settings
+      const audioInputId = localStorage.getItem('agora_audio_input') || '';
+      const videoInputId = localStorage.getItem('agora_video_input') || '';
+      const audioConstraints: MediaTrackConstraints = audioInputId
+        ? { deviceId: { exact: audioInputId } }
+        : true as any;
+      const videoConstraints: MediaTrackConstraints = videoInputId
+        ? { deviceId: { exact: videoInputId } }
+        : true as any;
+
       // Always request video+audio so the user can toggle camera on/off.
       // For audio-only calls we just disable the video track initially.
-      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: videoConstraints,
+      });
       if (audioOnly) {
         const videoTrack = this.localStream.getVideoTracks()[0];
         if (videoTrack) videoTrack.enabled = false;

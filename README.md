@@ -308,7 +308,7 @@ LDAP_USER_FILTER=(sAMAccountName={username})
 
 Agora can sync events with Google Calendar. This requires a one-time setup of OAuth2 credentials (~10 minutes).
 
-> **Important:** The `FRONTEND_URL` in your `.env` must be the URL where you access Agora in the browser. For Docker this is `https://localhost` by default. The **redirect URI** in Google Console must match: `{FRONTEND_URL}/calendar/google/callback`
+> **Important:** The `FRONTEND_URL` in your `.env` must be the URL where you access Agora in the browser. For Docker this is `https://localhost` by default. The **redirect URI** in Google Console must exactly match the URI the backend sends to Google. For localhost this is `http://localhost/api/calendar/google/callback` (HTTP, not HTTPS, via Nginx). For production: `https://your-domain.com/api/calendar/google/callback`. You can override this with the `GOOGLE_OAUTH_REDIRECT_URI` environment variable.
 
 ### Step 1: Create a Google Cloud Project
 
@@ -348,13 +348,14 @@ Agora can sync events with Google Calendar. This requires a one-time setup of OA
 4. Name: e.g. `Agora Web Client`
 5. **Authorized redirect URIs** - add:
    ```
-   http://localhost:8000/api/calendar/google/callback
+   http://localhost/api/calendar/google/callback
    ```
    > **Important:** Google does NOT allow `https://localhost` as a redirect URI.
-   > For localhost you MUST use `http://`. The callback goes directly to the
-   > backend on port 8000, which then redirects back to the HTTPS frontend.
-   > - Docker (default): `http://localhost:8000/api/calendar/google/callback`
+   > For localhost you MUST use `http://`. The callback goes through Nginx
+   > (port 80) to the backend, which then redirects back to the HTTPS frontend.
+   > - Docker (default): `http://localhost/api/calendar/google/callback`
    > - Production: `https://agora.your-domain.com/api/calendar/google/callback`
+   > - Custom: Set `GOOGLE_OAUTH_REDIRECT_URI` in `.env` to override
 6. Click **"Create"**
 7. Copy the **Client ID** and **Client Secret**
 
@@ -366,6 +367,8 @@ Add the values to your `.env` file:
 GOOGLE_CLIENT_ID=123456789-xxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxx
 FRONTEND_URL=https://localhost
+# Optional: Override redirect URI (default is derived from FRONTEND_URL)
+# GOOGLE_OAUTH_REDIRECT_URI=http://localhost/api/calendar/google/callback
 ```
 
 Restart the containers:
@@ -388,10 +391,11 @@ docker compose down && docker compose up -d --build
 
 | Problem | Solution |
 |---------|----------|
-| `redirect_uri_mismatch` | The redirect URI in Google Console must EXACTLY match `{FRONTEND_URL}/calendar/google/callback`. Check HTTP vs. HTTPS and port number. |
+| `redirect_uri_mismatch` | The redirect URI in Google Console must EXACTLY match the URI the backend sends. For Docker/localhost: `http://localhost/api/calendar/google/callback` (HTTP, not HTTPS!). For production: `https://your-domain.com/api/calendar/google/callback`. You can also set `GOOGLE_OAUTH_REDIRECT_URI` explicitly in `.env`. |
 | `access_denied` | Make sure your email is added as a test user (Step 3.7). |
 | `Google OAuth not available` | `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are not set in `.env`. |
-| Page not reachable after Google login | `FRONTEND_URL` doesn't match the actual app URL. For Docker: `https://localhost` |
+| Page not reachable after Google login | `FRONTEND_URL` doesn't match the actual app URL. For Docker: `https://localhost`. |
+| `invalid_grant` or token errors | The authorization code was already used or expired. Try disconnecting and reconnecting Google Calendar. |
 
 ---
 
