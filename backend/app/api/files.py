@@ -11,7 +11,7 @@ from app.models.file import FileReference
 from app.models.file import File as FileModel
 from app.models.user import User
 from app.schemas.file import FileReferenceOut
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, get_current_user_from_token_or_query
 from app.services.file_store import get_file_path, store_file
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -74,7 +74,7 @@ _INLINE_PREFIXES = ("image/", "video/", "audio/")
 async def inline_file(
     ref_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token_or_query),
 ):
     """Serve a file with its real MIME type so browsers can render it inline."""
     result = await get_file_path(db, ref_id)

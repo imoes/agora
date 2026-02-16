@@ -85,7 +85,8 @@ export class ApiService {
   }
 
   getFileInlineUrl(refId: string): string {
-    return `${this.baseUrl}/files/inline/${refId}`;
+    const token = localStorage.getItem('access_token') || '';
+    return `${this.baseUrl}/files/inline/${refId}?token=${encodeURIComponent(token)}`;
   }
 
   // Feed

@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -42,6 +43,45 @@ async def get_current_user(
     try:
         payload = jwt.decode(
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+async def get_current_user_from_token_or_query(
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+) -> User:
+    """Accept JWT from either ?token= query param or Authorization header.
+
+    Used for endpoints that must be accessible from <img>/<video> src attributes,
+    which cannot set HTTP headers.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid authentication credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    actual_token = token
+    if not actual_token and authorization:
+        if authorization.startswith("Bearer "):
+            actual_token = authorization[7:]
+    if not actual_token:
+        raise credentials_exception
+
+    try:
+        payload = jwt.decode(
+            actual_token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id = payload.get("sub")
         if user_id is None:
