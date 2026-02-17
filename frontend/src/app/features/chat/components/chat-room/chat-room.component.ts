@@ -7,6 +7,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { TextFieldModule } from '@angular/cdk/text-field';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -25,7 +26,7 @@ import Quill from 'quill';
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatIconModule, MatButtonModule,
-    MatFormFieldModule, MatInputModule, MatMenuModule, MatTooltipModule,
+    MatFormFieldModule, MatInputModule, TextFieldModule, MatMenuModule, MatTooltipModule,
     MatProgressSpinnerModule, MatDialogModule, MatSnackBarModule,
   ],
   template: `
@@ -354,11 +355,14 @@ import Quill from 'quill';
           <mat-icon>format_paint</mat-icon>
         </button>
         <mat-form-field appearance="outline" class="message-field">
-          <input matInput
+          <textarea matInput
+                 cdkTextareaAutosize
+                 cdkAutosizeMinRows="1"
+                 cdkAutosizeMaxRows="6"
                  [(ngModel)]="messageText"
                  (keydown)="onKeydown($event)"
                  (input)="onInput()"
-                 [placeholder]="pendingFile ? i18n.t('chat.caption_placeholder') : i18n.t('chat.input_placeholder')">
+                 [placeholder]="pendingFile ? i18n.t('chat.caption_placeholder') : i18n.t('chat.input_placeholder')"></textarea>
         </mat-form-field>
         <button mat-icon-button color="primary" (click)="sendMessage()" [disabled]="!messageText.trim() && !pendingFile">
           <mat-icon>send</mat-icon>
@@ -810,6 +814,10 @@ import Quill from 'quill';
     .message-field {
       flex: 1;
     }
+    .message-field textarea {
+      resize: none;
+      line-height: 1.4;
+    }
     .message-field ::ng-deep .mat-mdc-form-field-subscript-wrapper {
       display: none;
     }
@@ -818,24 +826,32 @@ import Quill from 'quill';
       border-top: 1px solid var(--border);
       background: white;
       padding: 0;
+      display: flex;
+      flex-direction: column;
     }
     .quill-editor-area {
       min-height: 120px;
       max-height: 300px;
       overflow-y: auto;
+      flex: 1;
     }
     :host ::ng-deep .rich-editor-container .ql-toolbar {
       border: none;
       border-bottom: 1px solid var(--border, #e0e0e0);
       padding: 6px 8px;
+      flex-shrink: 0;
     }
     :host ::ng-deep .rich-editor-container .ql-container {
       border: none;
       font-size: 14px;
       font-family: inherit;
+      height: auto;
+      min-height: 0;
     }
     :host ::ng-deep .rich-editor-container .ql-editor {
       min-height: 100px;
+      max-height: 250px;
+      overflow-y: auto;
       padding: 10px 14px;
     }
     :host ::ng-deep .rich-editor-container .ql-editor.ql-blank::before {
@@ -848,6 +864,7 @@ import Quill from 'quill';
       padding: 8px 12px;
       border-top: 1px solid var(--border, #e0e0e0);
       justify-content: flex-end;
+      flex-shrink: 0;
     }
     .rich-editor-actions button mat-icon {
       font-size: 18px;
@@ -1739,9 +1756,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         return;
       }
     }
-    if (event.key === 'Enter' && !this.showMentionPopup) {
+    if (event.key === 'Enter' && !event.shiftKey && !this.showMentionPopup) {
+      event.preventDefault();
       if (this.messageText.trim() || this.pendingFile) {
-        event.preventDefault();
         this.sendMessage();
       }
     }
@@ -1807,6 +1824,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     // Also handle non-escaped quotes
     safe = safe.replace(/@"([^"]+)"/g,
       '<span class="mention-highlight">$&</span>');
+    // Convert newlines to <br> for multi-line messages
+    safe = safe.replace(/\n/g, '<br>');
     return safe;
   }
 
