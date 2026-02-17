@@ -459,6 +459,7 @@ import { I18nService } from '@services/i18n.service';
       display: flex;
       flex-direction: column;
       gap: 8px;
+      align-items: center;
     }
     .loading {
       display: flex;
@@ -469,9 +470,10 @@ import { I18nService } from '@services/i18n.service';
       display: flex;
       gap: 8px;
       max-width: 70%;
+      width: 70%;
     }
     .message.own {
-      align-self: flex-end;
+      justify-content: flex-end;
       flex-direction: row-reverse;
     }
     :host ::ng-deep .highlight-msg {
@@ -484,6 +486,8 @@ import { I18nService } from '@services/i18n.service';
     .message-avatar-wrapper {
       position: relative;
       flex-shrink: 0;
+      width: 32px;
+      height: 32px;
     }
     .message-avatar {
       width: 32px;
@@ -1118,15 +1122,21 @@ import { I18nService } from '@services/i18n.service';
       }
       .messages-container {
         padding: 8px;
+        align-items: stretch;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      .message {
+        max-width: 90%;
+        width: auto;
+      }
+      .message.own {
+        align-self: flex-end;
       }
       .message-input-container {
         padding: 6px 8px;
         flex-shrink: 0;
-      }
-      .messages-container {
-        flex: 1;
-        min-height: 0;
-        overflow-y: auto;
       }
       .files-panel {
         width: 100%;
