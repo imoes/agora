@@ -110,6 +110,43 @@ import { AuthService } from '@core/services/auth.service';
         </div>
       </ng-template>
 
+      <!-- Chat Sidebar -->
+      <div class="chat-sidebar" *ngIf="showChatPanel">
+        <div class="chat-sidebar-header">
+          <mat-icon>chat</mat-icon>
+          <span>Chat</span>
+          <button mat-icon-button (click)="showChatPanel = false">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <div class="chat-sidebar-messages" #chatMessagesContainer>
+          <div *ngFor="let msg of chatMessages" class="chat-sidebar-msg"
+               [class.own]="msg.sender_id === currentUserId">
+            <div class="chat-sidebar-msg-header" *ngIf="msg.sender_id !== currentUserId">
+              <span class="chat-sidebar-sender">{{ msg.sender_name }}</span>
+              <span class="chat-sidebar-time">{{ formatChatTime(msg.created_at) }}</span>
+            </div>
+            <div class="chat-sidebar-msg-header" *ngIf="msg.sender_id === currentUserId">
+              <span class="chat-sidebar-time">{{ formatChatTime(msg.created_at) }}</span>
+            </div>
+            <div class="chat-sidebar-bubble" [class.own]="msg.sender_id === currentUserId">
+              {{ msg.content }}
+            </div>
+          </div>
+          <div *ngIf="chatMessages.length === 0" class="chat-sidebar-empty">
+            Noch keine Nachrichten
+          </div>
+        </div>
+        <div class="chat-sidebar-input">
+          <input type="text" [(ngModel)]="chatText"
+                 (keydown.enter)="sendChatMessage()"
+                 placeholder="Nachricht schreiben...">
+          <button mat-icon-button (click)="sendChatMessage()" [disabled]="!chatText.trim()">
+            <mat-icon>send</mat-icon>
+          </button>
+        </div>
+      </div>
+
       <!-- Invite Panel -->
       <div class="invite-panel" *ngIf="showInvitePanel">
         <div class="invite-panel-header">
@@ -198,6 +235,12 @@ import { AuthService } from '@core/services/auth.service';
                 (click)="toggleScreenShare()"
                 [matTooltip]="isScreenSharing ? 'Freigabe beenden' : 'Bildschirm freigeben'">
           <mat-icon>{{ isScreenSharing ? 'stop_screen_share' : 'screen_share' }}</mat-icon>
+        </button>
+        <button mat-fab (click)="toggleChatPanel()" matTooltip="Chat"
+                [color]="showChatPanel ? 'accent' : undefined"
+                class="chat-fab-btn">
+          <mat-icon>chat</mat-icon>
+          <span class="chat-badge" *ngIf="unreadChatCount > 0">{{ unreadChatCount > 99 ? '99+' : unreadChatCount }}</span>
         </button>
         <button mat-fab (click)="toggleInvitePanel()" matTooltip="Benutzer anrufen"
                 [color]="showInvitePanel ? 'accent' : undefined">
@@ -474,6 +517,138 @@ import { AuthService } from '@core/services/auth.service';
     .invite-member-item button.call-cancel { color: #ff5252; }
     .invite-member-item button[disabled] { color: #555; }
     .no-members { color: #888; text-align: center; padding: 16px; font-size: 13px; }
+    /* Chat sidebar */
+    .chat-sidebar {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 80px;
+      width: 340px;
+      background: #2d2d2d;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      border-left: 1px solid #444;
+    }
+    @media (max-width: 600px) {
+      .chat-sidebar {
+        width: 100%;
+      }
+    }
+    .chat-sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #3a3a3a;
+      color: white;
+      font-weight: 500;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .chat-sidebar-header mat-icon:first-child {
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
+    .chat-sidebar-header span { flex: 1; }
+    .chat-sidebar-header button { color: #aaa; }
+    .chat-sidebar-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chat-sidebar-msg {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .chat-sidebar-msg.own {
+      align-items: flex-end;
+    }
+    .chat-sidebar-msg-header {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+    .chat-sidebar-sender {
+      color: #aaa;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .chat-sidebar-time {
+      color: #666;
+      font-size: 10px;
+    }
+    .chat-sidebar-bubble {
+      background: #3d3d3d;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 12px 12px 12px 4px;
+      font-size: 13px;
+      max-width: 85%;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+    .chat-sidebar-bubble.own {
+      background: #6264a7;
+      border-radius: 12px 12px 4px 12px;
+    }
+    .chat-sidebar-empty {
+      color: #666;
+      text-align: center;
+      padding: 32px 16px;
+      font-size: 13px;
+    }
+    .chat-sidebar-input {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 12px;
+      border-top: 1px solid #444;
+      background: #333;
+      flex-shrink: 0;
+    }
+    .chat-sidebar-input input {
+      flex: 1;
+      background: #3d3d3d;
+      border: 1px solid #555;
+      border-radius: 20px;
+      padding: 8px 14px;
+      color: white;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+    }
+    .chat-sidebar-input input::placeholder { color: #888; }
+    .chat-sidebar-input input:focus { border-color: #6264a7; }
+    .chat-sidebar-input button { color: #6264a7; }
+    .chat-sidebar-input button[disabled] { color: #555; }
+    /* Chat badge */
+    .chat-fab-btn {
+      position: relative;
+    }
+    .chat-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      min-width: 20px;
+      height: 20px;
+      background: #c4314b;
+      color: white;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+      line-height: 1;
+    }
     .video-controls {
       display: flex;
       justify-content: center;
@@ -488,6 +663,8 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('localVideo') localVideo!: ElementRef<HTMLVideoElement>;
   @ViewChild('screenVideo') screenVideo!: ElementRef<HTMLVideoElement>;
 
+  @ViewChild('chatMessagesContainer') chatMessagesContainer?: ElementRef<HTMLElement>;
+
   channelId = '';
   audioOnly = false;
   participants = new Map<string, Participant>();
@@ -498,6 +675,13 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   presenter: { userId: string; displayName: string } | null = null;
   mediaError: string | null = null;
   showInvitePanel = false;
+
+  // Chat sidebar
+  showChatPanel = false;
+  chatMessages: any[] = [];
+  chatText = '';
+  unreadChatCount = 0;
+  private chatWsSubscription?: Subscription;
   channelMembers: any[] = [];
   callableMembers: any[] = [];
   invitedUserIds = new Set<string>();
@@ -505,7 +689,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   searchResults: any[] = [];
   searchLoading = false;
   private searchSubject = new Subject<string>();
-  private currentUserId = '';
+  currentUserId = '';
   private subscriptions: Subscription[] = [];
   private pendingStreamAttach = false;
 
@@ -624,6 +808,9 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.mediaError = error;
       })
     );
+
+    // Connect to channel WebSocket for chat messages
+    this.connectChatWs();
   }
 
   ngAfterViewChecked(): void {
@@ -663,6 +850,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
+    this.chatWsSubscription?.unsubscribe();
     this.webrtcService.endCall();
     this.apiService.leaveVideoRoom(this.channelId).subscribe();
   }
@@ -739,6 +927,68 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.invitedUserIds.delete(user.id);
     this.snackBar.open('Anruf abgebrochen', 'OK', { duration: 2000 });
   }
+
+  // --- Chat sidebar ---
+
+  toggleChatPanel(): void {
+    this.showChatPanel = !this.showChatPanel;
+    if (this.showChatPanel) {
+      this.unreadChatCount = 0;
+      this.showInvitePanel = false;
+      if (this.chatMessages.length === 0) {
+        this.loadChatMessages();
+      }
+      this.scrollChatToBottom();
+    }
+  }
+
+  private loadChatMessages(): void {
+    this.apiService.getMessages(this.channelId, 50).subscribe((msgs) => {
+      this.chatMessages = msgs.reverse();
+      this.scrollChatToBottom();
+    });
+  }
+
+  private connectChatWs(): void {
+    this.chatWsSubscription = this.wsService.connect(this.channelId).subscribe((msg) => {
+      if (msg.type === 'new_message') {
+        this.chatMessages.push(msg.message);
+        if (this.showChatPanel) {
+          this.scrollChatToBottom();
+        } else {
+          this.unreadChatCount++;
+        }
+      }
+    });
+  }
+
+  sendChatMessage(): void {
+    const text = this.chatText.trim();
+    if (!text) return;
+    this.chatText = '';
+    this.wsService.send(this.channelId, {
+      type: 'message',
+      content: text,
+      message_type: 'text',
+    });
+  }
+
+  private scrollChatToBottom(): void {
+    setTimeout(() => {
+      const el = this.chatMessagesContainer?.nativeElement;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }, 50);
+  }
+
+  formatChatTime(dateStr: string): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // --- End call ---
 
   endCall(): void {
     this.webrtcService.endCall();

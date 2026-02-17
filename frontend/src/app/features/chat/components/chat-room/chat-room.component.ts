@@ -1641,66 +1641,79 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   connectWebSocket(): void {
-    this.wsSubscription = this.wsService.connect(this.channelId).subscribe((msg) => {
-      switch (msg.type) {
-        case 'new_message':
-          this.messages.push(msg.message);
-          this.fetchLinkPreviews([msg.message]);
-          this.shouldScroll = true;
-          this.typingUsers = this.typingUsers.filter((u) => u !== msg.message.sender_name);
-          // Clear the divider since user is actively viewing
-          this.firstUnreadMessageId = null;
-          this.lastReadMessageId = msg.message.id;
-          break;
-        case 'typing':
-          if (!this.typingUsers.includes(msg.display_name)) {
-            this.typingUsers.push(msg.display_name);
-            setTimeout(() => {
-              this.typingUsers = this.typingUsers.filter((u) => u !== msg.display_name);
-            }, 3000);
+    const channelId = this.channelId;
+    this.wsSubscription = this.wsService.connect(channelId).subscribe({
+      next: (msg) => {
+        switch (msg.type) {
+          case 'new_message':
+            this.messages.push(msg.message);
+            this.fetchLinkPreviews([msg.message]);
+            this.shouldScroll = true;
+            this.typingUsers = this.typingUsers.filter((u) => u !== msg.message.sender_name);
+            // Clear the divider since user is actively viewing
+            this.firstUnreadMessageId = null;
+            this.lastReadMessageId = msg.message.id;
+            break;
+          case 'typing':
+            if (!this.typingUsers.includes(msg.display_name)) {
+              this.typingUsers.push(msg.display_name);
+              setTimeout(() => {
+                this.typingUsers = this.typingUsers.filter((u) => u !== msg.display_name);
+              }, 3000);
+            }
+            break;
+          case 'reaction_update':
+            this.handleReactionUpdate(msg);
+            break;
+          case 'member_added':
+            if (this.channel) {
+              this.channel.member_count = msg.member_count;
+              if (msg.channel_name) {
+                this.channel.name = msg.channel_name;
+              }
+            }
+            this.loadChannelMembers();
+            break;
+          case 'member_left':
+            if (this.channel) {
+              this.channel.member_count = msg.member_count;
+              if (msg.channel_name) {
+                this.channel.name = msg.channel_name;
+              }
+            }
+            this.loadChannelMembers();
+            break;
+          case 'message_edited': {
+            const edited = this.messages.find((m) => m.id === msg.message_id);
+            if (edited) {
+              edited.content = msg.content;
+              edited.edited_at = msg.edited_at;
+            }
+            break;
           }
-          break;
-        case 'reaction_update':
-          this.handleReactionUpdate(msg);
-          break;
-        case 'member_added':
-          if (this.channel) {
-            this.channel.member_count = msg.member_count;
-            if (msg.channel_name) {
+          case 'message_deleted':
+            this.messages = this.messages.filter((m) => m.id !== msg.message_id);
+            break;
+          case 'channel_renamed':
+            if (this.channel && msg.channel_name) {
               this.channel.name = msg.channel_name;
             }
-          }
-          this.loadChannelMembers();
-          break;
-        case 'member_left':
-          if (this.channel) {
-            this.channel.member_count = msg.member_count;
-            if (msg.channel_name) {
-              this.channel.name = msg.channel_name;
-            }
-          }
-          this.loadChannelMembers();
-          break;
-        case 'message_edited': {
-          const edited = this.messages.find((m) => m.id === msg.message_id);
-          if (edited) {
-            edited.content = msg.content;
-            edited.edited_at = msg.edited_at;
-          }
-          break;
+            break;
+          case 'user_joined':
+          case 'user_left':
+            break;
         }
-        case 'message_deleted':
-          this.messages = this.messages.filter((m) => m.id !== msg.message_id);
-          break;
-        case 'channel_renamed':
-          if (this.channel && msg.channel_name) {
-            this.channel.name = msg.channel_name;
-          }
-          break;
-        case 'user_joined':
-        case 'user_left':
-          break;
-      }
+      },
+      complete: () => {
+        // WebSocket closed – reconnect after 2s if still on this channel
+        if (this.channelId === channelId) {
+          setTimeout(() => {
+            if (this.channelId === channelId) {
+              this.connectWebSocket();
+            }
+          }, 2000);
+        }
+      },
     });
   }
 
@@ -1723,13 +1736,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (text) {
         content += `\ncaption:${text}`;
       }
-      this.wsService.send(this.channelId, {
-        type: 'message',
-        content,
-        message_type: 'file',
-        file_reference_id: this.pendingFile.ref.id,
-        ...replyPayload,
-      });
+      this.sendViaWsOrApi(content, 'file', this.pendingFile.ref.id, replyPayload);
       this.loadFiles();
       this.pendingFile = null;
       this.messageText = '';
@@ -1739,14 +1746,37 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     // Normal text message
     if (!text) return;
-    this.wsService.send(this.channelId, {
-      type: 'message',
-      content: text,
-      message_type: 'text',
-      ...replyPayload,
-    });
+    this.sendViaWsOrApi(text, 'text', undefined, replyPayload);
     this.messageText = '';
     this.replyTo = null;
+  }
+
+  /** Send a chat message via WebSocket; fall back to HTTP API if WS is not connected. */
+  private sendViaWsOrApi(content: string, messageType: string, fileRefId?: string, replyPayload: any = {}): void {
+    const wsPayload: any = { type: 'message', content, message_type: messageType, ...replyPayload };
+    if (fileRefId) wsPayload.file_reference_id = fileRefId;
+
+    if (this.wsService.isConnected(this.channelId)) {
+      this.wsService.send(this.channelId, wsPayload);
+    } else {
+      // Fallback: send via HTTP API (server broadcasts via WebSocket to channel)
+      const apiPayload: any = { content, message_type: messageType, ...replyPayload };
+      if (fileRefId) apiPayload.file_reference_id = fileRefId;
+      this.apiService.sendMessage(this.channelId, apiPayload).subscribe({
+        next: (msg) => {
+          // Add to local messages if not already received via WS
+          if (msg && !this.messages.some(m => m.id === msg.id)) {
+            msg.sender_name = this.currentUser?.display_name;
+            msg.sender_id = this.currentUser?.id;
+            this.messages.push(msg);
+            this.shouldScroll = true;
+          }
+        },
+        error: () => {},
+      });
+      // Try to reconnect the WebSocket
+      this.connectWebSocket();
+    }
   }
 
   toggleInputEmojis(event?: MouseEvent): void {
