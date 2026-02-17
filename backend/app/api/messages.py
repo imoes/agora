@@ -157,6 +157,15 @@ async def create_message(
                 target_user_id=uid,
             )
 
+    # Broadcast via WebSocket so all channel members see the message in real-time
+    msg["sender_name"] = current_user.display_name
+    msg["sender_avatar_path"] = current_user.avatar_path
+    msg["sender_status"] = current_user.status or "offline"
+    await manager.send_to_channel(
+        str(channel_id),
+        {"type": "new_message", "message": msg},
+    )
+
     return MessageOut(
         id=msg["id"],
         sender_id=msg["sender_id"],

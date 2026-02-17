@@ -75,6 +75,12 @@ export class WebSocketService {
     return this.openPromises.get(channelId) || Promise.resolve();
   }
 
+  /** Returns true if the WebSocket for channelId is open and ready to send. */
+  isConnected(channelId: string): boolean {
+    const ws = this.sockets.get(channelId);
+    return !!ws && ws.readyState === WebSocket.OPEN;
+  }
+
   send(channelId: string, data: any): void {
     const ws = this.sockets.get(channelId);
     if (!ws) return;
