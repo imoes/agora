@@ -316,7 +316,7 @@ import { I18nService } from '@services/i18n.service';
           <mat-icon *ngIf="pendingFile.isVideo">videocam</mat-icon>
           <span class="pending-filename">{{ pendingFile.ref.original_filename }}</span>
         </div>
-        <button mat-icon-button (click)="cancelPendingFile()" [matTooltip]="i18n.t('common.cancel')"
+        <button mat-icon-button (click)="cancelPendingFile()" [matTooltip]="i18n.t('common.cancel')">
           <mat-icon>close</mat-icon>
         </button>
       </div>
