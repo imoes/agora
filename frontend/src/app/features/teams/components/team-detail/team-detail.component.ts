@@ -99,8 +99,12 @@ export class CreateChannelDialogComponent {
               <div *ngIf="showSearchResults && memberSearchQuery && memberSearchQuery.length >= 2" class="search-results">
               <div *ngIf="memberSearchLoading" class="search-hint">Suche...</div>
               <div *ngFor="let u of memberSearchResults" class="search-result-item">
-                <div class="member-avatar">
-                  {{ u.display_name?.charAt(0)?.toUpperCase() }}
+                <div class="member-avatar-wrapper">
+                  <div class="member-avatar">
+                    <img *ngIf="u.avatar_path" [src]="getAvatarUrl(u.avatar_path)" class="member-avatar-img" alt="">
+                    <span *ngIf="!u.avatar_path">{{ u.display_name?.charAt(0)?.toUpperCase() }}</span>
+                  </div>
+                  <span class="member-status-dot" [ngClass]="u.status || 'offline'"></span>
                 </div>
                 <div class="search-result-info">
                   <span class="search-result-name">{{ u.display_name }}</span>
@@ -118,8 +122,12 @@ export class CreateChannelDialogComponent {
             </div>
             <mat-list>
               <mat-list-item *ngFor="let m of members">
-                <div matListItemAvatar class="member-avatar">
-                  {{ m.user?.display_name?.charAt(0)?.toUpperCase() }}
+                <div matListItemAvatar class="member-avatar-wrapper">
+                  <div class="member-avatar">
+                    <img *ngIf="m.user?.avatar_path" [src]="getAvatarUrl(m.user.avatar_path)" class="member-avatar-img" alt="">
+                    <span *ngIf="!m.user?.avatar_path">{{ m.user?.display_name?.charAt(0)?.toUpperCase() }}</span>
+                  </div>
+                  <span class="member-status-dot" [ngClass]="m.user?.status || 'offline'"></span>
                 </div>
                 <div matListItemTitle>{{ m.user?.display_name }}</div>
                 <div matListItemLine>{{ m.role }} &middot; {{ m.user?.email }}</div>
@@ -212,6 +220,12 @@ export class CreateChannelDialogComponent {
       padding: 2px 8px;
       font-size: 12px;
     }
+    .member-avatar-wrapper {
+      position: relative;
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+    }
     .member-avatar {
       width: 36px;
       height: 36px;
@@ -222,7 +236,27 @@ export class CreateChannelDialogComponent {
       align-items: center;
       justify-content: center;
       font-weight: 500;
+      overflow: hidden;
     }
+    .member-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .member-status-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    .member-status-dot.online { background: var(--online, #92c353); }
+    .member-status-dot.busy { background: var(--busy, #c4314b); }
+    .member-status-dot.away { background: var(--away, #fcba04); }
+    .member-status-dot.dnd { background: var(--busy, #c4314b); }
+    .member-status-dot.offline { background: var(--offline, #93938f); }
     .member-search {
       display: flex;
       align-items: center;
@@ -523,6 +557,10 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  getAvatarUrl(avatarPath: string | null): string | null {
+    return this.apiService.getAvatarUrl(avatarPath);
   }
 
   formatDate(dateStr: string): string {
