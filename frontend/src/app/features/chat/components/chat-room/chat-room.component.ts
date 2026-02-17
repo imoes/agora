@@ -217,7 +217,7 @@ import Quill from 'quill';
               <div class="reactions-row" *ngIf="msg.reactions && msg.reactions.length > 0">
                 <span *ngFor="let r of getGroupedReactions(msg)"
                       class="reaction-badge" [class.own]="r.hasOwn"
-                      [matTooltip]="r.names"
+                      [matTooltip]="r.names" matTooltipPosition="above" [matTooltipDisabled]="!r.names"
                       (click)="toggleReaction(msg, r.emoji)">
                   {{ r.emoji }}<span class="reaction-count">{{ r.count }}</span>
                 </span>
@@ -345,6 +345,18 @@ import Quill from 'quill';
           <button mat-button (click)="closeRichEditor()">{{ i18n.t('common.cancel') }}</button>
         </div>
       </div>
+      <!-- Emoji picker for message input -->
+      <div class="input-emoji-picker" *ngIf="showInputEmojis">
+        <div class="input-emoji-tabs">
+          <span *ngFor="let cat of EMOJI_CATEGORIES; let i = index"
+                class="input-emoji-tab" [class.active]="inputEmojiTab === i"
+                (click)="inputEmojiTab = i">{{ cat.emojis[0] }}</span>
+        </div>
+        <div class="input-emoji-grid">
+          <span *ngFor="let e of EMOJI_CATEGORIES[inputEmojiTab].emojis"
+                class="input-emoji-item" (click)="insertEmoji(e)">{{ e }}</span>
+        </div>
+      </div>
       <!-- Normal message input -->
       <div class="message-input-container" *ngIf="!showRichEditor">
         <button mat-icon-button (click)="fileInput.click()" [matTooltip]="i18n.t('chat.upload_file')">
@@ -364,6 +376,9 @@ import Quill from 'quill';
                  (input)="onInput()"
                  [placeholder]="pendingFile ? i18n.t('chat.caption_placeholder') : i18n.t('chat.input_placeholder')"></textarea>
         </mat-form-field>
+        <button mat-icon-button (click)="toggleInputEmojis()" [matTooltip]="i18n.t('chat.emoji')">
+          <mat-icon>sentiment_satisfied_alt</mat-icon>
+        </button>
         <button mat-icon-button color="primary" (click)="sendMessage()" [disabled]="!messageText.trim() && !pendingFile">
           <mat-icon>send</mat-icon>
         </button>
@@ -820,6 +835,61 @@ import Quill from 'quill';
     }
     .message-field ::ng-deep .mat-mdc-form-field-subscript-wrapper {
       display: none;
+    }
+    /* Input emoji picker */
+    .input-emoji-picker {
+      position: absolute;
+      bottom: 56px;
+      right: 12px;
+      width: 320px;
+      max-height: 320px;
+      background: white;
+      border: 1px solid var(--border, #e0e0e0);
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .input-emoji-tabs {
+      display: flex;
+      gap: 2px;
+      padding: 6px 8px;
+      border-bottom: 1px solid #f0f0f0;
+      overflow-x: auto;
+    }
+    .input-emoji-tab {
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      opacity: 0.5;
+      transition: opacity 0.15s;
+    }
+    .input-emoji-tab:hover { opacity: 0.8; }
+    .input-emoji-tab.active {
+      opacity: 1;
+      background: #f0f0f0;
+    }
+    .input-emoji-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      padding: 8px;
+      overflow-y: auto;
+      max-height: 240px;
+    }
+    .input-emoji-item {
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      transition: background 0.1s;
+      line-height: 1;
+    }
+    .input-emoji-item:hover {
+      background: #f0f0f0;
     }
     /* Rich text editor */
     .rich-editor-container {
@@ -1378,6 +1448,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private shouldScrollToDivider = false;
   @ViewChild('newMessagesDivider') private newMessagesDivider?: ElementRef;
 
+  // Input emoji picker state
+  showInputEmojis = false;
+  inputEmojiTab = 0;
+
   // Rich text editor state
   showRichEditor = false;
   private quillEditor: any = null;
@@ -1457,10 +1531,15 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
     if (this.emojiPickerMsg) {
-      const target = event.target as HTMLElement;
       if (!target.closest('.msg-context-menu')) {
         this.closeEmojiPicker();
+      }
+    }
+    if (this.showInputEmojis) {
+      if (!target.closest('.input-emoji-picker') && !target.closest('button[mattooltip]')) {
+        this.showInputEmojis = false;
       }
     }
   }
@@ -1628,6 +1707,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   sendMessage(): void {
     const text = this.messageText.trim();
     this.showMentionPopup = false;
+    this.showInputEmojis = false;
 
     // Build reply payload
     const replyPayload: any = {};
@@ -1667,6 +1747,15 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
     this.messageText = '';
     this.replyTo = null;
+  }
+
+  toggleInputEmojis(): void {
+    this.showInputEmojis = !this.showInputEmojis;
+  }
+
+  insertEmoji(emoji: string): void {
+    this.messageText += emoji;
+    this.showInputEmojis = false;
   }
 
   openRichEditor(): void {
@@ -1903,7 +1992,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     // Optimistically add reaction
     if (!msg.reactions) msg.reactions = [];
     const existing = msg.reactions.find(
-      (r: any) => r.emoji === emoji && r.user_id === this.currentUser?.id
+      (r: any) => r.emoji === emoji && String(r.user_id) === String(this.currentUser?.id)
     );
     if (existing) {
       // Already reacted - remove instead
@@ -1924,7 +2013,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private removeReaction(msg: any, emoji: string): void {
     if (!msg.reactions) return;
     msg.reactions = msg.reactions.filter(
-      (r: any) => !(r.emoji === emoji && r.user_id === this.currentUser?.id)
+      (r: any) => !(r.emoji === emoji && String(r.user_id) === String(this.currentUser?.id))
     );
 
     this.wsService.send(this.channelId, {
@@ -1937,7 +2026,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   toggleReaction(msg: any, emoji: string): void {
     const hasOwn = (msg.reactions || []).some(
-      (r: any) => r.emoji === emoji && r.user_id === this.currentUser?.id
+      (r: any) => r.emoji === emoji && String(r.user_id) === String(this.currentUser?.id)
     );
     if (hasOwn) {
       this.removeReaction(msg, emoji);
@@ -1957,7 +2046,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (r.display_name) {
         groups[r.emoji].names.push(r.display_name);
       }
-      if (r.user_id === this.currentUser?.id) {
+      if (String(r.user_id) === String(this.currentUser?.id)) {
         groups[r.emoji].hasOwn = true;
       }
     }
