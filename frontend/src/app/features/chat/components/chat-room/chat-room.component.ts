@@ -1,6 +1,7 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, HostListener, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -17,6 +18,7 @@ import { WebSocketService } from '@services/websocket.service';
 import { AuthService, User } from '@core/services/auth.service';
 import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component';
 import { I18nService } from '@services/i18n.service';
+import Quill from 'quill';
 
 @Component({
   selector: 'app-chat-room',
@@ -181,7 +183,8 @@ import { I18nService } from '@services/i18n.service';
                   </div>
                 </ng-container>
                 <ng-container *ngIf="msg.message_type !== 'file'">
-                  <span *ngIf="editingMessageId !== msg.id" [innerHTML]="highlightMentions(msg.content)"></span>
+                  <div *ngIf="editingMessageId !== msg.id && msg.message_type === 'rich'" class="rich-content ql-editor" [innerHTML]="sanitizeHtml(msg.content)"></div>
+                  <span *ngIf="editingMessageId !== msg.id && msg.message_type !== 'rich'" [innerHTML]="highlightMentions(msg.content)"></span>
                   <div *ngIf="editingMessageId === msg.id" class="inline-edit" (click)="$event.stopPropagation()">
                     <input class="inline-edit-input" [(ngModel)]="editMessageValue"
                            (keydown.enter)="saveEditMessage()"
@@ -331,11 +334,25 @@ import { I18nService } from '@services/i18n.service';
           <mat-icon>close</mat-icon>
         </button>
       </div>
-      <div class="message-input-container">
+      <!-- Rich text editor -->
+      <div *ngIf="showRichEditor" class="rich-editor-container">
+        <div #quillContainer class="quill-editor-area"></div>
+        <div class="rich-editor-actions">
+          <button mat-raised-button color="primary" (click)="sendRichMessage()">
+            <mat-icon>send</mat-icon> {{ i18n.t('chat.send_formatted') }}
+          </button>
+          <button mat-button (click)="closeRichEditor()">{{ i18n.t('common.cancel') }}</button>
+        </div>
+      </div>
+      <!-- Normal message input -->
+      <div class="message-input-container" *ngIf="!showRichEditor">
         <button mat-icon-button (click)="fileInput.click()" [matTooltip]="i18n.t('chat.upload_file')">
           <mat-icon>attach_file</mat-icon>
         </button>
         <input type="file" #fileInput hidden (change)="onFileSelected($event)">
+        <button mat-icon-button (click)="openRichEditor()" [matTooltip]="i18n.t('chat.format_message')">
+          <mat-icon>format_paint</mat-icon>
+        </button>
         <mat-form-field appearance="outline" class="message-field">
           <input matInput
                  [(ngModel)]="messageText"
@@ -795,6 +812,84 @@ import { I18nService } from '@services/i18n.service';
     }
     .message-field ::ng-deep .mat-mdc-form-field-subscript-wrapper {
       display: none;
+    }
+    /* Rich text editor */
+    .rich-editor-container {
+      border-top: 1px solid var(--border);
+      background: white;
+      padding: 0;
+    }
+    .quill-editor-area {
+      min-height: 120px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    :host ::ng-deep .rich-editor-container .ql-toolbar {
+      border: none;
+      border-bottom: 1px solid var(--border, #e0e0e0);
+      padding: 6px 8px;
+    }
+    :host ::ng-deep .rich-editor-container .ql-container {
+      border: none;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    :host ::ng-deep .rich-editor-container .ql-editor {
+      min-height: 100px;
+      padding: 10px 14px;
+    }
+    :host ::ng-deep .rich-editor-container .ql-editor.ql-blank::before {
+      color: #999;
+      font-style: normal;
+    }
+    .rich-editor-actions {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border, #e0e0e0);
+      justify-content: flex-end;
+    }
+    .rich-editor-actions button mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      margin-right: 4px;
+    }
+    /* Rich content in messages */
+    .rich-content {
+      padding: 0 !important;
+    }
+    .rich-content p {
+      margin: 0 0 4px;
+    }
+    .rich-content p:last-child {
+      margin-bottom: 0;
+    }
+    .rich-content h1, .rich-content h2, .rich-content h3 {
+      margin: 4px 0;
+      font-size: 1.1em;
+    }
+    .rich-content h1 { font-size: 1.3em; }
+    .rich-content h2 { font-size: 1.2em; }
+    .rich-content blockquote {
+      border-left: 3px solid var(--primary, #6264a7);
+      margin: 4px 0;
+      padding: 2px 10px;
+      color: var(--text-secondary);
+    }
+    .rich-content pre.ql-syntax {
+      background: #f4f4f4;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      overflow-x: auto;
+    }
+    .rich-content a {
+      color: var(--primary, #6264a7);
+    }
+    .rich-content ul, .rich-content ol {
+      padding-left: 20px;
+      margin: 4px 0;
     }
     /* Mention popup */
     .mention-popup {
@@ -1266,6 +1361,11 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private shouldScrollToDivider = false;
   @ViewChild('newMessagesDivider') private newMessagesDivider?: ElementRef;
 
+  // Rich text editor state
+  showRichEditor = false;
+  private quillEditor: any = null;
+  @ViewChild('quillContainer') quillContainer?: ElementRef;
+
   // Link preview cache: message id -> preview data
   linkPreviews: Map<string, { url: string; title: string; description: string; image: string; site_name: string }> = new Map();
   private linkPreviewRequested = new Set<string>();
@@ -1293,6 +1393,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     private dialog: MatDialog,
     private snackBar: MatSnackBar,
     public i18n: I18nService,
+    private sanitizer: DomSanitizer,
+    private ngZone: NgZone,
   ) {}
 
   ngOnInit(): void {
@@ -1548,6 +1650,71 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
     this.messageText = '';
     this.replyTo = null;
+  }
+
+  openRichEditor(): void {
+    this.showRichEditor = true;
+    // Initialize Quill after the DOM element is rendered
+    setTimeout(() => {
+      if (this.quillContainer?.nativeElement && !this.quillEditor) {
+        this.ngZone.runOutsideAngular(() => {
+          this.quillEditor = new Quill(this.quillContainer!.nativeElement, {
+            theme: 'snow',
+            placeholder: this.i18n.t('chat.rich_placeholder'),
+            modules: {
+              toolbar: [
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ 'header': [1, 2, 3, false] }],
+                [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                ['blockquote', 'code-block'],
+                ['link'],
+                ['clean'],
+              ],
+            },
+          });
+        });
+      }
+      this.quillEditor?.focus();
+    }, 50);
+  }
+
+  closeRichEditor(): void {
+    this.showRichEditor = false;
+    if (this.quillEditor) {
+      this.quillEditor = null;
+    }
+  }
+
+  sendRichMessage(): void {
+    if (!this.quillEditor) return;
+    const html = this.quillEditor.root.innerHTML;
+    // Quill uses <p><br></p> for empty content
+    if (!html || html === '<p><br></p>' || html === '<p></p>') return;
+
+    const replyPayload: any = {};
+    if (this.replyTo) {
+      replyPayload.reply_to_id = this.replyTo.id;
+      replyPayload.reply_to_content = (this.replyTo.content || '').substring(0, 150);
+      replyPayload.reply_to_sender = this.replyTo.sender_name || '';
+    }
+
+    this.wsService.send(this.channelId, {
+      type: 'message',
+      content: html,
+      message_type: 'rich',
+      ...replyPayload,
+    });
+    this.replyTo = null;
+    this.closeRichEditor();
+  }
+
+  sanitizeHtml(html: string): SafeHtml {
+    if (!html) return '';
+    // Basic sanitization: strip script tags and event handlers
+    let clean = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    clean = clean.replace(/\son\w+\s*=\s*"[^"]*"/gi, '');
+    clean = clean.replace(/\son\w+\s*=\s*'[^']*'/gi, '');
+    return this.sanitizer.bypassSecurityTrustHtml(clean);
   }
 
   onKeydown(event: KeyboardEvent): void {
