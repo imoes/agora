@@ -10,69 +10,68 @@ Usage:
     python create_admin.py --username admin --email admin@agora.local --name "Administrator" --password MySecret123!
 
     # Custom database URL:
-    python create_admin.py --username admin --email admin@agora.local --name "Admin" --password secret \\
+    python create_admin.py --username admin --email admin@agora.local --name "Admin" --password secret \
         --db-url postgresql://agora:agora_secret@localhost:5432/agora
 
     # Inside Docker:
-    docker compose exec backend python scripts/create_admin.py \\
+    docker compose exec backend python scripts/create_admin.py \
         --username admin --email admin@agora.local --name "Administrator" --password MySecret123!
 """
 import argparse
+import asyncio
 import getpass
 import sys
 
+import asyncpg
 import bcrypt
-import psycopg2
 
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
-def create_admin(db_url: str, username: str, email: str, display_name: str, password: str) -> None:
-    # Convert async URL to sync psycopg2 URL
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+async def create_admin(db_url: str, username: str, email: str, display_name: str, password: str) -> None:
+    # Convert SQLAlchemy URL to plain PostgreSQL URL for asyncpg
+    dsn = db_url.replace("postgresql+asyncpg://", "postgresql://")
 
-    conn = psycopg2.connect(sync_url)
+    conn = await asyncpg.connect(dsn)
     try:
-        cur = conn.cursor()
-
         # Check if user already exists
-        cur.execute(
-            "SELECT id, is_admin FROM users WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)",
-            (username, email),
+        row = await conn.fetchrow(
+            "SELECT id, is_admin FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2)",
+            username,
+            email,
         )
-        existing = cur.fetchone()
 
-        if existing:
-            user_id, is_admin = existing
+        if row:
+            user_id, is_admin = row["id"], row["is_admin"]
             if is_admin:
                 print(f"User '{username}' already exists and is already an admin.")
             else:
-                cur.execute("UPDATE users SET is_admin = true WHERE id = %s", (user_id,))
-                conn.commit()
+                await conn.execute("UPDATE users SET is_admin = true WHERE id = $1", user_id)
                 print(f"User '{username}' already exists. Promoted to admin.")
             return
 
         # Create new admin user
         pw_hash = hash_password(password)
-        cur.execute(
+        new_id = await conn.fetchval(
             """
             INSERT INTO users (id, username, email, password_hash, display_name, is_admin, status, auth_source, language, created_at, updated_at)
-            VALUES (gen_random_uuid(), %s, %s, %s, %s, true, 'offline', 'local', 'en', NOW(), NOW())
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, true, 'offline', 'local', 'en', NOW(), NOW())
             RETURNING id
             """,
-            (username, email, pw_hash, display_name),
+            username,
+            email,
+            pw_hash,
+            display_name,
         )
-        new_id = cur.fetchone()[0]
-        conn.commit()
-        print(f"Admin user created successfully!")
+        print("Admin user created successfully!")
         print(f"  Username:     {username}")
         print(f"  Email:        {email}")
         print(f"  Display Name: {display_name}")
         print(f"  ID:           {new_id}")
     finally:
-        conn.close()
+        await conn.close()
 
 
 def main():
@@ -100,7 +99,7 @@ def main():
         print("ERROR: Password must be at least 4 characters.", file=sys.stderr)
         sys.exit(1)
 
-    create_admin(args.db_url, args.username, args.email, args.name, password)
+    asyncio.run(create_admin(args.db_url, args.username, args.email, args.name, password))
 
 
 if __name__ == "__main__":
