@@ -215,7 +215,7 @@ import Quill from 'quill';
               </div>
               <!-- Reactions display -->
               <div class="reactions-row" *ngIf="msg.reactions && msg.reactions.length > 0">
-                <span *ngFor="let r of getGroupedReactions(msg)"
+                <span *ngFor="let r of getGroupedReactions(msg); trackBy: trackByEmoji"
                       class="reaction-badge" [class.own]="r.hasOwn"
                       [matTooltip]="r.names" matTooltipPosition="above" [matTooltipDisabled]="!r.names"
                       (click)="toggleReaction(msg, r.emoji)">
@@ -376,7 +376,7 @@ import Quill from 'quill';
                  (input)="onInput()"
                  [placeholder]="pendingFile ? i18n.t('chat.caption_placeholder') : i18n.t('chat.input_placeholder')"></textarea>
         </mat-form-field>
-        <button mat-icon-button (click)="toggleInputEmojis()" [matTooltip]="i18n.t('chat.emoji')">
+        <button mat-icon-button class="emoji-toggle-btn" (click)="toggleInputEmojis($event)" [matTooltip]="i18n.t('chat.emoji')">
           <mat-icon>sentiment_satisfied_alt</mat-icon>
         </button>
         <button mat-icon-button color="primary" (click)="sendMessage()" [disabled]="!messageText.trim() && !pendingFile">
@@ -1538,7 +1538,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       }
     }
     if (this.showInputEmojis) {
-      if (!target.closest('.input-emoji-picker') && !target.closest('button[mattooltip]')) {
+      if (!target.closest('.input-emoji-picker') && !target.closest('.emoji-toggle-btn')) {
         this.showInputEmojis = false;
       }
     }
@@ -1749,7 +1749,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.replyTo = null;
   }
 
-  toggleInputEmojis(): void {
+  toggleInputEmojis(event?: MouseEvent): void {
+    event?.stopPropagation();
     this.showInputEmojis = !this.showInputEmojis;
   }
 
@@ -1991,42 +1992,36 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private addReaction(msg: any, emoji: string): void {
     // Optimistically add reaction
     if (!msg.reactions) msg.reactions = [];
+    const userId = String(this.currentUser?.id || '');
     const existing = msg.reactions.find(
-      (r: any) => r.emoji === emoji && String(r.user_id) === String(this.currentUser?.id)
+      (r: any) => r.emoji === emoji && String(r.user_id) === userId
     );
     if (existing) {
       // Already reacted - remove instead
       this.removeReaction(msg, emoji);
       return;
     }
-    msg.reactions.push({ emoji, user_id: this.currentUser?.id, display_name: this.currentUser?.display_name || '', message_id: msg.id });
+    msg.reactions.push({ emoji, user_id: userId, display_name: this.currentUser?.display_name || '', message_id: msg.id });
 
-    // Send via WebSocket for real-time broadcast
-    this.wsService.send(this.channelId, {
-      type: 'reaction',
-      message_id: msg.id,
-      emoji,
-      action: 'add',
-    });
+    // Send via HTTP API (server broadcasts via WebSocket to other clients)
+    this.apiService.addReaction(this.channelId, msg.id, emoji).subscribe();
   }
 
   private removeReaction(msg: any, emoji: string): void {
     if (!msg.reactions) return;
+    const userId = String(this.currentUser?.id || '');
     msg.reactions = msg.reactions.filter(
-      (r: any) => !(r.emoji === emoji && String(r.user_id) === String(this.currentUser?.id))
+      (r: any) => !(r.emoji === emoji && String(r.user_id) === userId)
     );
 
-    this.wsService.send(this.channelId, {
-      type: 'reaction',
-      message_id: msg.id,
-      emoji,
-      action: 'remove',
-    });
+    // Send via HTTP API (server broadcasts via WebSocket to other clients)
+    this.apiService.removeReaction(this.channelId, msg.id, emoji).subscribe();
   }
 
   toggleReaction(msg: any, emoji: string): void {
+    const userId = String(this.currentUser?.id || '');
     const hasOwn = (msg.reactions || []).some(
-      (r: any) => r.emoji === emoji && String(r.user_id) === String(this.currentUser?.id)
+      (r: any) => r.emoji === emoji && String(r.user_id) === userId
     );
     if (hasOwn) {
       this.removeReaction(msg, emoji);
@@ -2035,9 +2030,14 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
+  trackByEmoji(index: number, item: any): string {
+    return item.emoji;
+  }
+
   getGroupedReactions(msg: any): { emoji: string; count: number; hasOwn: boolean; names: string }[] {
     if (!msg.reactions || msg.reactions.length === 0) return [];
     const groups: { [key: string]: { count: number; hasOwn: boolean; names: string[] } } = {};
+    const userId = String(this.currentUser?.id || '');
     for (const r of msg.reactions) {
       if (!groups[r.emoji]) {
         groups[r.emoji] = { count: 0, hasOwn: false, names: [] };
@@ -2046,7 +2046,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (r.display_name) {
         groups[r.emoji].names.push(r.display_name);
       }
-      if (String(r.user_id) === String(this.currentUser?.id)) {
+      if (String(r.user_id) === userId) {
         groups[r.emoji].hasOwn = true;
       }
     }
@@ -2066,14 +2066,14 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (data.action === 'add') {
       // Avoid duplicates
       const exists = msg.reactions.some(
-        (r: any) => r.emoji === data.emoji && r.user_id === data.user_id
+        (r: any) => r.emoji === data.emoji && String(r.user_id) === String(data.user_id)
       );
       if (!exists) {
-        msg.reactions.push({ emoji: data.emoji, user_id: data.user_id, display_name: data.display_name || '', message_id: data.message_id });
+        msg.reactions.push({ emoji: data.emoji, user_id: String(data.user_id), display_name: data.display_name || '', message_id: data.message_id });
       }
     } else {
       msg.reactions = msg.reactions.filter(
-        (r: any) => !(r.emoji === data.emoji && r.user_id === data.user_id)
+        (r: any) => !(r.emoji === data.emoji && String(r.user_id) === String(data.user_id))
       );
     }
   }
