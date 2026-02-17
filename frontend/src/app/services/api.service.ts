@@ -89,7 +89,7 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/channels/${channelId}/messages/`, { params });
   }
 
-  sendMessage(channelId: string, data: { content: string; message_type?: string; file_reference_id?: string }): Observable<any> {
+  sendMessage(channelId: string, data: { content: string; message_type?: string; file_reference_id?: string; reply_to_id?: string; reply_to_content?: string; reply_to_sender?: string }): Observable<any> {
     return this.http.post(`${this.baseUrl}/channels/${channelId}/messages/`, data);
   }
 

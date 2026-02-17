@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import async_session
 from app.models.channel import ChannelMember
 from app.models.user import User
-from app.services.chat_db import add_message, update_message, delete_message, add_reaction, remove_reaction
+from app.services.chat_db import add_message, init_chat_db, update_message, delete_message, add_reaction, remove_reaction
 from app.services.feed import create_feed_events
 from app.services.mentions import extract_mentions, resolve_mentions
 from app.websocket.manager import manager
@@ -147,6 +147,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
             msg_type = data.get("type")
 
             if msg_type == "message":
+                await init_chat_db(channel_id)
                 msg = await add_message(
                     channel_id,
                     user_id,
@@ -460,5 +461,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                 "online_users": manager.get_online_users(channel_id),
             },
         )
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("WebSocket error for user=%s channel=%s: %s", user_id, channel_id, exc)
         manager.disconnect(user_id, channel_id)

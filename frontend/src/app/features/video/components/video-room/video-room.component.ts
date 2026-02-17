@@ -808,9 +808,6 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.mediaError = error;
       })
     );
-
-    // Connect to channel WebSocket for chat messages
-    this.connectChatWs();
   }
 
   ngAfterViewChecked(): void {
@@ -935,6 +932,9 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (this.showChatPanel) {
       this.unreadChatCount = 0;
       this.showInvitePanel = false;
+      if (!this.chatWsSubscription) {
+        this.connectChatWs();
+      }
       if (this.chatMessages.length === 0) {
         this.loadChatMessages();
       }
@@ -950,8 +950,9 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   private connectChatWs(): void {
-    this.chatWsSubscription = this.wsService.connect(this.channelId).subscribe((msg) => {
-      if (msg.type === 'new_message') {
+    // Subscribe to global WS messages (piggyback on WebRTC's existing connection)
+    this.chatWsSubscription = this.wsService.globalMessages$.subscribe((msg) => {
+      if (msg.type === 'new_message' && msg.message) {
         this.chatMessages.push(msg.message);
         if (this.showChatPanel) {
           this.scrollChatToBottom();

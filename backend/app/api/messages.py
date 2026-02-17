@@ -16,6 +16,7 @@ from app.services.chat_db import (
     get_messages,
     get_reactions,
     get_reactions_for_messages,
+    init_chat_db,
     remove_reaction,
     update_message,
 )
@@ -105,6 +106,9 @@ async def list_messages(
             content=m["content"],
             message_type=m["message_type"],
             file_reference_id=m["file_reference_id"],
+            reply_to_id=m.get("reply_to_id"),
+            reply_to_content=m.get("reply_to_content"),
+            reply_to_sender=m.get("reply_to_sender"),
             reactions=enriched_reactions.get(m["id"], []),
             created_at=m["created_at"],
             edited_at=m["edited_at"],
@@ -122,12 +126,18 @@ async def create_message(
 ):
     await _check_membership(db, channel_id, current_user.id)
 
+    # Ensure chat database exists (idempotent)
+    await init_chat_db(str(channel_id))
+
     msg = await add_message(
         str(channel_id),
         str(current_user.id),
         data.content,
         data.message_type,
         data.file_reference_id,
+        reply_to_id=data.reply_to_id,
+        reply_to_content=data.reply_to_content,
+        reply_to_sender=data.reply_to_sender,
     )
 
     # Mentions parsen und aufloesen
@@ -175,6 +185,9 @@ async def create_message(
         content=msg["content"],
         message_type=msg["message_type"],
         file_reference_id=msg["file_reference_id"],
+        reply_to_id=msg.get("reply_to_id"),
+        reply_to_content=msg.get("reply_to_content"),
+        reply_to_sender=msg.get("reply_to_sender"),
         mentions=[str(uid) for uid in mentioned_user_ids],
         created_at=msg["created_at"],
         edited_at=msg["edited_at"],
