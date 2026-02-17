@@ -350,4 +350,9 @@ export class ApiService {
   adminResetPassword(userId: string, password: string): Observable<any> {
     return this.http.post(`${this.baseUrl}/admin/users/${userId}/reset-password`, { password });
   }
+
+  // Link preview
+  getLinkPreview(url: string): Observable<{ url: string; title: string; description: string; image: string; site_name: string }> {
+    return this.http.get<any>(`${this.baseUrl}/link-preview/`, { params: { url } });
+  }
 }

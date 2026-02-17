@@ -196,6 +196,17 @@ import { I18nService } from '@services/i18n.service';
                     </div>
                   </div>
                 </ng-container>
+                <!-- Link preview -->
+                <a *ngIf="linkPreviews.has(msg.id)" class="link-preview" [href]="linkPreviews.get(msg.id)!.url"
+                   target="_blank" rel="noopener">
+                  <img *ngIf="linkPreviews.get(msg.id)!.image" [src]="linkPreviews.get(msg.id)!.image"
+                       class="link-preview-img" alt="" loading="lazy">
+                  <div class="link-preview-body">
+                    <span class="link-preview-site" *ngIf="linkPreviews.get(msg.id)!.site_name">{{ linkPreviews.get(msg.id)!.site_name }}</span>
+                    <span class="link-preview-title">{{ linkPreviews.get(msg.id)!.title }}</span>
+                    <span class="link-preview-desc" *ngIf="linkPreviews.get(msg.id)!.description">{{ linkPreviews.get(msg.id)!.description }}</span>
+                  </div>
+                </a>
                 <span *ngIf="msg.edited_at" class="edited">{{ i18n.t('chat.edited') }}</span>
               </div>
               <!-- Reactions display -->
@@ -551,6 +562,60 @@ import { I18nService } from '@services/i18n.service';
     .message-bubble.own {
       background: #e8e5fc;
       border-radius: 12px 4px 12px 12px;
+    }
+    .msg-link {
+      color: var(--primary, #6264a7);
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    .link-preview {
+      display: flex;
+      flex-direction: column;
+      margin-top: 8px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+      text-decoration: none;
+      color: inherit;
+      background: white;
+      max-width: 360px;
+    }
+    .link-preview:hover {
+      border-color: #bbb;
+    }
+    .link-preview-img {
+      width: 100%;
+      max-height: 180px;
+      object-fit: cover;
+    }
+    .link-preview-body {
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .link-preview-site {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .link-preview-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .link-preview-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .edited {
       font-size: 10px;
@@ -1201,6 +1266,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   private shouldScrollToDivider = false;
   @ViewChild('newMessagesDivider') private newMessagesDivider?: ElementRef;
 
+  // Link preview cache: message id -> preview data
+  linkPreviews: Map<string, { url: string; title: string; description: string; image: string; site_name: string }> = new Map();
+  private linkPreviewRequested = new Set<string>();
+
   // @Mention state
   showMentionPopup = false;
   mentionResults: any[] = [];
@@ -1244,6 +1313,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.typingUsers = [];
         this.lastReadMessageId = null;
         this.firstUnreadMessageId = null;
+        this.linkPreviews.clear();
+        this.linkPreviewRequested.clear();
         this.loadChannel();
         this.loadReadPositionThenMessages();
         this.loadFiles();
@@ -1308,6 +1379,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.messages = msgs;
         this.loadingMessages = false;
         this.computeFirstUnread();
+        this.fetchLinkPreviews(msgs);
         if (this.firstUnreadMessageId) {
           this.shouldScrollToDivider = true;
         } else {
@@ -1375,6 +1447,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       switch (msg.type) {
         case 'new_message':
           this.messages.push(msg.message);
+          this.fetchLinkPreviews([msg.message]);
           this.shouldScroll = true;
           this.typingUsers = this.typingUsers.filter((u) => u !== msg.message.sender_name);
           // Clear the divider since user is actively viewing
@@ -1558,6 +1631,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!content) return '';
     // Escape HTML
     let safe = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Make URLs clickable
+    safe = safe.replace(/(https?:\/\/[^\s<&]+)/g,
+      '<a href="$1" target="_blank" rel="noopener" class="msg-link">$1</a>');
     // Highlight @"Name" and @username patterns
     safe = safe.replace(/@&quot;([^&]+)&quot;|@(\S+)/g,
       '<span class="mention-highlight">$&</span>');
@@ -1565,6 +1641,32 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     safe = safe.replace(/@"([^"]+)"/g,
       '<span class="mention-highlight">$&</span>');
     return safe;
+  }
+
+  // ---- Link Preview methods ----
+
+  private extractFirstUrl(content: string): string | null {
+    if (!content) return null;
+    const match = content.match(/https?:\/\/[^\s]+/);
+    return match ? match[0] : null;
+  }
+
+  fetchLinkPreviews(msgs: any[]): void {
+    for (const msg of msgs) {
+      if (msg.message_type === 'system' || msg.message_type === 'file') continue;
+      if (this.linkPreviewRequested.has(msg.id)) continue;
+      const url = this.extractFirstUrl(msg.content);
+      if (!url) continue;
+      this.linkPreviewRequested.add(msg.id);
+      this.apiService.getLinkPreview(url).subscribe({
+        next: (preview) => {
+          if (preview.title || preview.description || preview.image) {
+            this.linkPreviews.set(msg.id, preview);
+          }
+        },
+        error: () => { /* ignore preview failures */ },
+      });
+    }
   }
 
   // ---- Emoji Reaction methods ----
