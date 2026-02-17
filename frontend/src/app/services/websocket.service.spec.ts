@@ -248,4 +248,74 @@ describe('WebSocketService', () => {
     });
     expect(MockWebSocket.instances[1].sent.length).toBe(0);
   });
+
+  /* --------- isConnected --------- */
+
+  it('isConnected() should return true when socket is OPEN', () => {
+    service.connect('ch1');
+    MockWebSocket.instances[0].simulateOpen();
+
+    expect(service.isConnected('ch1')).toBe(true);
+  });
+
+  it('isConnected() should return false when socket is CONNECTING', () => {
+    service.connect('ch1');
+    expect(service.isConnected('ch1')).toBe(false);
+  });
+
+  it('isConnected() should return false for unknown channel', () => {
+    expect(service.isConnected('unknown')).toBe(false);
+  });
+
+  it('isConnected() should return false after disconnect', () => {
+    service.connect('ch1');
+    MockWebSocket.instances[0].simulateOpen();
+
+    service.disconnect('ch1');
+    expect(service.isConnected('ch1')).toBe(false);
+  });
+
+  /* --------- globalMessages$ --------- */
+
+  it('globalMessages$ should emit messages from any channel', (done) => {
+    service.connect('ch1');
+    service.connect('ch2');
+    const ws1 = MockWebSocket.instances[0];
+    const ws2 = MockWebSocket.instances[1];
+    ws1.simulateOpen();
+    ws2.simulateOpen();
+
+    const received: any[] = [];
+    service.globalMessages$.subscribe((msg) => {
+      received.push(msg);
+      if (received.length === 2) {
+        expect(received[0]).toEqual({ type: 'new_message', channel: 'ch1' });
+        expect(received[1]).toEqual({ type: 'new_message', channel: 'ch2' });
+        done();
+      }
+    });
+
+    ws1.simulateMessage({ type: 'new_message', channel: 'ch1' });
+    ws2.simulateMessage({ type: 'new_message', channel: 'ch2' });
+  });
+
+  it('globalMessages$ should emit from channel even after reconnect', (done) => {
+    service.connect('ch1');
+    const ws1 = MockWebSocket.instances[0];
+    ws1.simulateOpen();
+
+    // Close and reconnect
+    ws1.close();
+
+    service.connect('ch1');
+    const ws2 = MockWebSocket.instances[1];
+    ws2.simulateOpen();
+
+    service.globalMessages$.subscribe((msg) => {
+      expect(msg).toEqual({ type: 'test', data: 'reconnected' });
+      done();
+    });
+
+    ws2.simulateMessage({ type: 'test', data: 'reconnected' });
+  });
 });

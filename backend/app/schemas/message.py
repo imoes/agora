@@ -6,8 +6,11 @@ from pydantic import BaseModel
 
 class MessageCreate(BaseModel):
     content: str
-    message_type: str = "text"  # 'text', 'file', 'system'
+    message_type: str = "text"  # 'text', 'file', 'system', 'rich'
     file_reference_id: str | None = None
+    reply_to_id: str | None = None
+    reply_to_content: str | None = None
+    reply_to_sender: str | None = None
 
 
 class MessageOut(BaseModel):
@@ -19,6 +22,9 @@ class MessageOut(BaseModel):
     content: str
     message_type: str = "text"
     file_reference_id: str | None = None
+    reply_to_id: str | None = None
+    reply_to_content: str | None = None
+    reply_to_sender: str | None = None
     mentions: list[str] = []
     reactions: list[dict] = []
     created_at: str

@@ -1751,32 +1751,24 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.replyTo = null;
   }
 
-  /** Send a chat message via WebSocket; fall back to HTTP API if WS is not connected. */
+  /** Send a chat message via HTTP API (reliable). The server broadcasts to WS for real-time updates. */
   private sendViaWsOrApi(content: string, messageType: string, fileRefId?: string, replyPayload: any = {}): void {
-    const wsPayload: any = { type: 'message', content, message_type: messageType, ...replyPayload };
-    if (fileRefId) wsPayload.file_reference_id = fileRefId;
-
-    if (this.wsService.isConnected(this.channelId)) {
-      this.wsService.send(this.channelId, wsPayload);
-    } else {
-      // Fallback: send via HTTP API (server broadcasts via WebSocket to channel)
-      const apiPayload: any = { content, message_type: messageType, ...replyPayload };
-      if (fileRefId) apiPayload.file_reference_id = fileRefId;
-      this.apiService.sendMessage(this.channelId, apiPayload).subscribe({
-        next: (msg) => {
-          // Add to local messages if not already received via WS
-          if (msg && !this.messages.some(m => m.id === msg.id)) {
-            msg.sender_name = this.currentUser?.display_name;
-            msg.sender_id = this.currentUser?.id;
-            this.messages.push(msg);
-            this.shouldScroll = true;
-          }
-        },
-        error: () => {},
-      });
-      // Try to reconnect the WebSocket
-      this.connectWebSocket();
-    }
+    const apiPayload: any = { content, message_type: messageType, ...replyPayload };
+    if (fileRefId) apiPayload.file_reference_id = fileRefId;
+    this.apiService.sendMessage(this.channelId, apiPayload).subscribe({
+      next: (msg) => {
+        // Add to local messages if not already received via WS broadcast
+        if (msg && !this.messages.some(m => m.id === msg.id)) {
+          msg.sender_name = this.currentUser?.display_name;
+          msg.sender_id = this.currentUser?.id;
+          this.messages.push(msg);
+          this.shouldScroll = true;
+        }
+      },
+      error: (err) => {
+        console.error('Failed to send message:', err);
+      },
+    });
   }
 
   toggleInputEmojis(event?: MouseEvent): void {
@@ -1835,12 +1827,7 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       replyPayload.reply_to_sender = this.replyTo.sender_name || '';
     }
 
-    this.wsService.send(this.channelId, {
-      type: 'message',
-      content: html,
-      message_type: 'rich',
-      ...replyPayload,
-    });
+    this.sendViaWsOrApi(html, 'rich', undefined, replyPayload);
     this.replyTo = null;
     this.closeRichEditor();
   }
