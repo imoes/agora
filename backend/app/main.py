@@ -87,7 +87,7 @@ def _add_missing_columns(connection):
         ))
     if "language" not in user_cols:
         connection.execute(text(
-            "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'en'"
+            "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT ''"
         ))
 
     cm_cols = {c["name"] for c in inspector.get_columns("channel_members")}
