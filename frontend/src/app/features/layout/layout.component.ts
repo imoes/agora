@@ -64,7 +64,8 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
           <div class="nav-item user-menu" [matMenuTriggerFor]="userMenu">
             <div class="avatar-wrapper">
               <div class="avatar">
-                {{ currentUser?.display_name?.charAt(0)?.toUpperCase() || '?' }}
+                <img *ngIf="currentUser?.avatar_path" [src]="getAvatarUrl(currentUser?.avatar_path)" class="avatar-img-nav" alt="">
+                <span *ngIf="!currentUser?.avatar_path">{{ currentUser?.display_name?.charAt(0)?.toUpperCase() || '?' }}</span>
               </div>
               <span class="status-dot" [class]="currentUser?.status || 'offline'"></span>
             </div>
@@ -163,7 +164,13 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
             <!-- Search dropdown -->
             <div class="search-dropdown" *ngIf="showSearchDropdown && (searchResults.length > 0 || (searchQuery.length >= 2 && !searchLoading))">
               <div *ngFor="let user of searchResults" class="search-result-item" (click)="startChatFromSearch(user)">
-                <div class="search-result-avatar">{{ user.display_name?.charAt(0)?.toUpperCase() }}</div>
+                <div class="search-result-avatar-wrapper">
+                  <div class="search-result-avatar">
+                    <img *ngIf="user.avatar_path" [src]="getAvatarUrl(user.avatar_path)" class="search-avatar-img" alt="">
+                    <span *ngIf="!user.avatar_path">{{ user.display_name?.charAt(0)?.toUpperCase() }}</span>
+                  </div>
+                  <span class="search-status-dot" [class]="user.status || 'offline'"></span>
+                </div>
                 <div class="search-result-info">
                   <span class="search-result-name">{{ user.display_name }}</span>
                   <span class="search-result-username">{{'@' + user.username}}</span>
@@ -200,7 +207,13 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
                      (input)="onCallSearch()" [placeholder]="i18n.t('search.placeholder')">
               <div class="call-search-results">
                 <div *ngFor="let u of callSearchResults" class="call-search-item">
-                  <div class="call-search-avatar">{{ u.display_name?.charAt(0)?.toUpperCase() }}</div>
+                  <div class="call-search-avatar-wrapper">
+                    <div class="call-search-avatar">
+                      <img *ngIf="u.avatar_path" [src]="getAvatarUrl(u.avatar_path)" class="call-avatar-img" alt="">
+                      <span *ngIf="!u.avatar_path">{{ u.display_name?.charAt(0)?.toUpperCase() }}</span>
+                    </div>
+                    <span class="call-status-dot" [class]="u.status || 'offline'"></span>
+                  </div>
                   <div class="call-search-info">
                     <span class="call-search-name">{{ u.display_name }}</span>
                     <span class="call-search-username">{{'@' + u.username}}</span>
@@ -273,6 +286,15 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
             </button>
           </div>
           <div class="profile-form">
+            <div class="avatar-upload-section">
+              <div class="avatar-preview" (click)="avatarFileInput.click()">
+                <img *ngIf="currentUser?.avatar_path" [src]="getAvatarUrl(currentUser?.avatar_path)" class="avatar-img" alt="Avatar">
+                <span *ngIf="!currentUser?.avatar_path" class="avatar-initials">{{ currentUser?.display_name?.charAt(0)?.toUpperCase() || '?' }}</span>
+                <div class="avatar-overlay"><mat-icon>photo_camera</mat-icon></div>
+              </div>
+              <input type="file" accept="image/*" #avatarFileInput hidden (change)="onAvatarSelected($event)">
+              <span class="avatar-hint">{{ i18n.t('profile.avatar_hint') }}</span>
+            </div>
             <mat-form-field appearance="outline" class="profile-field">
               <mat-label>{{ i18n.t('profile.display_name') }}</mat-label>
               <input matInput [(ngModel)]="profileForm.display_name">
@@ -530,6 +552,10 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
     .call-search-item:hover {
       background: var(--hover);
     }
+    .call-search-avatar-wrapper {
+      position: relative;
+      flex-shrink: 0;
+    }
     .call-search-avatar {
       width: 30px;
       height: 30px;
@@ -542,6 +568,7 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       font-size: 12px;
       font-weight: 500;
       flex-shrink: 0;
+      overflow: hidden;
     }
     .call-search-info {
       flex: 1;
@@ -654,6 +681,10 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       cursor: pointer;
     }
     .search-result-item:hover { background: var(--hover); }
+    .search-result-avatar-wrapper {
+      position: relative;
+      flex-shrink: 0;
+    }
     .search-result-avatar {
       width: 32px;
       height: 32px;
@@ -666,7 +697,27 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       font-size: 13px;
       font-weight: 500;
       flex-shrink: 0;
+      overflow: hidden;
     }
+    .search-avatar-img, .call-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .search-status-dot, .call-status-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    .search-status-dot.online, .call-status-dot.online { background: var(--online); }
+    .search-status-dot.busy, .call-status-dot.busy { background: var(--busy); }
+    .search-status-dot.away, .call-status-dot.away { background: var(--away); }
+    .search-status-dot.dnd, .call-status-dot.dnd { background: var(--busy); }
+    .search-status-dot.offline, .call-status-dot.offline { background: var(--offline); }
     .search-result-info {
       flex: 1;
       min-width: 0;
@@ -887,6 +938,59 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       display: flex;
       justify-content: flex-end;
       margin-bottom: 8px;
+    }
+    .avatar-upload-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .avatar-preview {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      cursor: pointer;
+      overflow: hidden;
+      background: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .avatar-preview .avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .avatar-preview .avatar-initials {
+      color: white;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .avatar-preview .avatar-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.2s;
+      color: white;
+    }
+    .avatar-preview:hover .avatar-overlay {
+      opacity: 1;
+    }
+    .avatar-hint {
+      font-size: 11px;
+      color: #999;
+    }
+    .avatar-img-nav {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
     }
 
     /* ============ Mobile responsive ============ */
@@ -1494,6 +1598,30 @@ export class LayoutComponent implements OnInit, OnDestroy {
       },
       error: () => {},
     });
+  }
+
+  getAvatarUrl(avatarPath: string | null | undefined): string | null {
+    if (!avatarPath) return null;
+    return this.apiService.getAvatarUrl(avatarPath);
+  }
+
+  onAvatarSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.apiService.uploadAvatar(file).subscribe({
+      next: (user) => {
+        this.authService.updateLocalUser({ avatar_path: user.avatar_path });
+        if (this.currentUser) {
+          this.currentUser.avatar_path = user.avatar_path;
+        }
+        this.snackBar.open(this.i18n.t('profile.avatar_uploaded'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || this.i18n.t('common.error'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+    });
+    input.value = '';
   }
 
   openProfileSettings(): void {

@@ -50,15 +50,19 @@ async def list_messages(
     await _check_membership(db, channel_id, current_user.id)
     messages = await get_messages(str(channel_id), limit=limit, before=before)
 
-    # Enrich with sender names
+    # Enrich with sender info (name, avatar, status)
     sender_ids = {m["sender_id"] for m in messages}
-    sender_names = {}
+    sender_info: dict[str, dict] = {}
     for sid in sender_ids:
         try:
             result = await db.execute(select(User).where(User.id == uuid.UUID(sid)))
             user = result.scalar_one_or_none()
             if user:
-                sender_names[sid] = user.display_name
+                sender_info[sid] = {
+                    "name": user.display_name,
+                    "avatar_path": user.avatar_path,
+                    "status": user.status or "offline",
+                }
         except ValueError:
             pass
 
@@ -71,19 +75,23 @@ async def list_messages(
     for rlist in reactions_map.values():
         for r in rlist:
             reaction_user_ids.add(r.get("user_id"))
-    reaction_user_ids -= set(sender_names.keys())
+    reaction_user_ids -= set(sender_info.keys())
     for rid in reaction_user_ids:
         try:
             result = await db.execute(select(User).where(User.id == uuid.UUID(rid)))
             user = result.scalar_one_or_none()
             if user:
-                sender_names[rid] = user.display_name
+                sender_info[rid] = {
+                    "name": user.display_name,
+                    "avatar_path": user.avatar_path,
+                    "status": user.status or "offline",
+                }
         except ValueError:
             pass
     enriched_reactions: dict[str, list[dict]] = {}
     for mid, rlist in reactions_map.items():
         enriched_reactions[mid] = [
-            {**r, "display_name": sender_names.get(r.get("user_id"), "")}
+            {**r, "display_name": (sender_info.get(r.get("user_id")) or {}).get("name", "")}
             for r in rlist
         ]
 
@@ -91,7 +99,9 @@ async def list_messages(
         MessageOut(
             id=m["id"],
             sender_id=m["sender_id"],
-            sender_name=sender_names.get(m["sender_id"]),
+            sender_name=(sender_info.get(m["sender_id"]) or {}).get("name"),
+            sender_avatar_path=(sender_info.get(m["sender_id"]) or {}).get("avatar_path"),
+            sender_status=(sender_info.get(m["sender_id"]) or {}).get("status", "offline"),
             content=m["content"],
             message_type=m["message_type"],
             file_reference_id=m["file_reference_id"],
@@ -151,6 +161,8 @@ async def create_message(
         id=msg["id"],
         sender_id=msg["sender_id"],
         sender_name=current_user.display_name,
+        sender_avatar_path=current_user.avatar_path,
+        sender_status=current_user.status or "offline",
         content=msg["content"],
         message_type=msg["message_type"],
         file_reference_id=msg["file_reference_id"],
@@ -176,6 +188,8 @@ async def edit_message(
         id=msg["id"],
         sender_id=msg["sender_id"],
         sender_name=current_user.display_name,
+        sender_avatar_path=current_user.avatar_path,
+        sender_status=current_user.status or "offline",
         content=msg["content"],
         message_type=msg["message_type"],
         file_reference_id=msg["file_reference_id"],

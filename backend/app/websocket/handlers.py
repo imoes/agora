@@ -158,6 +158,8 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     reply_to_sender=data.get("reply_to_sender"),
                 )
                 msg["sender_name"] = user.display_name
+                msg["sender_avatar_path"] = user.avatar_path
+                msg["sender_status"] = user.status or "offline"
 
                 await manager.send_to_channel(
                     channel_id,
