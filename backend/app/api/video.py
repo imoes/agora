@@ -141,7 +141,7 @@ async def leave_room(
 ):
     channel_str = str(channel_id)
     if channel_str not in active_rooms:
-        raise HTTPException(status_code=404, detail="No active room")
+        return {"status": "room_closed"}
 
     user_id = str(current_user.id)
     participants = active_rooms[channel_str]["participants"]

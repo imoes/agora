@@ -849,7 +849,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.chatWsSubscription?.unsubscribe();
     this.webrtcService.endCall();
-    this.apiService.leaveVideoRoom(this.channelId).subscribe();
+    this.apiService.leaveVideoRoom(this.channelId).subscribe({ error: () => {} });
   }
 
   toggleAudio(): void {
@@ -993,7 +993,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   endCall(): void {
     this.webrtcService.endCall();
-    this.apiService.leaveVideoRoom(this.channelId).subscribe();
+    this.apiService.leaveVideoRoom(this.channelId).subscribe({ error: () => {} });
     this.router.navigate(['/chat', this.channelId]);
   }
 }
