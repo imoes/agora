@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+import uuid as _uuid
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -134,6 +138,52 @@ async def update_me(
     await db.flush()
     await db.refresh(current_user)
     return UserOut.model_validate(current_user)
+
+
+@router.post("/me/avatar", response_model=UserOut)
+async def upload_avatar(
+    file: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a profile avatar image."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    # Max 5MB
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+
+    avatar_dir = os.path.join(settings.upload_dir, "avatars")
+    os.makedirs(avatar_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename or "avatar.png")[1] or ".png"
+    filename = f"{current_user.id}{ext}"
+    filepath = os.path.join(avatar_dir, filename)
+
+    # Delete old avatar if it exists with a different extension
+    for old in os.listdir(avatar_dir):
+        if old.startswith(str(current_user.id)) and old != filename:
+            os.remove(os.path.join(avatar_dir, old))
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    current_user.avatar_path = f"/api/auth/avatar/{current_user.id}/{filename}"
+    await db.flush()
+    await db.refresh(current_user)
+    return UserOut.model_validate(current_user)
+
+
+@router.get("/avatar/{user_id}/{filename}")
+async def get_avatar(user_id: _uuid.UUID, filename: str):
+    """Serve a user's avatar image."""
+    avatar_dir = os.path.join(settings.upload_dir, "avatars")
+    filepath = os.path.join(avatar_dir, filename)
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return FileResponse(filepath, media_type="image/png")
 
 
 @router.get("/config")

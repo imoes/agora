@@ -70,6 +70,18 @@ export class ApiService {
     return this.http.patch(`${this.baseUrl}/auth/me`, data);
   }
 
+  uploadAvatar(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.baseUrl}/auth/me/avatar`, formData);
+  }
+
+  getAvatarUrl(avatarPath: string | null): string | null {
+    if (!avatarPath) return null;
+    if (avatarPath.startsWith('http')) return avatarPath;
+    return `${this.baseUrl.replace('/api', '')}${avatarPath}`;
+  }
+
   // Messages
   getMessages(channelId: string, limit: number = 50, before?: string): Observable<any[]> {
     let params = new HttpParams().set('limit', limit.toString());

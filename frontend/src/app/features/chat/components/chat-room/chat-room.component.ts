@@ -130,8 +130,12 @@ import { I18nService } from '@services/i18n.service';
           <!-- Normal message -->
           <div *ngIf="msg.message_type !== 'system'" class="message" [class.own]="msg.sender_id === currentUser?.id"
                [attr.data-msg-id]="msg.id">
-            <div class="message-avatar" *ngIf="msg.sender_id !== currentUser?.id">
-              {{ msg.sender_name?.charAt(0)?.toUpperCase() || '?' }}
+            <div class="message-avatar-wrapper" *ngIf="msg.sender_id !== currentUser?.id">
+              <div class="message-avatar">
+                <img *ngIf="msg.sender_avatar_path" [src]="getAvatarUrl(msg.sender_avatar_path)" class="msg-avatar-img" alt="">
+                <span *ngIf="!msg.sender_avatar_path">{{ msg.sender_name?.charAt(0)?.toUpperCase() || '?' }}</span>
+              </div>
+              <span class="msg-status-dot" [class]="msg.sender_status || 'offline'"></span>
             </div>
             <div class="message-content">
               <div class="message-header" *ngIf="msg.sender_id !== currentUser?.id">
@@ -275,7 +279,13 @@ import { I18nService } from '@services/i18n.service';
         <div *ngFor="let user of mentionResults; let i = index"
              class="mention-item" [class.selected]="i === mentionSelectedIndex"
              (click)="selectMention(user)">
-          <div class="mention-avatar">{{ user.display_name?.charAt(0)?.toUpperCase() }}</div>
+          <div class="mention-avatar-wrapper">
+            <div class="mention-avatar">
+              <img *ngIf="(user.user || user).avatar_path" [src]="getAvatarUrl((user.user || user).avatar_path)" class="mention-avatar-img" alt="">
+              <span *ngIf="!(user.user || user).avatar_path">{{ user.display_name?.charAt(0)?.toUpperCase() }}</span>
+            </div>
+            <span class="mention-status-dot" [class]="(user.user || user).status || 'offline'"></span>
+          </div>
           <div class="mention-info">
             <span class="mention-name">{{ user.display_name }}</span>
             <span class="mention-username">{{'@' + (user.user || user).username}}</span>
@@ -471,6 +481,10 @@ import { I18nService } from '@services/i18n.service';
       0%, 30% { background: rgba(98,100,167,0.15); }
       100% { background: transparent; }
     }
+    .message-avatar-wrapper {
+      position: relative;
+      flex-shrink: 0;
+    }
     .message-avatar {
       width: 32px;
       height: 32px;
@@ -483,7 +497,27 @@ import { I18nService } from '@services/i18n.service';
       font-size: 13px;
       font-weight: 500;
       flex-shrink: 0;
+      overflow: hidden;
     }
+    .msg-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .msg-status-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    .msg-status-dot.online { background: var(--online, #92c353); }
+    .msg-status-dot.busy { background: var(--busy, #c4314b); }
+    .msg-status-dot.away { background: var(--away, #fcba04); }
+    .msg-status-dot.dnd { background: var(--busy, #c4314b); }
+    .msg-status-dot.offline { background: var(--offline, #93938f); }
     .message-content {
       display: flex;
       flex-direction: column;
@@ -717,6 +751,10 @@ import { I18nService } from '@services/i18n.service';
     .mention-item:hover, .mention-item.selected {
       background: #f0f0ff;
     }
+    .mention-avatar-wrapper {
+      position: relative;
+      flex-shrink: 0;
+    }
     .mention-avatar {
       width: 28px;
       height: 28px;
@@ -728,7 +766,27 @@ import { I18nService } from '@services/i18n.service';
       justify-content: center;
       font-size: 12px;
       font-weight: 500;
+      overflow: hidden;
     }
+    .mention-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .mention-status-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid white;
+    }
+    .mention-status-dot.online { background: var(--online, #92c353); }
+    .mention-status-dot.busy { background: var(--busy, #c4314b); }
+    .mention-status-dot.away { background: var(--away, #fcba04); }
+    .mention-status-dot.dnd { background: var(--busy, #c4314b); }
+    .mention-status-dot.offline { background: var(--offline, #93938f); }
     .mention-name { font-weight: 500; font-size: 13px; }
     .mention-username { font-size: 11px; color: var(--text-secondary); margin-left: 4px; }
     /* Mention highlighting in messages */
@@ -1857,6 +1915,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         message_id: msg.id,
       });
     }
+  }
+
+  getAvatarUrl(avatarPath: string | null): string | null {
+    return this.apiService.getAvatarUrl(avatarPath);
   }
 
   getDownloadUrl(refId: string): string {

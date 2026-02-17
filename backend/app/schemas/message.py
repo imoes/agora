@@ -14,6 +14,8 @@ class MessageOut(BaseModel):
     id: str
     sender_id: str
     sender_name: str | None = None
+    sender_avatar_path: str | None = None
+    sender_status: str = "offline"
     content: str
     message_type: str = "text"
     file_reference_id: str | None = None
