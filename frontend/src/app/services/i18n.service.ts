@@ -1031,9 +1031,11 @@ export class I18nService {
     this.lang$.next(code);
   }
 
-  /** Initialize from user profile (called after login) */
+  /** Initialize from user profile (called after login).
+   *  Empty userLang means "use browser language" (no explicit preference). */
   initFromUser(userLang: string): void {
-    if (userLang && EU_LANGUAGES.some(l => l.code === userLang)) {
+    if (!userLang) return; // no explicit preference → keep browser language
+    if (EU_LANGUAGES.some(l => l.code === userLang)) {
       this.currentLang = userLang;
       localStorage.setItem('app_language', userLang);
       this.lang$.next(userLang);
