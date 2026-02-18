@@ -23,11 +23,37 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Self-registration is disabled. Users must be created by an admin.
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Registration disabled. Please contact an administrator.",
+    if not settings.allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration disabled. Please contact an administrator.",
+        )
+
+    # Check for duplicate username or email
+    existing = await db.execute(
+        select(User).where(
+            (func.lower(User.username) == data.username.lower())
+            | (func.lower(User.email) == data.email.lower())
+        )
     )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email already exists",
+        )
+
+    user = User(
+        username=data.username,
+        email=data.email,
+        password_hash=hash_password(data.password),
+        display_name=data.display_name,
+    )
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+
+    token = create_access_token(user.id)
+    return Token(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.post("/login", response_model=Token)
@@ -191,5 +217,5 @@ async def get_auth_config():
     """Public endpoint to check auth configuration."""
     return {
         "ldap_enabled": settings.ldap_enabled,
-        "registration_enabled": False,
+        "registration_enabled": settings.allow_registration,
     }
