@@ -53,6 +53,10 @@ public static class Translations
             ["common.user"] = "User",
             ["common.you"] = "You",
             ["notify.someone"] = "Someone",
+            ["reminder.starts_in"] = "Starts in",
+            ["reminder.now"] = "Now!",
+            ["reminder.join"] = "Join",
+            ["reminder.dismiss"] = "Dismiss",
         },
         ["de"] = new()
         {
@@ -87,6 +91,10 @@ public static class Translations
             ["common.user"] = "Benutzer",
             ["common.you"] = "Du",
             ["notify.someone"] = "Jemand",
+            ["reminder.starts_in"] = "Beginnt in",
+            ["reminder.now"] = "Jetzt!",
+            ["reminder.join"] = "Beitreten",
+            ["reminder.dismiss"] = "Schliessen",
         },
         ["fr"] = new()
         {
@@ -121,6 +129,10 @@ public static class Translations
             ["common.user"] = "Utilisateur",
             ["common.you"] = "Toi",
             ["notify.someone"] = "Quelqu'un",
+            ["reminder.starts_in"] = "Commence dans",
+            ["reminder.now"] = "Maintenant !",
+            ["reminder.join"] = "Rejoindre",
+            ["reminder.dismiss"] = "Fermer",
         },
         ["es"] = new()
         {
@@ -155,6 +167,10 @@ public static class Translations
             ["common.user"] = "Usuario",
             ["common.you"] = "T\u00FA",
             ["notify.someone"] = "Alguien",
+            ["reminder.starts_in"] = "Empieza en",
+            ["reminder.now"] = "\u00A1Ahora!",
+            ["reminder.join"] = "Unirse",
+            ["reminder.dismiss"] = "Cerrar",
         },
         ["it"] = new()
         {
