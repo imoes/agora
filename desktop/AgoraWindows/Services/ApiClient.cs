@@ -91,6 +91,22 @@ public class ApiClient : IDisposable
                ?? throw new Exception("Failed to send message");
     }
 
+    // --- Calendar ---
+
+    public async Task<List<dynamic>> GetCalendarEventsAsync(string? start = null, string? end = null)
+    {
+        var query = "";
+        if (start != null || end != null)
+        {
+            var parts = new List<string>();
+            if (start != null) parts.Add($"start={Uri.EscapeDataString(start)}");
+            if (end != null) parts.Add($"end={Uri.EscapeDataString(end)}");
+            query = "?" + string.Join("&", parts);
+        }
+        return await _http.GetFromJsonAsync<List<dynamic>>($"/api/calendar/events{query}")
+               ?? new List<dynamic>();
+    }
+
     // --- Teams ---
 
     public async Task<List<Dictionary<string, object>>> GetTeamsAsync()

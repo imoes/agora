@@ -57,6 +57,10 @@ static const TransEntry en_entries[] = {
     {"common.user", "User"},
     {"common.you", "You"},
     {"notify.someone", "Someone"},
+    {"reminder.starts_in", "Starts in"},
+    {"reminder.now", "Now!"},
+    {"reminder.join", "Join"},
+    {"reminder.dismiss", "Dismiss"},
     {NULL, NULL}
 };
 
@@ -91,6 +95,10 @@ static const TransEntry de_entries[] = {
     {"common.user", "Benutzer"},
     {"common.you", "Du"},
     {"notify.someone", "Jemand"},
+    {"reminder.starts_in", "Beginnt in"},
+    {"reminder.now", "Jetzt!"},
+    {"reminder.join", "Beitreten"},
+    {"reminder.dismiss", "Schliessen"},
     {NULL, NULL}
 };
 
@@ -121,6 +129,10 @@ static const TransEntry fr_entries[] = {
     {"common.user", "Utilisateur"},
     {"common.you", "Toi"},
     {"notify.someone", "Quelqu'un"},
+    {"reminder.starts_in", "Commence dans"},
+    {"reminder.now", "Maintenant !"},
+    {"reminder.join", "Rejoindre"},
+    {"reminder.dismiss", "Fermer"},
     {NULL, NULL}
 };
 
@@ -149,6 +161,10 @@ static const TransEntry es_entries[] = {
     {"common.user", "Usuario"},
     {"common.you", "T\xc3\xba"},
     {"notify.someone", "Alguien"},
+    {"reminder.starts_in", "Empieza en"},
+    {"reminder.now", "\xc2\xa1" "Ahora!"},
+    {"reminder.join", "Unirse"},
+    {"reminder.dismiss", "Cerrar"},
     {NULL, NULL}
 };
 

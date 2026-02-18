@@ -28,6 +28,18 @@ struct _AgoraMainWindow {
     /* WebSocket */
     SoupWebsocketConnection *ws_conn;
     SoupSession *ws_session;
+
+    /* Event reminder */
+    GtkWidget *reminder_bar;
+    GtkLabel *reminder_title_label;
+    GtkLabel *reminder_countdown_label;
+    GtkWidget *reminder_join_btn;
+    char *reminder_event_id;
+    char *reminder_channel_id;
+    GDateTime *reminder_start_time;
+    guint reminder_poll_timer;
+    guint reminder_tick_timer;
+    GHashTable *dismissed_reminders;  /* set of dismissed event IDs */
 };
 
 G_DEFINE_TYPE(AgoraMainWindow, agora_main_window, GTK_TYPE_APPLICATION_WINDOW)
@@ -541,6 +553,187 @@ static void on_entry_changed(GtkEditable *editable, gpointer user_data)
     }
 }
 
+/* --- Event Reminder --- */
+
+static gboolean update_reminder_countdown(gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->reminder_start_time) return G_SOURCE_REMOVE;
+
+    GDateTime *now = g_date_time_new_now_local();
+    GTimeSpan diff = g_date_time_difference(win->reminder_start_time, now);
+    g_date_time_unref(now);
+
+    if (diff <= 0) {
+        char *text = g_strdup_printf("%s %s", T("reminder.starts_in"), T("reminder.now"));
+        gtk_label_set_text(win->reminder_countdown_label, text);
+        g_free(text);
+        win->reminder_tick_timer = 0;
+        /* Auto-dismiss after 60 seconds */
+        return G_SOURCE_REMOVE;
+    }
+
+    int total_sec = (int)(diff / G_TIME_SPAN_SECOND);
+    int min = total_sec / 60;
+    int sec = total_sec % 60;
+    char *text = g_strdup_printf("%s %d:%02d", T("reminder.starts_in"), min, sec);
+    gtk_label_set_text(win->reminder_countdown_label, text);
+    g_free(text);
+    return G_SOURCE_CONTINUE;
+}
+
+static void show_reminder(AgoraMainWindow *win, const char *event_id,
+                           const char *title, const char *channel_id,
+                           GDateTime *start_time)
+{
+    g_free(win->reminder_event_id);
+    win->reminder_event_id = g_strdup(event_id);
+    g_free(win->reminder_channel_id);
+    win->reminder_channel_id = channel_id ? g_strdup(channel_id) : NULL;
+    if (win->reminder_start_time) g_date_time_unref(win->reminder_start_time);
+    win->reminder_start_time = g_date_time_ref(start_time);
+
+    gtk_label_set_text(win->reminder_title_label, title);
+
+    /* Show/hide join button based on channel_id */
+    if (channel_id)
+        gtk_widget_show(win->reminder_join_btn);
+    else
+        gtk_widget_hide(win->reminder_join_btn);
+
+    /* Start countdown tick */
+    if (win->reminder_tick_timer) g_source_remove(win->reminder_tick_timer);
+    update_reminder_countdown(win);
+    win->reminder_tick_timer = g_timeout_add(1000, update_reminder_countdown, win);
+
+    gtk_widget_show(win->reminder_bar);
+}
+
+static void hide_reminder(AgoraMainWindow *win)
+{
+    gtk_widget_hide(win->reminder_bar);
+    if (win->reminder_tick_timer) {
+        g_source_remove(win->reminder_tick_timer);
+        win->reminder_tick_timer = 0;
+    }
+    g_free(win->reminder_event_id);
+    win->reminder_event_id = NULL;
+    g_free(win->reminder_channel_id);
+    win->reminder_channel_id = NULL;
+    if (win->reminder_start_time) {
+        g_date_time_unref(win->reminder_start_time);
+        win->reminder_start_time = NULL;
+    }
+}
+
+static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (win->reminder_event_id)
+        g_hash_table_add(win->dismissed_reminders, g_strdup(win->reminder_event_id));
+
+    if (win->reminder_channel_id) {
+        /* Open video room in browser */
+        char *base = g_strdup(win->api->base_url);
+        /* Remove /api suffix if present */
+        char *api_pos = g_strrstr(base, "/api");
+        if (api_pos) *api_pos = '\0';
+        char *url = g_strdup_printf("%s/video/%s", base, win->reminder_channel_id);
+        g_free(base);
+
+        GError *err = NULL;
+        g_app_info_launch_default_for_uri(url, NULL, &err);
+        if (err) g_error_free(err);
+        g_free(url);
+    }
+    hide_reminder(win);
+}
+
+static void on_reminder_dismiss_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (win->reminder_event_id)
+        g_hash_table_add(win->dismissed_reminders, g_strdup(win->reminder_event_id));
+    hide_reminder(win);
+}
+
+static gboolean check_event_reminders(gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->api || !win->api->token) return G_SOURCE_CONTINUE;
+
+    GDateTime *now = g_date_time_new_now_utc();
+    GDateTime *end = g_date_time_add_minutes(now, 16);
+    char *now_str = g_date_time_format_iso8601(now);
+    char *end_str = g_date_time_format_iso8601(end);
+
+    char *path = g_strdup_printf("/api/calendar/events?start=%s&end=%s", now_str, end_str);
+    g_free(now_str);
+    g_free(end_str);
+
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &error);
+    g_free(path);
+
+    if (result && JSON_NODE_HOLDS_ARRAY(result)) {
+        JsonArray *arr = json_node_get_array(result);
+        guint len = json_array_get_length(arr);
+
+        const char *nearest_id = NULL;
+        const char *nearest_title = NULL;
+        const char *nearest_channel = NULL;
+        GDateTime *nearest_start = NULL;
+        GTimeSpan nearest_diff = G_MAXINT64;
+
+        for (guint i = 0; i < len; i++) {
+            JsonObject *ev = json_array_get_object_element(arr, i);
+            gboolean all_day = json_object_has_member(ev, "all_day") &&
+                               json_object_get_boolean_member(ev, "all_day");
+            if (all_day) continue;
+
+            const char *id = json_object_get_string_member(ev, "id");
+            if (!id || g_hash_table_contains(win->dismissed_reminders, id)) continue;
+
+            const char *start_str = json_object_get_string_member(ev, "start_time");
+            if (!start_str) continue;
+
+            GDateTime *start = g_date_time_new_from_iso8601(start_str, NULL);
+            if (!start) continue;
+
+            GTimeSpan diff = g_date_time_difference(start, now);
+            GTimeSpan fifteen_min = 15 * 60 * G_TIME_SPAN_SECOND;
+
+            if (diff > 0 && diff <= fifteen_min && diff < nearest_diff) {
+                if (nearest_start) g_date_time_unref(nearest_start);
+                nearest_id = id;
+                nearest_title = json_object_has_member(ev, "title")
+                    ? json_object_get_string_member(ev, "title") : "";
+                nearest_channel = json_object_has_member(ev, "channel_id") &&
+                    !json_object_get_null_member(ev, "channel_id")
+                    ? json_object_get_string_member(ev, "channel_id") : NULL;
+                nearest_start = start;
+                nearest_diff = diff;
+            } else {
+                g_date_time_unref(start);
+            }
+        }
+
+        if (nearest_id && (!win->reminder_event_id ||
+            g_strcmp0(win->reminder_event_id, nearest_id) != 0)) {
+            show_reminder(win, nearest_id, nearest_title, nearest_channel, nearest_start);
+        }
+        if (nearest_start) g_date_time_unref(nearest_start);
+    }
+
+    if (result) json_node_unref(result);
+    if (error) g_error_free(error);
+
+    g_date_time_unref(now);
+    g_date_time_unref(end);
+
+    return G_SOURCE_CONTINUE;
+}
+
 /* --- Widget setup --- */
 
 static void agora_main_window_finalize(GObject *obj)
@@ -551,6 +744,12 @@ static void agora_main_window_finalize(GObject *obj)
     agora_api_client_free(win->api);
     g_free(win->current_channel_id);
     g_free(win->current_channel_name);
+    if (win->reminder_poll_timer) g_source_remove(win->reminder_poll_timer);
+    if (win->reminder_tick_timer) g_source_remove(win->reminder_tick_timer);
+    g_free(win->reminder_event_id);
+    g_free(win->reminder_channel_id);
+    if (win->reminder_start_time) g_date_time_unref(win->reminder_start_time);
+    if (win->dismissed_reminders) g_hash_table_destroy(win->dismissed_reminders);
     G_OBJECT_CLASS(agora_main_window_parent_class)->finalize(obj);
 }
 
@@ -568,6 +767,12 @@ static void agora_main_window_init(AgoraMainWindow *win)
     win->ws_conn = NULL;
     win->ws_session = NULL;
     win->current_channel_name = NULL;
+    win->reminder_event_id = NULL;
+    win->reminder_channel_id = NULL;
+    win->reminder_start_time = NULL;
+    win->reminder_poll_timer = 0;
+    win->reminder_tick_timer = 0;
+    win->dismissed_reminders = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     gtk_window_set_title(GTK_WINDOW(win), "Agora");
     gtk_window_set_default_size(GTK_WINDOW(win), 960, 600);
@@ -709,7 +914,63 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_stack_add_named(win->content_stack, win->chat_box, "chat");
     gtk_stack_set_visible_child_name(win->content_stack, "empty");
 
-    gtk_paned_pack2(GTK_PANED(paned), GTK_WIDGET(win->content_stack), TRUE, FALSE);
+    /* --- Event Reminder Bar (above content stack) --- */
+    GtkWidget *right_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    win->reminder_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    GtkStyleContext *ctx = gtk_widget_get_style_context(win->reminder_bar);
+    gtk_style_context_add_class(ctx, "suggested-action");
+
+    /* Add a colored background via CSS */
+    GtkCssProvider *css_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css_provider,
+        ".reminder-bar { background: #FFF3E0; border-bottom: 2px solid #E65100; padding: 10px 16px; }"
+        ".reminder-title { font-weight: bold; font-size: 14px; }"
+        ".reminder-countdown { font-weight: bold; font-size: 16px; color: #6200EE; }",
+        -1, NULL);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+        GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css_provider);
+
+    ctx = gtk_widget_get_style_context(win->reminder_bar);
+    gtk_style_context_add_class(ctx, "reminder-bar");
+    gtk_container_set_border_width(GTK_CONTAINER(win->reminder_bar), 0);
+
+    /* Bell icon */
+    GtkWidget *bell_label = gtk_label_new("\xF0\x9F\x94\x94");  /* bell emoji */
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), bell_label, FALSE, FALSE, 0);
+
+    /* Title + countdown */
+    GtkWidget *reminder_info = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    win->reminder_title_label = GTK_LABEL(gtk_label_new(""));
+    ctx = gtk_widget_get_style_context(GTK_WIDGET(win->reminder_title_label));
+    gtk_style_context_add_class(ctx, "reminder-title");
+    gtk_widget_set_halign(GTK_WIDGET(win->reminder_title_label), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(reminder_info), GTK_WIDGET(win->reminder_title_label), FALSE, FALSE, 0);
+
+    win->reminder_countdown_label = GTK_LABEL(gtk_label_new(""));
+    ctx = gtk_widget_get_style_context(GTK_WIDGET(win->reminder_countdown_label));
+    gtk_style_context_add_class(ctx, "reminder-countdown");
+    gtk_widget_set_halign(GTK_WIDGET(win->reminder_countdown_label), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(reminder_info), GTK_WIDGET(win->reminder_countdown_label), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), reminder_info, TRUE, TRUE, 0);
+
+    /* Join button */
+    win->reminder_join_btn = gtk_button_new_with_label(T("reminder.join"));
+    g_signal_connect(win->reminder_join_btn, "clicked", G_CALLBACK(on_reminder_join_clicked), win);
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), win->reminder_join_btn, FALSE, FALSE, 0);
+
+    /* Dismiss button */
+    GtkWidget *dismiss_btn = gtk_button_new_with_label(T("reminder.dismiss"));
+    g_signal_connect(dismiss_btn, "clicked", G_CALLBACK(on_reminder_dismiss_clicked), win);
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), dismiss_btn, FALSE, FALSE, 0);
+
+    gtk_widget_set_no_show_all(win->reminder_bar, TRUE);
+    gtk_box_pack_start(GTK_BOX(right_vbox), win->reminder_bar, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(right_vbox), GTK_WIDGET(win->content_stack), TRUE, TRUE, 0);
+
+    gtk_paned_pack2(GTK_PANED(paned), right_vbox, TRUE, FALSE);
 
     gtk_widget_show_all(paned);
 }
@@ -730,6 +991,10 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
 
     /* Load channels */
     load_channels(win);
+
+    /* Start event reminder polling (every 60 seconds) */
+    check_event_reminders(win);
+    win->reminder_poll_timer = g_timeout_add_seconds(60, check_event_reminders, win);
 
     return GTK_WIDGET(win);
 }

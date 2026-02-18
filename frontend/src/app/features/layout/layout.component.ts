@@ -351,6 +351,30 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
           </div>
         </div>
       </div>
+
+      <!-- Event Reminder Popup -->
+      <div class="event-reminder-popup" *ngIf="reminderEvent">
+        <div class="reminder-icon-row">
+          <mat-icon class="reminder-bell">notifications_active</mat-icon>
+        </div>
+        <div class="reminder-title">{{ reminderEvent.title }}</div>
+        <div class="reminder-time">
+          {{ formatReminderTime(reminderEvent.start_time) }}
+        </div>
+        <div class="reminder-countdown">
+          {{ i18n.t('reminder.starts_in') }} {{ reminderCountdown }}
+        </div>
+        <div class="reminder-actions">
+          <button class="reminder-btn reminder-btn-join" *ngIf="reminderEvent.channel_id"
+                  (click)="joinRemindedEvent()">
+            <mat-icon>videocam</mat-icon>
+            {{ i18n.t('reminder.join') }}
+          </button>
+          <button class="reminder-btn reminder-btn-dismiss" (click)="dismissReminder()">
+            {{ i18n.t('reminder.dismiss') }}
+          </button>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -993,6 +1017,101 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       border-radius: 50%;
     }
 
+    /* Event reminder popup */
+    .event-reminder-popup {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      padding: 20px 24px;
+      z-index: 1100;
+      min-width: 280px;
+      max-width: 360px;
+      animation: slideInRight 0.3s ease;
+      border-left: 4px solid var(--primary);
+    }
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(40px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .reminder-icon-row {
+      margin-bottom: 8px;
+    }
+    .reminder-bell {
+      color: #e65100;
+      font-size: 28px;
+      width: 28px;
+      height: 28px;
+      animation: bellShake 0.6s ease-in-out 0s 2;
+    }
+    @keyframes bellShake {
+      0%, 100% { transform: rotate(0); }
+      15% { transform: rotate(14deg); }
+      30% { transform: rotate(-14deg); }
+      45% { transform: rotate(10deg); }
+      60% { transform: rotate(-6deg); }
+      75% { transform: rotate(2deg); }
+    }
+    .reminder-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .reminder-time {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    .reminder-countdown {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 14px;
+    }
+    .reminder-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .reminder-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .reminder-btn mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+    .reminder-btn-join {
+      background: var(--primary);
+      color: white;
+      flex: 1;
+      justify-content: center;
+    }
+    .reminder-btn-join:hover {
+      background: var(--primary-dark);
+    }
+    .reminder-btn-dismiss {
+      background: #e0e0e0;
+      color: #333;
+    }
+    .reminder-btn-dismiss:hover {
+      background: #d0d0d0;
+    }
+
     /* ============ Mobile responsive ============ */
     @media (max-width: 768px) {
       .layout {
@@ -1113,6 +1232,12 @@ export class LayoutComponent implements OnInit, OnDestroy {
   savingProfile = false;
   profileForm = { display_name: '', email: '', current_password: '', new_password: '', confirm_password: '' };
 
+  // Event reminder
+  reminderEvent: any = null;
+  reminderCountdown = '';
+  private dismissedReminders = new Set<string>();
+  private reminderTickInterval: any = null;
+
   constructor(
     private authService: AuthService,
     private apiService: ApiService,
@@ -1180,6 +1305,20 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.apiService.getCalendarInvitationCount().subscribe((res) => {
       this.pendingInvitationsCount = res.count;
     });
+
+    // Event reminder: check every 60 seconds for upcoming events
+    this.checkEventReminders();
+    this.subscriptions.push(
+      interval(60000).pipe(
+        switchMap(() => {
+          const now = new Date();
+          const end = new Date(now.getTime() + 16 * 60 * 1000);
+          return this.apiService.getCalendarEvents(now.toISOString(), end.toISOString());
+        })
+      ).subscribe((events) => {
+        this.evaluateReminders(events);
+      })
+    );
 
     // Pre-create ringtone audio and unlock on first user gesture
     this.prepareRingtone();
@@ -1443,9 +1582,114 @@ export class LayoutComponent implements OnInit, OnDestroy {
     }
   }
 
+  // ---------- Event Reminders ----------
+
+  private checkEventReminders(): void {
+    const now = new Date();
+    const end = new Date(now.getTime() + 16 * 60 * 1000);
+    this.apiService.getCalendarEvents(now.toISOString(), end.toISOString()).subscribe({
+      next: (events) => this.evaluateReminders(events),
+      error: () => {},
+    });
+  }
+
+  private evaluateReminders(events: any[]): void {
+    const now = Date.now();
+    const fifteenMin = 15 * 60 * 1000;
+
+    // Find the nearest event starting within 0–15 minutes that hasn't been dismissed
+    let nearest: any = null;
+    let nearestDiff = Infinity;
+
+    for (const ev of events) {
+      if (ev.all_day) continue;
+      if (this.dismissedReminders.has(ev.id)) continue;
+      const start = new Date(ev.start_time).getTime();
+      const diff = start - now;
+      if (diff > 0 && diff <= fifteenMin && diff < nearestDiff) {
+        nearest = ev;
+        nearestDiff = diff;
+      }
+    }
+
+    if (nearest && (!this.reminderEvent || this.reminderEvent.id !== nearest.id)) {
+      this.reminderEvent = nearest;
+      this.startReminderTick();
+    } else if (!nearest && this.reminderEvent) {
+      // Event has passed or was dismissed
+      const start = new Date(this.reminderEvent.start_time).getTime();
+      if (start <= now) {
+        this.reminderEvent = null;
+        this.stopReminderTick();
+      }
+    }
+  }
+
+  private startReminderTick(): void {
+    this.stopReminderTick();
+    this.updateReminderCountdown();
+    this.reminderTickInterval = setInterval(() => this.updateReminderCountdown(), 1000);
+  }
+
+  private stopReminderTick(): void {
+    if (this.reminderTickInterval) {
+      clearInterval(this.reminderTickInterval);
+      this.reminderTickInterval = null;
+    }
+  }
+
+  private updateReminderCountdown(): void {
+    if (!this.reminderEvent) {
+      this.stopReminderTick();
+      return;
+    }
+    const now = Date.now();
+    const start = new Date(this.reminderEvent.start_time).getTime();
+    const diff = start - now;
+    if (diff <= 0) {
+      this.reminderCountdown = this.i18n.t('reminder.now');
+      this.stopReminderTick();
+      // Auto-dismiss after 60 seconds past start
+      setTimeout(() => {
+        if (this.reminderEvent) {
+          this.dismissedReminders.add(this.reminderEvent.id);
+          this.reminderEvent = null;
+        }
+      }, 60000);
+      return;
+    }
+    const totalSeconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    this.reminderCountdown = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  formatReminderTime(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  joinRemindedEvent(): void {
+    if (!this.reminderEvent?.channel_id) return;
+    const channelId = this.reminderEvent.channel_id;
+    this.dismissedReminders.add(this.reminderEvent.id);
+    this.reminderEvent = null;
+    this.stopReminderTick();
+    this.router.navigate(['/video', channelId]);
+  }
+
+  dismissReminder(): void {
+    if (this.reminderEvent) {
+      this.dismissedReminders.add(this.reminderEvent.id);
+      this.reminderEvent = null;
+      this.stopReminderTick();
+    }
+  }
+
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.stopRinging();
+    this.stopReminderTick();
     this.wsService.disconnectNotifications();
     document.removeEventListener('click', this.unlockHandler);
     document.removeEventListener('keydown', this.unlockHandler);

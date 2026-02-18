@@ -60,6 +60,14 @@ public partial class MainWindow : Window
     // Toast notification
     private DispatcherTimer? _toastTimer;
 
+    // Event reminder
+    private DispatcherTimer? _reminderPollTimer;
+    private DispatcherTimer? _reminderTickTimer;
+    private string? _reminderEventId;
+    private string? _reminderChannelId;
+    private DateTime _reminderStartTime;
+    private readonly HashSet<string> _dismissedReminders = new();
+
     public MainWindow(ApiClient apiClient)
     {
         _api = apiClient;
@@ -76,6 +84,7 @@ public partial class MainWindow : Window
         {
             await LoadChannelsAsync();
             await ConnectNotificationWsAsync();
+            StartReminderPolling();
         };
     }
 
@@ -486,9 +495,147 @@ public partial class MainWindow : Window
         }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
+    // --- Event Reminder ---
+
+    private void StartReminderPolling()
+    {
+        // Apply translations to reminder buttons
+        ReminderJoinBtn.Content = Translations.T("reminder.join");
+        ReminderDismissBtn.Content = Translations.T("reminder.dismiss");
+
+        // Check immediately
+        _ = CheckEventRemindersAsync();
+
+        // Poll every 60 seconds
+        _reminderPollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        _reminderPollTimer.Tick += async (_, _) => await CheckEventRemindersAsync();
+        _reminderPollTimer.Start();
+    }
+
+    private async System.Threading.Tasks.Task CheckEventRemindersAsync()
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+            var end = now.AddMinutes(16);
+            var events = await _api.GetCalendarEventsAsync(now.ToString("o"), end.ToString("o"));
+            EvaluateReminders(events);
+        }
+        catch { /* Calendar API might not be available */ }
+    }
+
+    private void EvaluateReminders(List<dynamic> events)
+    {
+        var now = DateTime.UtcNow;
+        var fifteenMin = TimeSpan.FromMinutes(15);
+
+        dynamic? nearest = null;
+        TimeSpan nearestDiff = TimeSpan.MaxValue;
+
+        foreach (var ev in events)
+        {
+            string? id = ev.id?.ToString();
+            bool allDay = ev.all_day == true;
+            if (allDay || id == null || _dismissedReminders.Contains(id)) continue;
+
+            DateTime startTime = DateTime.Parse(ev.start_time.ToString()).ToUniversalTime();
+            var diff = startTime - now;
+            if (diff > TimeSpan.Zero && diff <= fifteenMin && diff < nearestDiff)
+            {
+                nearest = ev;
+                nearestDiff = diff;
+            }
+        }
+
+        if (nearest != null)
+        {
+            string id = nearest.id.ToString();
+            if (_reminderEventId != id)
+            {
+                _reminderEventId = id;
+                _reminderChannelId = nearest.channel_id?.ToString();
+                _reminderStartTime = DateTime.Parse(nearest.start_time.ToString()).ToLocalTime();
+
+                ReminderTitle.Text = nearest.title?.ToString() ?? "";
+                ReminderTime.Text = _reminderStartTime.ToString("HH:mm");
+
+                ReminderJoinBtn.Visibility = _reminderChannelId != null
+                    ? Visibility.Visible : Visibility.Collapsed;
+
+                StartReminderTick();
+                ReminderBorder.Visibility = Visibility.Visible;
+            }
+        }
+        else if (_reminderEventId != null)
+        {
+            // Check if current reminder event has passed
+            if (DateTime.UtcNow >= _reminderStartTime.ToUniversalTime())
+            {
+                _dismissedReminders.Add(_reminderEventId);
+                HideReminder();
+            }
+        }
+    }
+
+    private void StartReminderTick()
+    {
+        _reminderTickTimer?.Stop();
+        _reminderTickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _reminderTickTimer.Tick += (_, _) => UpdateReminderCountdown();
+        _reminderTickTimer.Start();
+        UpdateReminderCountdown();
+    }
+
+    private void UpdateReminderCountdown()
+    {
+        var diff = _reminderStartTime - DateTime.Now;
+        if (diff <= TimeSpan.Zero)
+        {
+            ReminderCountdown.Text = $"{Translations.T("reminder.starts_in")} {Translations.T("reminder.now")}";
+            _reminderTickTimer?.Stop();
+            return;
+        }
+        int totalSec = (int)diff.TotalSeconds;
+        int min = totalSec / 60;
+        int sec = totalSec % 60;
+        ReminderCountdown.Text = $"{Translations.T("reminder.starts_in")} {min}:{sec:D2}";
+    }
+
+    private void ReminderJoin_Click(object sender, RoutedEventArgs e)
+    {
+        if (_reminderEventId != null)
+            _dismissedReminders.Add(_reminderEventId);
+        HideReminder();
+
+        // Open video room URL in browser
+        if (_reminderChannelId != null)
+        {
+            var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
+            var url = $"{baseUrl}/video/{_reminderChannelId}";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+    }
+
+    private void ReminderDismiss_Click(object sender, RoutedEventArgs e)
+    {
+        if (_reminderEventId != null)
+            _dismissedReminders.Add(_reminderEventId);
+        HideReminder();
+    }
+
+    private void HideReminder()
+    {
+        ReminderBorder.Visibility = Visibility.Collapsed;
+        _reminderTickTimer?.Stop();
+        _reminderEventId = null;
+        _reminderChannelId = null;
+    }
+
     private async void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
         _toastTimer?.Stop();
+        _reminderPollTimer?.Stop();
+        _reminderTickTimer?.Stop();
         foreach (var timer in _typingTimers.Values) timer.Stop();
 
         if (_chatWs != null)

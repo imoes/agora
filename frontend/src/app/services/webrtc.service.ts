@@ -84,12 +84,20 @@ export class WebRTCService {
         ? { deviceId: { exact: videoInputId } }
         : true as any;
 
-      // Always request video+audio so the user can toggle camera on/off.
-      // For audio-only calls we just disable the video track initially.
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-        video: videoConstraints,
-      });
+      // Try audio+video first; fall back to audio-only if no camera available
+      try {
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+          video: audioOnly ? false : videoConstraints,
+        });
+      } catch {
+        // Camera not available or denied – fall back to audio-only
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+          video: false,
+        });
+        audioOnly = true;
+      }
       if (audioOnly) {
         const videoTrack = this.localStream.getVideoTracks()[0];
         if (videoTrack) videoTrack.enabled = false;

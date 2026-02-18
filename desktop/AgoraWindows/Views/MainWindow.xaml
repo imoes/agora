@@ -182,5 +182,35 @@
                            TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
             </StackPanel>
         </Border>
+
+        <!-- Event Reminder Popup -->
+        <Border x:Name="ReminderBorder" Grid.Column="1"
+                VerticalAlignment="Top" HorizontalAlignment="Right"
+                Margin="16,16" Padding="16,14" CornerRadius="10"
+                Background="White" Visibility="Collapsed"
+                MaxWidth="340" BorderBrush="{StaticResource PrimaryBrush}" BorderThickness="3,0,0,0">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16" Opacity="0.25" ShadowDepth="6" />
+            </Border.Effect>
+            <StackPanel>
+                <TextBlock Text="&#x1F514;" FontSize="22" Margin="0,0,0,6" />
+                <TextBlock x:Name="ReminderTitle" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="ReminderTime" FontSize="11"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,6" />
+                <TextBlock x:Name="ReminderCountdown" FontSize="20" FontWeight="Bold"
+                           Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,12" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <Button x:Name="ReminderJoinBtn" Style="{StaticResource PrimaryButton}"
+                            Padding="14,6" Click="ReminderJoin_Click" Margin="0,0,8,0"
+                            Visibility="Collapsed" />
+                    <Button x:Name="ReminderDismissBtn" Padding="14,6"
+                            Click="ReminderDismiss_Click"
+                            Background="#E0E0E0" Foreground="#333333"
+                            BorderThickness="0" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>
