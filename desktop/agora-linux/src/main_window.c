@@ -1,5 +1,6 @@
 #include "main_window.h"
 #include "api_client.h"
+#include "translations.h"
 #include <libnotify/notify.h>
 #include <string.h>
 
@@ -89,7 +90,7 @@ static void load_channels(AgoraMainWindow *win)
         gtk_box_pack_start(GTK_BOX(row_box), hbox, FALSE, FALSE, 0);
 
         /* Member count */
-        char *members_text = g_strdup_printf("%ld Mitglieder", (long)member_count);
+        char *members_text = g_strdup_printf("%ld %s", (long)member_count, T("chat.members"));
         GtkWidget *members_label = gtk_label_new(members_text);
         g_free(members_text);
         gtk_widget_set_halign(members_label, GTK_ALIGN_START);
@@ -154,12 +155,17 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
         }
 
         /* Message content */
-        const char *edited_tag = has_edited ? " (bearbeitet)" : "";
+        const char *edited_tag = has_edited ? T("chat.edited") : "";
+        char sys_prefix[64] = "";
+        char file_prefix[64] = "";
         const char *type_prefix = "";
-        if (msg_type && g_strcmp0(msg_type, "system") == 0)
-            type_prefix = "[System] ";
-        else if (msg_type && g_strcmp0(msg_type, "file") == 0)
-            type_prefix = "[Datei] ";
+        if (msg_type && g_strcmp0(msg_type, "system") == 0) {
+            g_snprintf(sys_prefix, sizeof(sys_prefix), "[%s] ", T("chat.system"));
+            type_prefix = sys_prefix;
+        } else if (msg_type && g_strcmp0(msg_type, "file") == 0) {
+            g_snprintf(file_prefix, sizeof(file_prefix), "[%s] ", T("chat.file"));
+            type_prefix = file_prefix;
+        }
 
         char *line = g_strdup_printf("[%s] %s%s: %s%s\n",
                                      created ? created : "",
@@ -230,9 +236,16 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
         GtkTextIter iter;
         gtk_text_buffer_get_end_iter(win->message_buffer, &iter);
 
+        char ws_sys_prefix[64] = "";
+        char ws_file_prefix[64] = "";
         const char *type_prefix = "";
-        if (m_type && g_strcmp0(m_type, "system") == 0) type_prefix = "[System] ";
-        else if (m_type && g_strcmp0(m_type, "file") == 0) type_prefix = "[Datei] ";
+        if (m_type && g_strcmp0(m_type, "system") == 0) {
+            g_snprintf(ws_sys_prefix, sizeof(ws_sys_prefix), "[%s] ", T("chat.system"));
+            type_prefix = ws_sys_prefix;
+        } else if (m_type && g_strcmp0(m_type, "file") == 0) {
+            g_snprintf(ws_file_prefix, sizeof(ws_file_prefix), "[%s] ", T("chat.file"));
+            type_prefix = ws_file_prefix;
+        }
 
         char *line = g_strdup_printf("%s%s: %s\n",
                                      type_prefix,
@@ -259,10 +272,10 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
             g_strcmp0(sender_id, session->user_id) != 0 &&
             !gtk_window_is_active(GTK_WINDOW(win))) {
             char *notif_title = g_strdup_printf("%s in %s",
-                sender ? sender : "Jemand",
+                sender ? sender : T("notify.someone"),
                 win->current_channel_name ? win->current_channel_name : "Chat");
             const char *notif_body = (m_type && g_strcmp0(m_type, "file") == 0)
-                ? "Datei gesendet"
+                ? T("chat.file_sent")
                 : (content ? content : "");
             show_notification(notif_title, notif_body);
             g_free(notif_title);
@@ -280,7 +293,7 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
     }
     else if (g_strcmp0(msg_type, "reaction_update") == 0) {
         const char *display_name = json_object_has_member(root, "display_name")
-            ? json_object_get_string_member(root, "display_name") : "Jemand";
+            ? json_object_get_string_member(root, "display_name") : T("notify.someone");
         const char *emoji = json_object_has_member(root, "emoji")
             ? json_object_get_string_member(root, "emoji") : "";
         const char *action = json_object_has_member(root, "action")
@@ -297,8 +310,8 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
         AgoraSession *session = agora_app_get_session(app);
         if (g_strcmp0(action, "add") == 0 && user_id && session->user_id &&
             g_strcmp0(user_id, session->user_id) != 0) {
-            char *notif_title = g_strdup_printf("%s hat reagiert", display_name);
-            char *notif_body = g_strdup_printf("%s auf eine Nachricht", emoji);
+            char *notif_title = g_strdup_printf("%s %s", display_name, T("notify.reacted"));
+            char *notif_body = g_strdup_printf("%s %s", emoji, T("notify.reaction_body"));
             show_notification(notif_title, notif_body);
             g_free(notif_title);
             g_free(notif_body);
@@ -308,7 +321,7 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
         const char *display_name = json_object_has_member(root, "display_name")
             ? json_object_get_string_member(root, "display_name") : NULL;
         if (display_name) {
-            char *typing_text = g_strdup_printf("%s tippt...", display_name);
+            char *typing_text = g_strdup_printf("%s %s", display_name, T("chat.typing_one"));
             gtk_label_set_text(win->typing_label, typing_text);
             gtk_widget_show(GTK_WIDGET(win->typing_label));
             g_free(typing_text);
@@ -490,7 +503,7 @@ static void send_message(AgoraMainWindow *win)
             AgoraSession *session = agora_app_get_session(app);
 
             char *line = g_strdup_printf("%s: %s\n",
-                                         session->display_name ? session->display_name : "Du",
+                                         session->display_name ? session->display_name : T("common.you"),
                                          text);
             gtk_text_buffer_insert(win->message_buffer, &iter, line, -1);
             g_free(line);
@@ -581,7 +594,9 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     /* "Chats" header */
     GtkWidget *chats_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(chats_label), "<b>Chats</b>");
+    char *chats_markup = g_strdup_printf("<b>%s</b>", T("chat.chats"));
+    gtk_label_set_markup(GTK_LABEL(chats_label), chats_markup);
+    g_free(chats_markup);
     gtk_widget_set_halign(chats_label, GTK_ALIGN_START);
     gtk_widget_set_margin_start(chats_label, 12);
     gtk_widget_set_margin_top(chats_label, 8);
@@ -609,11 +624,13 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_halign(empty_box, GTK_ALIGN_CENTER);
 
     GtkWidget *welcome = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(welcome),
-        "<span size='x-large' weight='bold'>Willkommen bei Agora</span>");
+    char *welcome_markup = g_strdup_printf(
+        "<span size='x-large' weight='bold'>%s</span>", T("welcome.title"));
+    gtk_label_set_markup(GTK_LABEL(welcome), welcome_markup);
+    g_free(welcome_markup);
     gtk_box_pack_start(GTK_BOX(empty_box), welcome, FALSE, FALSE, 0);
 
-    GtkWidget *hint = gtk_label_new("Waehle einen Chat aus der Liste");
+    GtkWidget *hint = gtk_label_new(T("welcome.subtitle"));
     gtk_box_pack_start(GTK_BOX(empty_box), hint, FALSE, FALSE, 0);
 
     gtk_stack_add_named(win->content_stack, empty_box, "empty");
@@ -676,14 +693,14 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_container_set_border_width(GTK_CONTAINER(input_box), 8);
 
     win->message_entry = GTK_ENTRY(gtk_entry_new());
-    gtk_entry_set_placeholder_text(win->message_entry, "Nachricht eingeben...");
+    gtk_entry_set_placeholder_text(win->message_entry, T("chat.input_placeholder"));
     g_signal_connect(win->message_entry, "activate",
                      G_CALLBACK(on_entry_activate), win);
     g_signal_connect(win->message_entry, "changed",
                      G_CALLBACK(on_entry_changed), win);
     gtk_box_pack_start(GTK_BOX(input_box), GTK_WIDGET(win->message_entry), TRUE, TRUE, 0);
 
-    GtkWidget *send_btn = gtk_button_new_with_label("Senden");
+    GtkWidget *send_btn = gtk_button_new_with_label(T("chat.send"));
     g_signal_connect(send_btn, "clicked", G_CALLBACK(on_send_clicked), win);
     gtk_box_pack_start(GTK_BOX(input_box), send_btn, FALSE, FALSE, 0);
 
@@ -709,7 +726,7 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
     agora_api_client_set_token(win->api, session->token);
 
     /* Set user info */
-    gtk_label_set_text(win->user_label, session->display_name ? session->display_name : "Benutzer");
+    gtk_label_set_text(win->user_label, session->display_name ? session->display_name : T("common.user"));
 
     /* Load channels */
     load_channels(win);

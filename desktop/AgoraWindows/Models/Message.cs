@@ -76,5 +76,5 @@ public class Message
     }
 
     [JsonIgnore]
-    public string EditedIndicator => EditedAt != null ? " (bearbeitet)" : "";
+    public string EditedIndicator => EditedAt != null ? $" {Services.Translations.T("chat.edited")}" : "";
 }

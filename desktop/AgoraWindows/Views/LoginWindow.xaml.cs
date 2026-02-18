@@ -10,7 +10,17 @@ public partial class LoginWindow : Window
     public LoginWindow()
     {
         InitializeComponent();
+        ApplyTranslations();
         UsernameBox.Focus();
+    }
+
+    private void ApplyTranslations()
+    {
+        Title = $"Agora - {Translations.T("login.title")}";
+        ServerUrlLabel.Text = Translations.T("login.server_url");
+        UsernameLabel.Text = Translations.T("login.username");
+        PasswordLabel.Text = Translations.T("login.password");
+        LoginButton.Content = Translations.T("login.submit");
     }
 
     private async void LoginButton_Click(object sender, RoutedEventArgs e)
@@ -35,18 +45,21 @@ public partial class LoginWindow : Window
         if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(username) ||
             string.IsNullOrEmpty(password))
         {
-            ShowError("Please fill in all fields.");
+            ShowError(Translations.T("login.fill_fields"));
             return;
         }
 
         LoginButton.IsEnabled = false;
-        LoginButton.Content = "Signing in...";
+        LoginButton.Content = Translations.T("login.submitting");
         HideError();
 
         try
         {
             var apiClient = new ApiClient(serverUrl);
-            await apiClient.LoginAsync(username, password);
+            var loginResult = await apiClient.LoginAsync(username, password);
+
+            // Initialize language from user profile
+            Translations.InitFromUser(loginResult.User?.Language);
 
             var mainWindow = new MainWindow(apiClient);
             mainWindow.Show();
@@ -54,12 +67,12 @@ public partial class LoginWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"Login failed: {ex.Message}");
+            ShowError($"{Translations.T("login.error")}: {ex.Message}");
         }
         finally
         {
             LoginButton.IsEnabled = true;
-            LoginButton.Content = "Sign in";
+            LoginButton.Content = Translations.T("login.submit");
         }
     }
 

@@ -65,8 +65,9 @@ public partial class MainWindow : Window
         _api = apiClient;
         InitializeComponent();
 
-        UserDisplayName.Text = _api.CurrentUser?.DisplayName ?? "Benutzer";
-        UserStatus.Text = "Online";
+        UserDisplayName.Text = _api.CurrentUser?.DisplayName ?? Translations.T("common.user");
+        UserStatus.Text = Translations.T("status.online");
+        ApplyTranslations();
 
         ChannelList.ItemsSource = _channels;
         MessageList.ItemsSource = _messages;
@@ -76,6 +77,16 @@ public partial class MainWindow : Window
             await LoadChannelsAsync();
             await ConnectNotificationWsAsync();
         };
+    }
+
+    private void ApplyTranslations()
+    {
+        // These elements have hardcoded text in XAML, override at runtime
+        EmptyStateTitle.Text = Translations.T("welcome.title");
+        EmptyStateSubtitle.Text = Translations.T("welcome.subtitle");
+        ChatsHeader.Text = Translations.T("chat.chats");
+        SendButton.Content = Translations.T("chat.send");
+        MessageInput.ToolTip = Translations.T("chat.input_placeholder");
     }
 
     private async System.Threading.Tasks.Task LoadChannelsAsync()
@@ -91,7 +102,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Fehler beim Laden der Chats: {ex.Message}", "Fehler",
+            MessageBox.Show($"{Translations.T("chat.error_loading_chats")}: {ex.Message}", Translations.T("common.error"),
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -121,8 +132,8 @@ public partial class MainWindow : Window
 
             if (type == "video_call_invite")
             {
-                var from = msg.TryGetProperty("display_name", out var dn) ? dn.GetString() : "Jemand";
-                ShowToast("Eingehender Anruf", $"{from} ruft an...");
+                var from = msg.TryGetProperty("display_name", out var dn) ? dn.GetString() : "?";
+                ShowToast(Translations.T("notify.incoming_call"), $"{from} {Translations.T("notify.calling")}");
             }
         });
     }
@@ -161,7 +172,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Fehler beim Laden der Nachrichten: {ex.Message}", "Fehler",
+            MessageBox.Show($"{Translations.T("chat.error_loading_messages")}: {ex.Message}", Translations.T("common.error"),
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
@@ -243,7 +254,7 @@ public partial class MainWindow : Window
             ShowToast(
                 $"{message.SenderName} in {_currentChannelName}",
                 message.MessageType == "file"
-                    ? "Datei gesendet"
+                    ? Translations.T("chat.file_sent")
                     : message.Content.Length > 80
                         ? message.Content[..80] + "..."
                         : message.Content
@@ -283,7 +294,7 @@ public partial class MainWindow : Window
     {
         var messageId = msg.GetProperty("message_id").GetString();
         var userId = msg.GetProperty("user_id").GetString();
-        var displayName = msg.TryGetProperty("display_name", out var dn) ? dn.GetString() : "Jemand";
+        var displayName = msg.TryGetProperty("display_name", out var dn) ? dn.GetString() : "?";
         var emoji = msg.GetProperty("emoji").GetString();
         var action = msg.GetProperty("action").GetString();
 
@@ -317,8 +328,8 @@ public partial class MainWindow : Window
             if (userId != _api.CurrentUser?.Id && action == "add")
             {
                 ShowToast(
-                    $"{displayName} hat reagiert",
-                    $"{emoji} auf eine Nachricht"
+                    $"{displayName} {Translations.T("notify.reacted")}",
+                    $"{emoji} {Translations.T("notify.reaction_body")}"
                 );
             }
         }
@@ -378,8 +389,8 @@ public partial class MainWindow : Window
         TypingBar.Visibility = Visibility.Visible;
         var names = string.Join(", ", _typingUsers);
         TypingText.Text = _typingUsers.Count == 1
-            ? $"{names} tippt..."
-            : $"{names} tippen...";
+            ? $"{names} {Translations.T("chat.typing_one")}"
+            : $"{names} {Translations.T("chat.typing_many")}";
     }
 
     // --- Toast notification (3 seconds) ---
@@ -462,7 +473,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Fehler beim Senden: {ex.Message}", "Fehler",
+            MessageBox.Show($"{Translations.T("chat.error_sending")}: {ex.Message}", Translations.T("common.error"),
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
