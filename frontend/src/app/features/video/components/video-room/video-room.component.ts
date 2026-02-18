@@ -82,31 +82,86 @@ import { AuthService } from '@core/services/auth.service';
 
       <!-- Normal Video Grid (no presentation) -->
       <ng-template #normalGrid>
-        <div class="video-grid" [class.single]="participants.size === 0">
-          <!-- Local Video -->
-          <div class="video-tile local" [class.audio-tile]="!videoEnabled">
-            <video #localVideo autoplay muted playsinline [hidden]="!videoEnabled"></video>
-            <div *ngIf="!videoEnabled" class="audio-avatar">
-              <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
-              <span>Du</span>
-            </div>
-            <div class="video-label">Du
-              <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
-            </div>
+        <div class="grid-wrapper">
+          <!-- Active speaker sidebar -->
+          <div class="speaker-sidebar" *ngIf="activeSpeakerId && allTiles.length > 1">
+            <ng-container *ngIf="activeSpeakerId === currentUserId">
+              <div class="video-tile speaking local" [class.audio-tile]="!videoEnabled">
+                <video #localVideo autoplay muted playsinline [hidden]="!videoEnabled"></video>
+                <div *ngIf="!videoEnabled" class="audio-avatar">
+                  <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
+                  <span>Du</span>
+                </div>
+                <span class="hand-raised-badge" *ngIf="handRaised">&#x1F91A;</span>
+                <div class="video-label">Du
+                  <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
+                </div>
+              </div>
+            </ng-container>
+            <ng-container *ngIf="activeSpeakerId !== currentUserId">
+              <div *ngFor="let p of participantList" class="video-tile speaking"
+                   [class.audio-tile]="!p.videoEnabled"
+                   [style.display]="p.userId === activeSpeakerId ? 'block' : 'none'">
+                <video [id]="'speaker-video-' + p.userId" autoplay playsinline></video>
+                <div *ngIf="!p.videoEnabled" class="audio-avatar">
+                  <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
+                  <span>{{ p.displayName }}</span>
+                </div>
+                <span class="hand-raised-badge" *ngIf="p.handRaised">&#x1F91A;</span>
+                <div class="video-label">{{ p.displayName }}
+                  <mat-icon *ngIf="!p.audioEnabled" class="mute-icon">mic_off</mat-icon>
+                </div>
+              </div>
+            </ng-container>
           </div>
 
-          <!-- Remote Videos -->
-          <div *ngFor="let p of participantList" class="video-tile"
-               [class.audio-tile]="!p.videoEnabled">
-            <video [id]="'video-' + p.userId" autoplay playsinline></video>
-            <div *ngIf="!p.videoEnabled" class="audio-avatar">
-              <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
-              <span>{{ p.displayName }}</span>
-            </div>
-            <div class="video-label">{{ p.displayName }}
-              <mat-icon *ngIf="!p.audioEnabled" class="mute-icon">mic_off</mat-icon>
-            </div>
+          <!-- Main grid area -->
+          <div class="video-grid" [class.single]="pagedTiles.length <= 1"
+               [class.has-speaker]="activeSpeakerId && allTiles.length > 1">
+            <!-- Paged tiles -->
+            <ng-container *ngFor="let tile of pagedTiles">
+              <!-- Local Video -->
+              <div *ngIf="tile.type === 'local'" class="video-tile local"
+                   [class.audio-tile]="!videoEnabled"
+                   [class.speaking]="activeSpeakerId === currentUserId">
+                <video #localVideo autoplay muted playsinline [hidden]="!videoEnabled"></video>
+                <div *ngIf="!videoEnabled" class="audio-avatar">
+                  <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
+                  <span>Du</span>
+                </div>
+                <span class="hand-raised-badge" *ngIf="handRaised">&#x1F91A;</span>
+                <div class="video-label">Du
+                  <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
+                </div>
+              </div>
+
+              <!-- Remote Videos -->
+              <div *ngIf="tile.type === 'remote'" class="video-tile"
+                   [class.audio-tile]="!tile.participant!.videoEnabled"
+                   [class.speaking]="activeSpeakerId === tile.participant!.userId">
+                <video [id]="'video-' + tile.participant!.userId" autoplay playsinline></video>
+                <div *ngIf="!tile.participant!.videoEnabled" class="audio-avatar">
+                  <mat-icon>{{ tile.participant!.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
+                  <span>{{ tile.participant!.displayName }}</span>
+                </div>
+                <span class="hand-raised-badge" *ngIf="tile.participant!.handRaised">&#x1F91A;</span>
+                <div class="video-label">{{ tile.participant!.displayName }}
+                  <mat-icon *ngIf="!tile.participant!.audioEnabled" class="mute-icon">mic_off</mat-icon>
+                </div>
+              </div>
+            </ng-container>
           </div>
+        </div>
+
+        <!-- Pagination arrows -->
+        <div class="pagination-bar" *ngIf="totalPages > 1">
+          <button mat-icon-button (click)="prevPage()" [disabled]="currentPage === 0">
+            <mat-icon>chevron_left</mat-icon>
+          </button>
+          <span class="page-indicator">{{ currentPage + 1 }} / {{ totalPages }}</span>
+          <button mat-icon-button (click)="nextPage()" [disabled]="currentPage >= totalPages - 1">
+            <mat-icon>chevron_right</mat-icon>
+          </button>
         </div>
       </ng-template>
 
@@ -229,6 +284,12 @@ import { AuthService } from '@core/services/auth.service';
         <button mat-fab [color]="videoEnabled ? 'primary' : 'warn'"
                 (click)="toggleVideo()" matTooltip="Kamera">
           <mat-icon>{{ videoEnabled ? 'videocam' : 'videocam_off' }}</mat-icon>
+        </button>
+        <button mat-fab
+                [color]="handRaised ? 'accent' : undefined"
+                (click)="toggleHandRaise()"
+                [matTooltip]="handRaised ? 'Hand senken' : 'Hand heben'">
+          <mat-icon>{{ handRaised ? 'back_hand' : 'back_hand' }}</mat-icon>
         </button>
         <button mat-fab
                 [color]="isScreenSharing ? 'accent' : undefined"
@@ -649,6 +710,72 @@ import { AuthService } from '@core/services/auth.service';
       padding: 0 5px;
       line-height: 1;
     }
+    /* Grid wrapper with speaker sidebar */
+    .grid-wrapper {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+    }
+    .speaker-sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      border-right: 2px solid #6264a7;
+      background: #222;
+    }
+    .speaker-sidebar .video-tile {
+      width: 100%;
+      max-width: 260px;
+    }
+    /* Speaking highlight */
+    .video-tile.speaking {
+      box-shadow: 0 0 0 3px #6264a7, 0 0 16px rgba(98, 100, 167, 0.5);
+    }
+    /* Hand raised badge */
+    .hand-raised-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      font-size: 28px;
+      z-index: 2;
+      animation: hand-wave 1s ease-in-out 3;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    }
+    @keyframes hand-wave {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(20deg); }
+      75% { transform: rotate(-15deg); }
+    }
+    /* Pagination */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 6px 0;
+      background: #292929;
+      flex-shrink: 0;
+    }
+    .pagination-bar button {
+      color: white;
+    }
+    .pagination-bar button[disabled] {
+      color: #555;
+    }
+    .page-indicator {
+      color: #ccc;
+      font-size: 13px;
+      min-width: 50px;
+      text-align: center;
+    }
+    .video-grid.has-speaker {
+      flex: 1;
+    }
     .video-controls {
       display: flex;
       justify-content: center;
@@ -656,6 +783,14 @@ import { AuthService } from '@core/services/auth.service';
       padding: 20px;
       background: #292929;
       flex-shrink: 0;
+    }
+    @media (max-width: 600px) {
+      .speaker-sidebar {
+        width: 100px;
+      }
+      .speaker-sidebar .video-tile {
+        max-width: 90px;
+      }
     }
   `],
 })
@@ -675,6 +810,19 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   presenter: { userId: string; displayName: string } | null = null;
   mediaError: string | null = null;
   showInvitePanel = false;
+
+  // Hand raise
+  handRaised = false;
+
+  // Pagination
+  readonly TILES_PER_PAGE = 9;
+  currentPage = 0;
+  allTiles: { type: 'local' | 'remote'; participant?: Participant }[] = [];
+  pagedTiles: { type: 'local' | 'remote'; participant?: Participant }[] = [];
+  totalPages = 1;
+
+  // Active speaker
+  activeSpeakerId: string | null = null;
 
   // Chat sidebar
   showChatPanel = false;
@@ -764,10 +912,32 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.participants = participants;
         this.participantList = Array.from(participants.values());
         this.updateCallableMembers();
+        this.rebuildTiles();
         this.pendingStreamAttach = true;
         this.cdr.detectChanges();
       })
     );
+
+    // Subscribe to hand raises
+    this.subscriptions.push(
+      this.webrtcService.handRaised$.subscribe((raised) => {
+        this.handRaised = raised.has(this.currentUserId);
+      })
+    );
+
+    // Subscribe to active speaker
+    this.subscriptions.push(
+      this.webrtcService.activeSpeaker$.subscribe((speakerId) => {
+        if (speakerId !== this.activeSpeakerId) {
+          this.activeSpeakerId = speakerId;
+          this.pendingStreamAttach = true;
+          this.cdr.detectChanges();
+        }
+      })
+    );
+
+    // Start speaker detection
+    this.webrtcService.startSpeakerDetection();
 
     // Subscribe to screen sharing state – layout switches from normalGrid
     // to presentation-layout, destroying/recreating video DOM elements.
@@ -829,6 +999,11 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (presEl && p.stream && presEl.srcObject !== p.stream) {
         presEl.srcObject = p.stream;
       }
+      // Speaker sidebar video
+      const speakerEl = document.getElementById('speaker-video-' + p.userId) as HTMLVideoElement;
+      if (speakerEl && p.stream && speakerEl.srcObject !== p.stream) {
+        speakerEl.srcObject = p.stream;
+      }
     });
 
     // Also re-attach localVideo after layout switches (the #localVideo
@@ -848,6 +1023,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   ngOnDestroy(): void {
     this.subscriptions.forEach((s) => s.unsubscribe());
     this.chatWsSubscription?.unsubscribe();
+    this.webrtcService.stopSpeakerDetection();
     this.webrtcService.endCall();
     this.apiService.leaveVideoRoom(this.channelId).subscribe({ error: () => {} });
   }
@@ -987,6 +1163,50 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!dateStr) return '';
     const d = new Date(dateStr);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // --- Hand raise ---
+
+  toggleHandRaise(): void {
+    this.handRaised = !this.handRaised;
+    this.webrtcService.toggleHandRaise(this.handRaised);
+  }
+
+  // --- Pagination ---
+
+  private rebuildTiles(): void {
+    this.allTiles = [
+      { type: 'local' as const },
+      ...this.participantList.map(p => ({ type: 'remote' as const, participant: p })),
+    ];
+    this.totalPages = Math.max(1, Math.ceil(this.allTiles.length / this.TILES_PER_PAGE));
+    if (this.currentPage >= this.totalPages) {
+      this.currentPage = this.totalPages - 1;
+    }
+    this.updatePagedTiles();
+  }
+
+  private updatePagedTiles(): void {
+    const start = this.currentPage * this.TILES_PER_PAGE;
+    this.pagedTiles = this.allTiles.slice(start, start + this.TILES_PER_PAGE);
+  }
+
+  nextPage(): void {
+    if (this.currentPage < this.totalPages - 1) {
+      this.currentPage++;
+      this.updatePagedTiles();
+      this.pendingStreamAttach = true;
+      this.cdr.detectChanges();
+    }
+  }
+
+  prevPage(): void {
+    if (this.currentPage > 0) {
+      this.currentPage--;
+      this.updatePagedTiles();
+      this.pendingStreamAttach = true;
+      this.cdr.detectChanges();
+    }
   }
 
   // --- End call ---

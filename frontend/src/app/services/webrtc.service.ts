@@ -10,6 +10,8 @@ export interface Participant {
   audioEnabled: boolean;
   videoEnabled: boolean;
   isScreenShare?: boolean;
+  handRaised?: boolean;
+  isSpeaking?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -34,6 +36,15 @@ export class WebRTCService {
 
   private presenterSubject = new BehaviorSubject<{ userId: string; displayName: string } | null>(null);
   presenter$ = this.presenterSubject.asObservable();
+
+  private handRaisedSubject = new BehaviorSubject<Set<string>>(new Set());
+  handRaised$ = this.handRaisedSubject.asObservable();
+
+  private activeSpeakerSubject = new BehaviorSubject<string | null>(null);
+  activeSpeaker$ = this.activeSpeakerSubject.asObservable();
+
+  private audioAnalysers = new Map<string, { analyser: AnalyserNode; context: AudioContext }>();
+  private speakerDetectionInterval: any = null;
 
   private rtcConfig: RTCConfiguration = {
     iceServers: [
@@ -130,6 +141,25 @@ export class WebRTCService {
 
       case 'video_call_end':
         this.removePeer(msg.user_id);
+        break;
+
+      case 'hand_raise':
+        if (msg.user_id !== currentUser.id) {
+          const raised = this.handRaisedSubject.value;
+          if (msg.raised) {
+            raised.add(msg.user_id);
+          } else {
+            raised.delete(msg.user_id);
+          }
+          this.handRaisedSubject.next(new Set(raised));
+          // Also update participant
+          const parts = this.participantsSubject.value;
+          const part = parts.get(msg.user_id);
+          if (part) {
+            part.handRaised = msg.raised;
+            this.participantsSubject.next(new Map(parts));
+          }
+        }
         break;
 
       case 'screen_share_start':
@@ -364,7 +394,100 @@ export class WebRTCService {
     this.wsService.send(this.channelId, { type: 'screen_share_stop' });
   }
 
+  toggleHandRaise(raised: boolean): void {
+    if (!this.channelId) return;
+    const currentUser = this.authService.getCurrentUser();
+    if (!currentUser) return;
+    const set = this.handRaisedSubject.value;
+    if (raised) {
+      set.add(currentUser.id);
+    } else {
+      set.delete(currentUser.id);
+    }
+    this.handRaisedSubject.next(new Set(set));
+    this.wsService.send(this.channelId, { type: 'hand_raise', raised });
+  }
+
+  startSpeakerDetection(): void {
+    if (this.speakerDetectionInterval) return;
+    this.speakerDetectionInterval = setInterval(() => {
+      this.detectActiveSpeaker();
+    }, 300);
+  }
+
+  stopSpeakerDetection(): void {
+    if (this.speakerDetectionInterval) {
+      clearInterval(this.speakerDetectionInterval);
+      this.speakerDetectionInterval = null;
+    }
+    this.audioAnalysers.forEach(({ context }) => context.close());
+    this.audioAnalysers.clear();
+  }
+
+  private detectActiveSpeaker(): void {
+    let loudest: string | null = null;
+    let loudestLevel = 0;
+    const threshold = 15; // minimum level to count as speaking
+
+    // Check remote participants
+    this.participantsSubject.value.forEach((p, userId) => {
+      if (!p.stream) return;
+      let entry = this.audioAnalysers.get(userId);
+      if (!entry) {
+        try {
+          const context = new AudioContext();
+          const source = context.createMediaStreamSource(p.stream);
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+          entry = { analyser, context };
+          this.audioAnalysers.set(userId, entry);
+        } catch {
+          return;
+        }
+      }
+      const data = new Uint8Array(entry.analyser.frequencyBinCount);
+      entry.analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      if (avg > threshold && avg > loudestLevel) {
+        loudestLevel = avg;
+        loudest = userId;
+      }
+    });
+
+    // Check local stream
+    if (this.localStream) {
+      const currentUser = this.authService.getCurrentUser();
+      const localId = currentUser?.id || '__local__';
+      let entry = this.audioAnalysers.get(localId);
+      if (!entry) {
+        try {
+          const context = new AudioContext();
+          const source = context.createMediaStreamSource(this.localStream);
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+          entry = { analyser, context };
+          this.audioAnalysers.set(localId, entry);
+        } catch { /* ignore */ }
+      }
+      if (entry) {
+        const data = new Uint8Array(entry.analyser.frequencyBinCount);
+        entry.analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        if (avg > threshold && avg > loudestLevel) {
+          loudestLevel = avg;
+          loudest = localId;
+        }
+      }
+    }
+
+    this.activeSpeakerSubject.next(loudest);
+  }
+
   endCall(): void {
+    this.stopSpeakerDetection();
+    this.handRaisedSubject.next(new Set());
     // Stop screen share if active
     if (this.screenStream) {
       this.screenStream.getTracks().forEach((t) => t.stop());

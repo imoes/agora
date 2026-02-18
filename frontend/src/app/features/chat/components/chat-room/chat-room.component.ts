@@ -522,6 +522,7 @@ import Quill from 'quill';
     .message.own {
       justify-content: flex-end;
       flex-direction: row-reverse;
+      align-self: flex-end;
     }
     :host ::ng-deep .highlight-msg {
       animation: msg-flash 1.5s ease-out;
