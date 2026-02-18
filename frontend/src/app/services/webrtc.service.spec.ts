@@ -16,6 +16,9 @@ function mockUser(overrides: Partial<User> = {}): User {
     avatar_path: null,
     status: 'online',
     status_message: null,
+    is_admin: false,
+    auth_source: 'local',
+    language: 'en',
     created_at: '2024-01-01',
     ...overrides,
   };
@@ -151,11 +154,9 @@ describe('WebRTCService', () => {
       await service.startCall('ch1');
 
       expect(error).toContain('Zugriff auf Kamera/Mikrofon verweigert');
-      // wsConnect should not have been called for THIS startCall invocation
-      // (previous tests may have called it, so we check it wasn't called again)
-      const callCountBefore = wsConnectMock.mock.calls.length;
-      // It was already called before the getUserMedia failure in startCall,
-      // so we just verify that the call did NOT proceed to send
+      // Both video+audio and audio-only fallback should have been attempted
+      expect(getUserMediaSpy).toHaveBeenCalledTimes(2);
+      // It should NOT proceed to send since getUserMedia failed
       expect(wsSendMock).not.toHaveBeenCalledWith('ch1', { type: 'video_call_start' });
     });
   });

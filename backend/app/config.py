@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     ldap_display_name_attr: str = "displayName"
     ldap_admin_group_dn: str = ""  # Optional: members get admin role
 
+    # Registration
+    allow_registration: bool = False
+
     model_config = {"env_file": ".env"}
 
 

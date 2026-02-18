@@ -13,7 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.models.base import Base
 from app.database import get_db
+from app.config import settings
 from app.main import app
+
+# Enable registration for tests
+settings.allow_registration = True
 
 # In-memory SQLite fuer PostgreSQL-Ersatz im Test
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"

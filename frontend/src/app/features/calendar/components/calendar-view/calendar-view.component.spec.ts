@@ -2,6 +2,7 @@ import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CalendarViewComponent } from './calendar-view.component';
 import { ApiService } from '@services/api.service';
+import { AuthService } from '@core/services/auth.service';
 import { of, throwError } from 'rxjs';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
@@ -34,6 +35,7 @@ describe('CalendarViewComponent', () => {
       imports: [CalendarViewComponent, NoopAnimationsModule],
       providers: [
         { provide: ApiService, useValue: apiMock },
+        { provide: AuthService, useValue: { getCurrentUser: () => ({ id: 'user-1' }) } },
         provideRouter([]),
       ],
     }).compileComponents();
@@ -134,6 +136,7 @@ describe('CalendarViewComponent', () => {
   it('should open event form for editing', () => {
     const ev = {
       id: 'ev1',
+      user_id: 'user-1',
       title: 'Existing',
       description: 'Desc',
       start_time: new Date().toISOString(),
@@ -264,16 +267,12 @@ describe('CalendarViewComponent', () => {
     expect(component.getVideoLink('Room A')).toBe('');
   });
 
-  it('should save Google settings with email and app password', () => {
+  it('should save Google settings (OAuth, no manual credentials)', () => {
     component.settingsProvider = 'google';
-    component.googleEmail = 'user@gmail.com';
-    component.googleAppPassword = 'abcd efgh ijkl mnop';
     component.saveSettings();
     expect(apiMock.saveCalendarIntegration).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'google',
-        google_email: 'user@gmail.com',
-        google_app_password: 'abcd efgh ijkl mnop',
       })
     );
   });
@@ -309,6 +308,7 @@ describe('CalendarViewComponent', () => {
     component.events = [
       {
         id: '1',
+        user_id: 'user-1',
         title: 'Today',
         start_time: new Date(2026, 1, 14, 10, 0).toISOString(),
         end_time: new Date(2026, 1, 14, 11, 0).toISOString(),
@@ -316,6 +316,7 @@ describe('CalendarViewComponent', () => {
       },
       {
         id: '2',
+        user_id: 'user-1',
         title: 'Tomorrow',
         start_time: new Date(2026, 1, 15, 10, 0).toISOString(),
         end_time: new Date(2026, 1, 15, 11, 0).toISOString(),
