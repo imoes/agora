@@ -401,6 +401,17 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         {"type": "new_message", "message": sys_msg},
                     )
 
+            elif msg_type == "hand_raise":
+                await manager.send_to_channel(
+                    channel_id,
+                    {
+                        "type": "hand_raise",
+                        "user_id": user_id,
+                        "display_name": user.display_name,
+                        "raised": data.get("raised", True),
+                    },
+                )
+
             elif msg_type == "screen_share_start":
                 await manager.send_to_channel(
                     channel_id,
