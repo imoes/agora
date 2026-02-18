@@ -1,7 +1,7 @@
 <Window x:Class="AgoraWindows.Views.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Agora - Sign in"
+        Title="Agora"
         Width="420" Height="500"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -25,20 +25,20 @@
                            HorizontalAlignment="Center" Margin="0,0,0,24" />
 
                 <!-- Server URL -->
-                <TextBlock Text="Server URL:" FontSize="12"
+                <TextBlock x:Name="ServerUrlLabel" Text="Server URL:" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
                 <TextBox x:Name="ServerUrlBox" Text="https://localhost"
                          Padding="8" FontSize="13" Margin="0,0,0,12"
                          BorderBrush="{StaticResource BorderBrush}" />
 
                 <!-- Username -->
-                <TextBlock Text="Username:" FontSize="12"
+                <TextBlock x:Name="UsernameLabel" Text="Username:" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
                 <TextBox x:Name="UsernameBox" Padding="8" FontSize="13" Margin="0,0,0,12"
                          BorderBrush="{StaticResource BorderBrush}" />
 
                 <!-- Password -->
-                <TextBlock Text="Password:" FontSize="12"
+                <TextBlock x:Name="PasswordLabel" Text="Password:" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
                 <PasswordBox x:Name="PasswordBox" Padding="8" FontSize="13" Margin="0,0,0,20"
                              BorderBrush="{StaticResource BorderBrush}"
