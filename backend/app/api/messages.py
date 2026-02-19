@@ -171,9 +171,22 @@ async def create_message(
     msg["sender_name"] = current_user.display_name
     msg["sender_avatar_path"] = current_user.avatar_path
     msg["sender_status"] = current_user.status or "offline"
+    notification_payload = {"type": "new_message", "message": msg, "channel_id": str(channel_id)}
     await manager.send_to_channel(
         str(channel_id),
-        {"type": "new_message", "message": msg},
+        notification_payload,
+    )
+
+    # Notify channel members not in the channel WebSocket via notification WS
+    result = await db.execute(
+        select(ChannelMember.user_id).where(
+            ChannelMember.channel_id == channel_id
+        )
+    )
+    member_ids = [str(row[0]) for row in result.all()]
+    await manager.notify_channel_members(
+        str(channel_id), member_ids, notification_payload,
+        exclude_user=str(current_user.id),
     )
 
     return MessageOut(
