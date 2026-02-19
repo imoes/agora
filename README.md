@@ -28,7 +28,7 @@ Agora is a self-hosted collaboration platform with chat, video conferencing, fil
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/imoes/agora.git
    cd agora
    ```
 
