@@ -113,9 +113,13 @@ export class WebSocketService {
     if (this.notificationSocket) return;
 
     const token = this.authService.getToken();
+    if (!token) return;
+
+    let opened = false;
     const ws = new WebSocket(`${environment.wsUrl}/notifications?token=${token}`);
 
     ws.onopen = () => {
+      opened = true;
       // Heartbeat every 25s to keep connection alive and detect disconnects
       this.notificationPingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -135,8 +139,9 @@ export class WebSocketService {
       this.notificationSocket = null;
       clearInterval(this.notificationPingInterval);
       this.notificationPingInterval = null;
-      // Reconnect after 3s if still authenticated
-      if (this.authService.getToken()) {
+      // Only reconnect if the socket was previously open (network drop).
+      // If it never opened, the token is likely invalid – stop retrying.
+      if (opened && this.authService.getToken()) {
         setTimeout(() => this.connectNotifications(), 3000);
       }
     };
