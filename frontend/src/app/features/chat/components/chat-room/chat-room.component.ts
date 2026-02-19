@@ -1527,7 +1527,10 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.newMessagesDivider?.nativeElement.scrollIntoView({ block: 'start' });
       });
     } else if (this.shouldScroll) {
-      this.scrollToBottom();
+      this.shouldScroll = false;
+      setTimeout(() => {
+        this.scrollToBottom();
+      });
     }
   }
 
