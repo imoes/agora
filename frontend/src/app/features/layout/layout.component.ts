@@ -1232,6 +1232,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private ringTimeout: any = null;
   private audioUnlocked = false;
   private unlockHandler = () => this.unlockAudio();
+  private notificationAudio: HTMLAudioElement | null = null;
 
   availableLanguages = EU_LANGUAGES;
 
@@ -1335,6 +1336,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
     // Pre-create ringtone audio and unlock on first user gesture
     this.prepareRingtone();
+    this.prepareNotificationSound();
     document.addEventListener('click', this.unlockHandler, { once: true });
     document.addEventListener('keydown', this.unlockHandler, { once: true });
 
@@ -1401,9 +1403,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
           this.stopRinging();
           this.incomingCall = null;
         }
-        // Refresh chat sidebar on new messages
+        // Refresh chat sidebar and play notification sound on new messages
         if (msg.type === 'new_message') {
           this.loadChatChannels();
+          // Play notification sound if the message is from someone else
+          if (msg.message?.sender_id !== this.currentUser?.id) {
+            this.playNotificationSound();
+          }
         }
       })
     );
@@ -1750,6 +1756,22 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.incomingCall = null;
   }
 
+  /** Pre-create the notification sound Audio element. */
+  private prepareNotificationSound(): void {
+    try {
+      this.notificationAudio = new Audio('assets/sounds/star-trek-communicator.mp3');
+    } catch {
+      // Audio not available
+    }
+  }
+
+  /** Play the notification sound for new messages. */
+  private playNotificationSound(): void {
+    if (!this.notificationAudio) return;
+    this.notificationAudio.currentTime = 0;
+    this.notificationAudio.play().catch(() => {});
+  }
+
   /** Pre-create the ringtone Audio element so it's ready when needed. */
   private prepareRingtone(): void {
     try {
@@ -1766,14 +1788,24 @@ export class LayoutComponent implements OnInit, OnDestroy {
    *  Browsers require at least one play() from a gesture before allowing
    *  programmatic playback (e.g. from a WebSocket handler). */
   private unlockAudio(): void {
-    if (this.audioUnlocked || !this.ringAudio) return;
-    this.ringAudio.volume = 0;
-    this.ringAudio.play().then(() => {
-      this.ringAudio!.pause();
-      this.ringAudio!.currentTime = 0;
-      this.ringAudio!.volume = 1;
-      this.audioUnlocked = true;
-    }).catch(() => {});
+    if (this.audioUnlocked) return;
+    if (this.ringAudio) {
+      this.ringAudio.volume = 0;
+      this.ringAudio.play().then(() => {
+        this.ringAudio!.pause();
+        this.ringAudio!.currentTime = 0;
+        this.ringAudio!.volume = 1;
+      }).catch(() => {});
+    }
+    if (this.notificationAudio) {
+      this.notificationAudio.volume = 0;
+      this.notificationAudio.play().then(() => {
+        this.notificationAudio!.pause();
+        this.notificationAudio!.currentTime = 0;
+        this.notificationAudio!.volume = 1;
+      }).catch(() => {});
+    }
+    this.audioUnlocked = true;
   }
 
   private startRinging(): void {

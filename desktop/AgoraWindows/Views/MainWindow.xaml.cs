@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using AgoraWindows.Models;
 using AgoraWindows.Services;
@@ -60,6 +63,10 @@ public partial class MainWindow : Window
     // Toast notification
     private DispatcherTimer? _toastTimer;
 
+    // Notification sound
+    private MediaPlayer? _notificationPlayer;
+    private string? _notificationSoundPath;
+
     // Event reminder
     private DispatcherTimer? _reminderPollTimer;
     private DispatcherTimer? _reminderTickTimer;
@@ -85,6 +92,7 @@ public partial class MainWindow : Window
             await LoadChannelsAsync();
             await ConnectNotificationWsAsync();
             StartReminderPolling();
+            await DownloadNotificationSoundAsync();
         };
     }
 
@@ -257,6 +265,12 @@ public partial class MainWindow : Window
             UpdateTypingIndicator();
         }
 
+        // Play notification sound and show toast for messages from others
+        if (message.SenderId != _api.CurrentUser?.Id)
+        {
+            PlayNotificationSound();
+        }
+
         // Show toast notification if window is not focused or different channel
         if (!IsActive && message.SenderId != _api.CurrentUser?.Id)
         {
@@ -418,6 +432,48 @@ public partial class MainWindow : Window
             _toastTimer.Stop();
         };
         _toastTimer.Start();
+    }
+
+    // --- Notification sound ---
+
+    private async System.Threading.Tasks.Task DownloadNotificationSoundAsync()
+    {
+        try
+        {
+            var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
+            var soundUrl = $"{baseUrl}/assets/sounds/star-trek-communicator.mp3";
+
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+            };
+            using var http = new HttpClient(handler);
+            var data = await http.GetByteArrayAsync(soundUrl);
+
+            _notificationSoundPath = Path.Combine(Path.GetTempPath(), "agora-notification.mp3");
+            await File.WriteAllBytesAsync(_notificationSoundPath, data);
+        }
+        catch
+        {
+            // Sound download is optional
+        }
+    }
+
+    private void PlayNotificationSound()
+    {
+        if (_notificationSoundPath == null || !File.Exists(_notificationSoundPath)) return;
+
+        try
+        {
+            _notificationPlayer ??= new MediaPlayer();
+            _notificationPlayer.Open(new Uri(_notificationSoundPath));
+            _notificationPlayer.Position = TimeSpan.Zero;
+            _notificationPlayer.Play();
+        }
+        catch
+        {
+            // Sound playback is optional
+        }
     }
 
     // --- Send message ---
@@ -645,6 +701,7 @@ public partial class MainWindow : Window
         }
         await _notificationWs.DisconnectAsync();
         _notificationWs.Dispose();
+        _notificationPlayer?.Close();
         _api.Dispose();
     }
 }
