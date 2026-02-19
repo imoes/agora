@@ -1284,26 +1284,30 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.subscriptions.push(
       interval(10000).pipe(
         switchMap(() => this.apiService.getUnreadCount())
-      ).subscribe((res) => {
-        this.unreadCount = res.unread_count;
+      ).subscribe({
+        next: (res) => { this.unreadCount = res.unread_count; },
+        error: () => {},
       })
     );
 
     // Initial load
-    this.apiService.getUnreadCount().subscribe((res) => {
-      this.unreadCount = res.unread_count;
+    this.apiService.getUnreadCount().subscribe({
+      next: (res) => { this.unreadCount = res.unread_count; },
+      error: () => {},
     });
 
     // Poll pending calendar invitations every 10 seconds
     this.subscriptions.push(
       interval(10000).pipe(
         switchMap(() => this.apiService.getCalendarInvitationCount())
-      ).subscribe((res) => {
-        this.pendingInvitationsCount = res.count;
+      ).subscribe({
+        next: (res) => { this.pendingInvitationsCount = res.count; },
+        error: () => {},
       })
     );
-    this.apiService.getCalendarInvitationCount().subscribe((res) => {
-      this.pendingInvitationsCount = res.count;
+    this.apiService.getCalendarInvitationCount().subscribe({
+      next: (res) => { this.pendingInvitationsCount = res.count; },
+      error: () => {},
     });
 
     // Event reminder: check every 60 seconds for upcoming events
@@ -1315,8 +1319,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
           const end = new Date(now.getTime() + 16 * 60 * 1000);
           return this.apiService.getCalendarEvents(now.toISOString(), end.toISOString());
         })
-      ).subscribe((events) => {
-        this.evaluateReminders(events);
+      ).subscribe({
+        next: (events) => { this.evaluateReminders(events); },
+        error: () => {},
       })
     );
 
@@ -1332,9 +1337,12 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.subscriptions.push(
       interval(30000).pipe(
         switchMap(() => this.apiService.getChannels())
-      ).subscribe((channels) => {
-        this.chatChannels = channels;
-        this.updateFilteredChannels();
+      ).subscribe({
+        next: (channels) => {
+          this.chatChannels = channels;
+          this.updateFilteredChannels();
+        },
+        error: () => {},
       })
     );
 
@@ -1416,9 +1424,12 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   loadChatChannels(): void {
-    this.apiService.getChannels().subscribe((channels) => {
-      this.chatChannels = channels;
-      this.updateFilteredChannels();
+    this.apiService.getChannels().subscribe({
+      next: (channels) => {
+        this.chatChannels = channels;
+        this.updateFilteredChannels();
+      },
+      error: () => {},
     });
   }
 
