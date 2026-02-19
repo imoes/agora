@@ -47,7 +47,7 @@ export class WebSocketService {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       subject.next(data);
-      this.globalMessageSubject.next(data);
+      this.globalMessageSubject.next({ ...data, _channelId: channelId });
     };
 
     ws.onerror = () => {
