@@ -95,17 +95,20 @@ describe('ChatRoomComponent – computeFirstUnread', () => {
     expect(component.firstUnreadMessageId).toBeNull();
   });
 
-  it('should handle last read message not in batch (all messages are new)', () => {
+  it('should return null when last read not in batch (scroll to bottom instead)', () => {
+    // When the last-read message is older than the loaded batch, we cannot
+    // accurately place the divider.  Return null so the view scrolls to
+    // the bottom instead of jumping to the top.
     component.lastReadMessageId = 'msg-old';  // not in the array
     component.messages = [
-      { id: 'msg-5', sender_id: 'user-1' },  // own – skip
-      { id: 'msg-6', sender_id: 'other-user' },  // first unread from others
+      { id: 'msg-5', sender_id: 'user-1' },
+      { id: 'msg-6', sender_id: 'other-user' },
     ];
     callComputeFirstUnread();
-    expect(component.firstUnreadMessageId).toBe('msg-6');
+    expect(component.firstUnreadMessageId).toBeNull();
   });
 
-  it('should return null when last read not in batch and all messages are own', () => {
+  it('should return null when last read not in batch even with all own messages', () => {
     component.lastReadMessageId = 'msg-old';
     component.messages = [
       { id: 'msg-5', sender_id: 'user-1' },

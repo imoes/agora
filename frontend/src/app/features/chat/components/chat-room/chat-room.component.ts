@@ -1598,11 +1598,17 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!this.lastReadMessageId || this.messages.length === 0) return;
 
     const idx = this.messages.findIndex(m => m.id === this.lastReadMessageId);
-    // Determine the start of unread messages
-    const startIdx = idx === -1 ? 0 : idx + 1;
+    if (idx === -1) {
+      // Last read message is not in the loaded batch – the read position
+      // is either very old or from a different session.  Rather than
+      // placing a divider at the very top (which causes the view to
+      // scroll away from the latest messages), skip the divider and
+      // let the caller scroll to the bottom.
+      return;
+    }
     // Find the first unread message NOT sent by the current user
     const currentUserId = this.currentUser?.id;
-    for (let i = startIdx; i < this.messages.length; i++) {
+    for (let i = idx + 1; i < this.messages.length; i++) {
       if (this.messages[i].sender_id !== currentUserId) {
         this.firstUnreadMessageId = this.messages[i].id;
         return;
@@ -1617,6 +1623,8 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!lastMsg) return;
     // Only update if position changed
     if (lastMsg.id !== this.lastReadMessageId) {
+      this.lastReadMessageId = lastMsg.id;
+      this.firstUnreadMessageId = null;
       this.apiService.updateReadPosition(this.channelId, lastMsg.id).subscribe();
     }
   }
