@@ -93,22 +93,10 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
               <mat-icon>settings</mat-icon>
               <span>{{ i18n.t('menu.device_settings') }}</span>
             </button>
-            <button mat-menu-item [matMenuTriggerFor]="languageMenu">
-              <mat-icon>language</mat-icon>
-              <span>{{ i18n.t('menu.language') }}</span>
-            </button>
             <mat-divider></mat-divider>
             <button mat-menu-item (click)="logout()">
               <mat-icon>logout</mat-icon>
               <span>{{ i18n.t('menu.logout') }}</span>
-            </button>
-          </mat-menu>
-
-          <mat-menu #languageMenu="matMenu" class="language-menu">
-            <button mat-menu-item *ngFor="let lang of availableLanguages"
-                    (click)="setLanguage(lang.code)"
-                    [class.active-status]="i18n.lang === lang.code">
-              <span>{{ lang.nativeName }}</span>
             </button>
           </mat-menu>
 
@@ -325,6 +313,16 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
             <div class="profile-actions">
               <button mat-raised-button color="primary" (click)="changePassword()" [disabled]="savingProfile">
                 {{ i18n.t('profile.change_password') }}
+              </button>
+            </div>
+            <mat-divider></mat-divider>
+            <h4><mat-icon class="section-icon">language</mat-icon> {{ i18n.t('menu.language') }}</h4>
+            <div class="language-grid">
+              <button *ngFor="let lang of availableLanguages"
+                      class="language-chip"
+                      [class.active]="i18n.lang === lang.code"
+                      (click)="setLanguage(lang.code)">
+                {{ lang.nativeName }}
               </button>
             </div>
           </div>
@@ -956,7 +954,17 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
     }
     .profile-header h3 { margin: 0; color: #333; }
     .profile-form { display: flex; flex-direction: column; gap: 4px; }
-    .profile-form h4 { margin: 12px 0 4px 0; color: #333; }
+    .profile-form h4 { margin: 12px 0 4px 0; color: #333; display: flex; align-items: center; gap: 6px; }
+    .profile-form h4 .section-icon { font-size: 20px; width: 20px; height: 20px; color: #666; }
+    .language-grid {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; max-height: 200px; overflow-y: auto;
+    }
+    .language-chip {
+      padding: 4px 12px; border-radius: 16px; border: 1px solid #ddd;
+      background: #f5f5f5; cursor: pointer; font-size: 13px; transition: all 0.15s;
+    }
+    .language-chip:hover { background: #e0e0e0; }
+    .language-chip.active { background: #1976d2; color: white; border-color: #1976d2; }
     .profile-field { width: 100%; }
     .profile-actions {
       display: flex;
