@@ -316,6 +316,30 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
               </button>
             </div>
             <mat-divider></mat-divider>
+            <h4><mat-icon class="section-icon">notifications</mat-icon> {{ i18n.t('profile.notification_sound') }}</h4>
+            <div class="notification-sound-section">
+              <div class="notification-sound-info">
+                <mat-icon class="sound-status-icon">{{ currentUser?.notification_sound_path ? 'music_note' : 'volume_up' }}</mat-icon>
+                <span class="sound-label">{{ currentUser?.notification_sound_path ? i18n.t('profile.notification_sound_custom') : i18n.t('profile.notification_sound_default') }}</span>
+              </div>
+              <div class="notification-sound-actions">
+                <button mat-stroked-button (click)="testNotificationSound()" class="sound-btn">
+                  <mat-icon>play_arrow</mat-icon>
+                  {{ i18n.t('profile.test_sound') }}
+                </button>
+                <button mat-stroked-button (click)="soundFileInput.click()" class="sound-btn">
+                  <mat-icon>upload</mat-icon>
+                  {{ i18n.t('profile.notification_sound_hint') }}
+                </button>
+                <button mat-stroked-button *ngIf="currentUser?.notification_sound_path"
+                        (click)="resetNotificationSound()" class="sound-btn">
+                  <mat-icon>restart_alt</mat-icon>
+                  {{ i18n.t('profile.reset_sound') }}
+                </button>
+              </div>
+              <input type="file" accept="audio/*" #soundFileInput hidden (change)="onNotificationSoundSelected($event)">
+            </div>
+            <mat-divider></mat-divider>
             <h4><mat-icon class="section-icon">language</mat-icon> {{ i18n.t('menu.language') }}</h4>
             <div class="language-grid">
               <button *ngFor="let lang of availableLanguages"
@@ -956,6 +980,19 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
     .profile-form { display: flex; flex-direction: column; gap: 4px; }
     .profile-form h4 { margin: 12px 0 4px 0; color: #333; display: flex; align-items: center; gap: 6px; }
     .profile-form h4 .section-icon { font-size: 20px; width: 20px; height: 20px; color: #666; }
+    .notification-sound-section {
+      display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px;
+    }
+    .notification-sound-info {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      background: #f5f5f5; border-radius: 8px;
+    }
+    .sound-status-icon { color: #1976d2; }
+    .sound-label { font-size: 14px; color: #333; }
+    .notification-sound-actions {
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .sound-btn { font-size: 12px !important; }
     .language-grid {
       display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; max-height: 200px; overflow-y: auto;
     }
@@ -1232,6 +1269,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private ringTimeout: any = null;
   private audioUnlocked = false;
   private unlockHandler = () => this.unlockAudio();
+  private notificationAudio: HTMLAudioElement | null = null;
 
   availableLanguages = EU_LANGUAGES;
 
@@ -1284,7 +1322,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
     this.subscriptions.push(
       this.authService.currentUser$.subscribe((user) => {
+        const soundChanged = this.currentUser?.notification_sound_path !== user?.notification_sound_path;
         this.currentUser = user;
+        if (soundChanged && this.notificationAudio) {
+          this.loadNotificationSound();
+        }
       })
     );
 
@@ -1335,6 +1377,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
     // Pre-create ringtone audio and unlock on first user gesture
     this.prepareRingtone();
+    this.prepareNotificationSound();
     document.addEventListener('click', this.unlockHandler, { once: true });
     document.addEventListener('keydown', this.unlockHandler, { once: true });
 
@@ -1401,9 +1444,13 @@ export class LayoutComponent implements OnInit, OnDestroy {
           this.stopRinging();
           this.incomingCall = null;
         }
-        // Refresh chat sidebar on new messages
+        // Refresh chat sidebar and play notification sound on new messages
         if (msg.type === 'new_message') {
           this.loadChatChannels();
+          // Play notification sound if the message is from someone else
+          if (msg.message?.sender_id !== this.currentUser?.id) {
+            this.playNotificationSound();
+          }
         }
       })
     );
@@ -1750,6 +1797,30 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.incomingCall = null;
   }
 
+  /** Pre-create the notification sound Audio element. */
+  private prepareNotificationSound(): void {
+    this.loadNotificationSound();
+  }
+
+  /** Load (or reload) the notification sound based on user preference. */
+  private loadNotificationSound(): void {
+    try {
+      const customUrl = this.apiService.getNotificationSoundUrl(
+        this.currentUser?.notification_sound_path ?? null
+      );
+      this.notificationAudio = new Audio(customUrl || 'assets/sounds/star-trek-communicator.mp3');
+    } catch {
+      // Audio not available
+    }
+  }
+
+  /** Play the notification sound for new messages. */
+  private playNotificationSound(): void {
+    if (!this.notificationAudio) return;
+    this.notificationAudio.currentTime = 0;
+    this.notificationAudio.play().catch(() => {});
+  }
+
   /** Pre-create the ringtone Audio element so it's ready when needed. */
   private prepareRingtone(): void {
     try {
@@ -1766,14 +1837,24 @@ export class LayoutComponent implements OnInit, OnDestroy {
    *  Browsers require at least one play() from a gesture before allowing
    *  programmatic playback (e.g. from a WebSocket handler). */
   private unlockAudio(): void {
-    if (this.audioUnlocked || !this.ringAudio) return;
-    this.ringAudio.volume = 0;
-    this.ringAudio.play().then(() => {
-      this.ringAudio!.pause();
-      this.ringAudio!.currentTime = 0;
-      this.ringAudio!.volume = 1;
-      this.audioUnlocked = true;
-    }).catch(() => {});
+    if (this.audioUnlocked) return;
+    if (this.ringAudio) {
+      this.ringAudio.volume = 0;
+      this.ringAudio.play().then(() => {
+        this.ringAudio!.pause();
+        this.ringAudio!.currentTime = 0;
+        this.ringAudio!.volume = 1;
+      }).catch(() => {});
+    }
+    if (this.notificationAudio) {
+      this.notificationAudio.volume = 0;
+      this.notificationAudio.play().then(() => {
+        this.notificationAudio!.pause();
+        this.notificationAudio!.currentTime = 0;
+        this.notificationAudio!.volume = 1;
+      }).catch(() => {});
+    }
+    this.audioUnlocked = true;
   }
 
   private startRinging(): void {
@@ -1896,6 +1977,46 @@ export class LayoutComponent implements OnInit, OnDestroy {
       },
     });
     input.value = '';
+  }
+
+  onNotificationSoundSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.apiService.uploadNotificationSound(file).subscribe({
+      next: (user) => {
+        this.authService.updateLocalUser({ notification_sound_path: user.notification_sound_path });
+        if (this.currentUser) {
+          this.currentUser.notification_sound_path = user.notification_sound_path;
+        }
+        this.loadNotificationSound();
+        this.snackBar.open(this.i18n.t('profile.notification_sound_uploaded'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || this.i18n.t('common.error'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+    });
+    input.value = '';
+  }
+
+  resetNotificationSound(): void {
+    this.apiService.deleteNotificationSound().subscribe({
+      next: (user) => {
+        this.authService.updateLocalUser({ notification_sound_path: null });
+        if (this.currentUser) {
+          this.currentUser.notification_sound_path = null;
+        }
+        this.loadNotificationSound();
+        this.snackBar.open(this.i18n.t('profile.notification_sound_reset'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || this.i18n.t('common.error'), this.i18n.t('common.ok'), { duration: 3000 });
+      },
+    });
+  }
+
+  testNotificationSound(): void {
+    this.playNotificationSound();
   }
 
   openProfileSettings(): void {

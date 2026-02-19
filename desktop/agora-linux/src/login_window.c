@@ -59,11 +59,14 @@ static void on_login_clicked(GtkButton *button, gpointer user_data)
     const char *display_name = json_object_get_string_member(user_obj, "display_name");
     const char *language = json_object_has_member(user_obj, "language")
         ? json_object_get_string_member(user_obj, "language") : NULL;
+    const char *notification_sound_path = (json_object_has_member(user_obj, "notification_sound_path") &&
+        !json_object_get_null_member(user_obj, "notification_sound_path"))
+        ? json_object_get_string_member(user_obj, "notification_sound_path") : NULL;
 
     /* Set language from user profile (overrides system language if set) */
     agora_translations_set_lang(language);
 
-    agora_app_set_session(app, server, token, user_id, display_name, language);
+    agora_app_set_session(app, server, token, user_id, display_name, language, notification_sound_path);
     json_node_unref(result);
     agora_api_client_free(client);
 

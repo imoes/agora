@@ -16,12 +16,14 @@ typedef struct {
     char *user_id;
     char *display_name;
     char *language;
+    char *notification_sound_path;
 } AgoraSession;
 
 AgoraSession *agora_app_get_session(AgoraApp *app);
 void agora_app_set_session(AgoraApp *app, const char *base_url,
                            const char *token, const char *user_id,
-                           const char *display_name, const char *language);
+                           const char *display_name, const char *language,
+                           const char *notification_sound_path);
 void agora_app_show_main_window(AgoraApp *app);
 
 #endif /* AGORA_APP_H */

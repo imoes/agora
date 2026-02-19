@@ -3,6 +3,7 @@
 #include "translations.h"
 #include <libnotify/notify.h>
 #include <string.h>
+#include <gst/gst.h>
 
 struct _AgoraMainWindow {
     GtkApplicationWindow parent;
@@ -40,6 +41,9 @@ struct _AgoraMainWindow {
     guint reminder_poll_timer;
     guint reminder_tick_timer;
     GHashTable *dismissed_reminders;  /* set of dismissed event IDs */
+
+    /* Notification sound */
+    char *notification_sound_path;
 };
 
 G_DEFINE_TYPE(AgoraMainWindow, agora_main_window, GTK_TYPE_APPLICATION_WINDOW)
@@ -47,6 +51,8 @@ G_DEFINE_TYPE(AgoraMainWindow, agora_main_window, GTK_TYPE_APPLICATION_WINDOW)
 /* Forward declarations */
 static void connect_channel_ws(AgoraMainWindow *win, const char *channel_id);
 static void disconnect_channel_ws(AgoraMainWindow *win);
+static void play_notification_sound(AgoraMainWindow *win);
+static void download_notification_sound(AgoraMainWindow *win);
 static void show_notification(const char *title, const char *body);
 
 /* --- Channel loading --- */
@@ -274,11 +280,16 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
         gtk_label_set_text(win->typing_label, "");
         gtk_widget_hide(GTK_WIDGET(win->typing_label));
 
-        /* Show desktop notification for messages from others */
+        /* Play notification sound and show desktop notification for messages from others */
         AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
         AgoraSession *session = agora_app_get_session(app);
         const char *sender_id = json_object_has_member(msg, "sender_id")
             ? json_object_get_string_member(msg, "sender_id") : NULL;
+
+        if (sender_id && session->user_id &&
+            g_strcmp0(sender_id, session->user_id) != 0) {
+            play_notification_sound(win);
+        }
 
         if (sender_id && session->user_id &&
             g_strcmp0(sender_id, session->user_id) != 0 &&
@@ -416,6 +427,86 @@ static void disconnect_channel_ws(AgoraMainWindow *win)
         g_object_unref(win->ws_conn);
         win->ws_conn = NULL;
     }
+}
+
+/* --- Notification sound --- */
+
+static void on_gst_bus_message(GstBus *bus, GstMessage *msg, gpointer data)
+{
+    (void)bus;
+    GstElement *pipeline = GST_ELEMENT(data);
+    if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_EOS ||
+        GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
+        gst_element_set_state(pipeline, GST_STATE_NULL);
+        gst_object_unref(pipeline);
+    }
+}
+
+static void play_notification_sound(AgoraMainWindow *win)
+{
+    if (!win->notification_sound_path) return;
+    if (!g_file_test(win->notification_sound_path, G_FILE_TEST_EXISTS)) return;
+
+    char *uri = g_strdup_printf("file://%s", win->notification_sound_path);
+    GstElement *pipeline = gst_element_factory_make("playbin", "notification");
+    if (!pipeline) {
+        g_free(uri);
+        return;
+    }
+
+    g_object_set(pipeline, "uri", uri, NULL);
+    g_free(uri);
+
+    GstBus *bus = gst_element_get_bus(pipeline);
+    gst_bus_add_signal_watch(bus);
+    g_signal_connect(bus, "message", G_CALLBACK(on_gst_bus_message), pipeline);
+    gst_object_unref(bus);
+
+    gst_element_set_state(pipeline, GST_STATE_PLAYING);
+}
+
+static void download_notification_sound(AgoraMainWindow *win)
+{
+    if (!win->api || !win->api->base_url) return;
+
+    /* Construct sound URL: use custom sound if set, otherwise default */
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *sess = agora_app_get_session(app);
+
+    char *base = g_strdup(win->api->base_url);
+    char *api_pos = g_strrstr(base, "/api");
+    if (api_pos) *api_pos = '\0';
+
+    char *sound_url;
+    if (sess->notification_sound_path)
+        sound_url = g_strdup_printf("%s%s", base, sess->notification_sound_path);
+    else
+        sound_url = g_strdup_printf("%s/assets/sounds/star-trek-communicator.mp3", base);
+    g_free(base);
+
+    /* Download using a simple SoupSession */
+    SoupSession *session = soup_session_new_with_options(
+        SOUP_SESSION_SSL_STRICT, FALSE, NULL);
+    SoupMessage *msg = soup_message_new("GET", sound_url);
+    g_free(sound_url);
+
+    if (!msg) {
+        g_object_unref(session);
+        return;
+    }
+
+    guint status = soup_session_send_message(session, msg);
+    if (status == 200 && msg->response_body->length > 0) {
+        win->notification_sound_path = g_build_filename(
+            g_get_tmp_dir(), "agora-notification.mp3", NULL);
+        g_file_set_contents(win->notification_sound_path,
+                            msg->response_body->data,
+                            (gssize)msg->response_body->length,
+                            NULL);
+    }
+
+    g_object_unref(msg);
+    g_object_unref(session);
 }
 
 /* --- Notification (3 seconds) --- */
@@ -750,6 +841,7 @@ static void agora_main_window_finalize(GObject *obj)
     g_free(win->reminder_channel_id);
     if (win->reminder_start_time) g_date_time_unref(win->reminder_start_time);
     if (win->dismissed_reminders) g_hash_table_destroy(win->dismissed_reminders);
+    g_free(win->notification_sound_path);
     G_OBJECT_CLASS(agora_main_window_parent_class)->finalize(obj);
 }
 
@@ -764,6 +856,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
     if (!notify_is_initted())
         notify_init("Agora");
 
+    /* Initialize GStreamer for notification sounds */
+    if (!gst_is_initialized())
+        gst_init(NULL, NULL);
+
     win->ws_conn = NULL;
     win->ws_session = NULL;
     win->current_channel_name = NULL;
@@ -772,6 +868,7 @@ static void agora_main_window_init(AgoraMainWindow *win)
     win->reminder_start_time = NULL;
     win->reminder_poll_timer = 0;
     win->reminder_tick_timer = 0;
+    win->notification_sound_path = NULL;
     win->dismissed_reminders = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     gtk_window_set_title(GTK_WINDOW(win), "Agora");
@@ -988,6 +1085,9 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
 
     /* Set user info */
     gtk_label_set_text(win->user_label, session->display_name ? session->display_name : T("common.user"));
+
+    /* Download notification sound */
+    download_notification_sound(win);
 
     /* Load channels */
     load_channels(win);
