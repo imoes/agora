@@ -323,7 +323,13 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
                 <span class="sound-label">{{ currentUser?.notification_sound_path ? i18n.t('profile.notification_sound_custom') : i18n.t('profile.notification_sound_default') }}</span>
               </div>
               <div class="notification-sound-actions">
-                <button mat-stroked-button (click)="testNotificationSound()" class="sound-btn">
+                <button mat-stroked-button (click)="toggleNotificationMute()" class="sound-btn"
+                        [class.muted]="notificationsMuted">
+                  <mat-icon>{{ notificationsMuted ? 'notifications_off' : 'notifications_active' }}</mat-icon>
+                  {{ notificationsMuted ? i18n.t('profile.unmute_sound') : i18n.t('profile.mute_sound') }}
+                </button>
+                <button mat-stroked-button (click)="testNotificationSound()" class="sound-btn"
+                        [disabled]="notificationsMuted">
                   <mat-icon>play_arrow</mat-icon>
                   {{ i18n.t('profile.test_sound') }}
                 </button>
@@ -993,6 +999,7 @@ import { I18nService, EU_LANGUAGES } from '@services/i18n.service';
       display: flex; flex-wrap: wrap; gap: 6px;
     }
     .sound-btn { font-size: 12px !important; }
+    .sound-btn.muted { color: #d32f2f; border-color: #d32f2f; }
     .language-grid {
       display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; max-height: 200px; overflow-y: auto;
     }
@@ -1270,6 +1277,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private audioUnlocked = false;
   private unlockHandler = () => this.unlockAudio();
   private notificationAudio: HTMLAudioElement | null = null;
+  notificationsMuted = false;
 
   availableLanguages = EU_LANGUAGES;
 
@@ -1374,6 +1382,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
         error: () => {},
       })
     );
+
+    // Restore mute preference from localStorage
+    this.notificationsMuted = localStorage.getItem('notificationsMuted') === 'true';
 
     // Pre-create ringtone audio and unlock on first user gesture
     this.prepareRingtone();
@@ -1838,10 +1849,15 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   /** Play the notification sound for new messages. */
-  private playNotificationSound(): void {
-    if (!this.notificationAudio) return;
+  playNotificationSound(): void {
+    if (this.notificationsMuted || !this.notificationAudio) return;
     this.notificationAudio.currentTime = 0;
     this.notificationAudio.play().catch(() => {});
+  }
+
+  toggleNotificationMute(): void {
+    this.notificationsMuted = !this.notificationsMuted;
+    localStorage.setItem('notificationsMuted', String(this.notificationsMuted));
   }
 
   /** Pre-create the ringtone Audio element so it's ready when needed. */

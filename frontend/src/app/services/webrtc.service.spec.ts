@@ -14,6 +14,7 @@ function mockUser(overrides: Partial<User> = {}): User {
     email: 'test@example.com',
     display_name: 'Test User',
     avatar_path: null,
+    notification_sound_path: null,
     status: 'online',
     status_message: null,
     is_admin: false,
