@@ -1496,8 +1496,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.paramSubscription = this.route.paramMap.subscribe((params) => {
       const newId = params.get('channelId') || '';
       if (newId && newId !== this.channelId) {
-        // Disconnect previous channel WS if switching
+        // Save read position for previous channel before switching
         if (this.channelId) {
+          this.saveReadPosition();
           this.wsSubscription?.unsubscribe();
           this.wsService.disconnect(this.channelId);
         }
@@ -1584,6 +1585,9 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         } else {
           this.shouldScroll = true;
         }
+        // Mark channel as read immediately when opened (updates read position
+        // and clears all feed events for this channel on the backend)
+        this.saveReadPosition();
       },
       error: () => { this.loadingMessages = false; },
     });
