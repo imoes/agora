@@ -417,6 +417,11 @@ import { AuthService } from '@core/services/auth.service';
     }
     .video-grid.single {
       grid-template-columns: 1fr;
+      justify-items: center;
+    }
+    .video-grid.single .video-tile {
+      max-width: 960px;
+      width: 100%;
     }
     .video-grid.audio-only {
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -434,9 +439,11 @@ import { AuthService } from '@core/services/auth.service';
       justify-self: center;
     }
     .video-tile video {
+      display: block;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
+      background: #000;
     }
     .video-tile.local video {
       transform: scaleX(-1);
@@ -785,11 +792,26 @@ import { AuthService } from '@core/services/auth.service';
       flex-shrink: 0;
     }
     @media (max-width: 600px) {
+      .video-grid {
+        grid-template-columns: 1fr;
+        padding: 8px;
+        gap: 6px;
+      }
+      .video-controls {
+        gap: 8px;
+        padding: 12px 8px;
+      }
       .speaker-sidebar {
         width: 100px;
       }
       .speaker-sidebar .video-tile {
         max-width: 90px;
+      }
+      .presentation-sidebar {
+        width: 120px;
+      }
+      .chat-sidebar {
+        width: 100%;
       }
     }
   `],
