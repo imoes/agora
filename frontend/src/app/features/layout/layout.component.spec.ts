@@ -209,26 +209,35 @@ describe('LayoutComponent – notification logic', () => {
       playNotificationSoundSpy = jest.spyOn(component, 'playNotificationSound').mockImplementation();
     });
 
+    /** Simulate message from channel WebSocket (_channelId tagged by frontend). */
     function simulateNewMessage(channelId: string, senderId: string) {
-      // Simulate the globalMessages$ handler inline
-      // (mirrors the logic in the subscription set up during ngOnInit)
-      const msg = {
+      handleMsg({
         type: 'new_message',
         _channelId: channelId,
         message: { sender_id: senderId, channel_id: channelId },
-      };
+      });
+    }
 
-      const msgChannelId = msg._channelId || msg.message?.channel_id;
+    /** Simulate message from notification WebSocket (channel_id at top level from backend). */
+    function simulateNewMessageFromNotificationWS(channelId: string, senderId: string) {
+      handleMsg({
+        type: 'new_message',
+        channel_id: channelId,
+        message: { sender_id: senderId, channel_id: channelId },
+      });
+    }
+
+    /** Core handler logic mirroring the globalMessages$ subscription. */
+    function handleMsg(msg: any) {
+      const msgChannelId = msg._channelId || msg.channel_id || msg.message?.channel_id;
       const isActiveChannel = msgChannelId && msgChannelId === component.activeChannelId;
 
-      // loadChatChannels with clear
       component.loadChatChannels(isActiveChannel ? msgChannelId : undefined);
 
       if (isActiveChannel) {
         apiService.markFeedRead({ channel_id: msgChannelId });
       }
 
-      // Sound logic
       if (msg.message?.sender_id !== component.currentUser?.id && !isActiveChannel) {
         component.playNotificationSound();
       }
@@ -289,6 +298,29 @@ describe('LayoutComponent – notification logic', () => {
       simulateNewMessage('channel-2', 'other-user');
 
       expect(apiService.markFeedRead).not.toHaveBeenCalled();
+    });
+
+    /* --- notification WebSocket path (no _channelId, uses channel_id) --- */
+
+    it('should play sound via notification WS for messages in other channels', () => {
+      component.activeChannelId = 'channel-1';
+      simulateNewMessageFromNotificationWS('channel-2', 'other-user');
+
+      expect(playNotificationSoundSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should NOT play sound via notification WS for active channel', () => {
+      component.activeChannelId = 'channel-1';
+      simulateNewMessageFromNotificationWS('channel-1', 'other-user');
+
+      expect(playNotificationSoundSpy).not.toHaveBeenCalled();
+    });
+
+    it('should play sound via notification WS when no channel active', () => {
+      component.activeChannelId = null;
+      simulateNewMessageFromNotificationWS('channel-1', 'other-user');
+
+      expect(playNotificationSoundSpy).toHaveBeenCalledTimes(1);
     });
   });
 

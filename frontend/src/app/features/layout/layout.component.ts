@@ -1457,7 +1457,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
         }
         // Refresh chat sidebar and play notification sound on new messages
         if (msg.type === 'new_message') {
-          const msgChannelId = msg._channelId || msg.message?.channel_id;
+          const msgChannelId = msg._channelId || msg.channel_id || msg.message?.channel_id;
           const isActiveChannel = msgChannelId && msgChannelId === this.activeChannelId;
           this.loadChatChannels(isActiveChannel ? msgChannelId : undefined);
           if (isActiveChannel) {

@@ -84,6 +84,31 @@ class ConnectionManager:
                 except Exception:
                     pass
 
+    async def notify_channel_members(
+        self,
+        channel_id: str,
+        member_ids: list[str],
+        message: dict,
+        exclude_user: str | None = None,
+    ):
+        """Send a message to channel members who are NOT connected to the
+        channel WebSocket but DO have a notification WebSocket open."""
+        connected_to_channel = set(
+            self.active_connections.get(channel_id, {}).keys()
+        )
+        for uid in member_ids:
+            if uid == exclude_user:
+                continue
+            if uid in connected_to_channel:
+                # Already received via channel WebSocket
+                continue
+            nws = self.notification_connections.get(uid)
+            if nws:
+                try:
+                    await nws.send_json(message)
+                except Exception:
+                    pass
+
     async def send_to_user(self, user_id: str, message: dict):
         # Prefer notification connection to avoid duplicate delivery
         nws = self.notification_connections.get(user_id)

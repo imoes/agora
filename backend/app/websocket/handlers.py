@@ -162,9 +162,11 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                 msg["sender_avatar_path"] = user.avatar_path
                 msg["sender_status"] = user.status or "offline"
 
+                notification_payload = {"type": "new_message", "message": msg, "channel_id": channel_id}
+
                 await manager.send_to_channel(
                     channel_id,
-                    {"type": "new_message", "message": msg},
+                    notification_payload,
                 )
 
                 # Create feed events and handle mentions
@@ -197,7 +199,19 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                                     target_user_id=uid,
                                 )
 
+                    # Notify channel members who are NOT in the channel WS
+                    result = await db.execute(
+                        select(ChannelMember.user_id).where(
+                            ChannelMember.channel_id == uuid.UUID(channel_id)
+                        )
+                    )
+                    member_ids = [str(row[0]) for row in result.all()]
+
                     await db.commit()
+
+                await manager.notify_channel_members(
+                    channel_id, member_ids, notification_payload, exclude_user=user_id
+                )
 
             elif msg_type == "typing":
                 await manager.send_to_channel(
