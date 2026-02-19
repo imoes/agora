@@ -89,6 +89,10 @@ def _add_missing_columns(connection):
         connection.execute(text(
             "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT ''"
         ))
+    if "notification_sound_path" not in user_cols:
+        connection.execute(text(
+            "ALTER TABLE users ADD COLUMN notification_sound_path VARCHAR(512)"
+        ))
 
     cm_cols = {c["name"] for c in inspector.get_columns("channel_members")}
     if "last_read_message_id" not in cm_cols:
