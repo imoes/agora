@@ -1529,6 +1529,17 @@ export class LayoutComponent implements OnInit, OnDestroy {
     if (fch) {
       fch.unread_count = 0;
     }
+    // Mark all feed events for this channel as read so they disappear from the feed
+    this.apiService.markFeedRead({ channel_id: channelId }).subscribe({
+      next: () => {
+        // Refresh the global unread count badge
+        this.apiService.getUnreadCount().subscribe({
+          next: (res) => { this.unreadCount = res.unread_count; },
+          error: () => {},
+        });
+      },
+      error: () => {},
+    });
   }
 
   openNewMeeting(): void {
