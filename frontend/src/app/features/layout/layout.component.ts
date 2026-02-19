@@ -1446,9 +1446,24 @@ export class LayoutComponent implements OnInit, OnDestroy {
         }
         // Refresh chat sidebar and play notification sound on new messages
         if (msg.type === 'new_message') {
-          this.loadChatChannels();
-          // Play notification sound if the message is from someone else
-          if (msg.message?.sender_id !== this.currentUser?.id) {
+          const msgChannelId = msg._channelId || msg.message?.channel_id;
+          const isActiveChannel = msgChannelId && msgChannelId === this.activeChannelId;
+          this.loadChatChannels(isActiveChannel ? msgChannelId : undefined);
+          if (isActiveChannel) {
+            // User is viewing this channel – mark its feed events as read
+            // so the feed badge does not increment for visible messages.
+            this.apiService.markFeedRead({ channel_id: msgChannelId }).subscribe({
+              next: () => {
+                this.apiService.getUnreadCount().subscribe({
+                  next: (res) => { this.unreadCount = res.unread_count; },
+                  error: () => {},
+                });
+              },
+              error: () => {},
+            });
+          }
+          // Play notification sound only if not from ourselves AND not the currently open chat
+          if (msg.message?.sender_id !== this.currentUser?.id && !isActiveChannel) {
             this.playNotificationSound();
           }
         }
@@ -1478,10 +1493,18 @@ export class LayoutComponent implements OnInit, OnDestroy {
     }
   }
 
-  loadChatChannels(): void {
+  loadChatChannels(clearChannelId?: string): void {
     this.apiService.getChannels().subscribe({
       next: (channels) => {
         this.chatChannels = channels;
+        // If the user is viewing a channel right now, zero its unread count
+        // so it doesn't flash a badge for messages the user already sees.
+        if (clearChannelId) {
+          const ch = this.chatChannels.find((c) => c.id === clearChannelId);
+          if (ch) {
+            ch.unread_count = 0;
+          }
+        }
         this.updateFilteredChannels();
       },
       error: () => {},
