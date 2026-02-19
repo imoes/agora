@@ -1598,14 +1598,17 @@ export class ChatRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!this.lastReadMessageId || this.messages.length === 0) return;
 
     const idx = this.messages.findIndex(m => m.id === this.lastReadMessageId);
-    if (idx === -1) {
-      // Last read message not in current batch - all messages are new
-      this.firstUnreadMessageId = this.messages[0]?.id || null;
-    } else if (idx < this.messages.length - 1) {
-      // There are messages after the last read one
-      this.firstUnreadMessageId = this.messages[idx + 1].id;
+    // Determine the start of unread messages
+    const startIdx = idx === -1 ? 0 : idx + 1;
+    // Find the first unread message NOT sent by the current user
+    const currentUserId = this.currentUser?.id;
+    for (let i = startIdx; i < this.messages.length; i++) {
+      if (this.messages[i].sender_id !== currentUserId) {
+        this.firstUnreadMessageId = this.messages[i].id;
+        return;
+      }
     }
-    // If idx is the last message, there are no unread messages
+    // If all unread messages are from the current user, no divider
   }
 
   saveReadPosition(): void {
