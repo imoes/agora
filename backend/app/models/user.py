@@ -12,6 +12,7 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     avatar_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notification_sound_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="offline"
     )

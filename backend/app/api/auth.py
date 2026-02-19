@@ -212,6 +212,68 @@ async def get_avatar(user_id: _uuid.UUID, filename: str):
     return FileResponse(filepath, media_type="image/png")
 
 
+@router.post("/me/notification-sound", response_model=UserOut)
+async def upload_notification_sound(
+    file: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a custom notification sound."""
+    if not file.content_type or not file.content_type.startswith("audio/"):
+        raise HTTPException(status_code=400, detail="Only audio files are allowed")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+
+    sound_dir = os.path.join(settings.upload_dir, "sounds")
+    os.makedirs(sound_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename or "sound.mp3")[1] or ".mp3"
+    filename = f"{current_user.id}{ext}"
+    filepath = os.path.join(sound_dir, filename)
+
+    for old in os.listdir(sound_dir):
+        if old.startswith(str(current_user.id)) and old != filename:
+            os.remove(os.path.join(sound_dir, old))
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    current_user.notification_sound_path = f"/api/auth/notification-sound/{current_user.id}/{filename}"
+    await db.flush()
+    await db.refresh(current_user)
+    return UserOut.model_validate(current_user)
+
+
+@router.delete("/me/notification-sound", response_model=UserOut)
+async def delete_notification_sound(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove custom notification sound and revert to default."""
+    sound_dir = os.path.join(settings.upload_dir, "sounds")
+    if os.path.isdir(sound_dir):
+        for old in os.listdir(sound_dir):
+            if old.startswith(str(current_user.id)):
+                os.remove(os.path.join(sound_dir, old))
+
+    current_user.notification_sound_path = None
+    await db.flush()
+    await db.refresh(current_user)
+    return UserOut.model_validate(current_user)
+
+
+@router.get("/notification-sound/{user_id}/{filename}")
+async def get_notification_sound(user_id: _uuid.UUID, filename: str):
+    """Serve a user's custom notification sound."""
+    sound_dir = os.path.join(settings.upload_dir, "sounds")
+    filepath = os.path.join(sound_dir, filename)
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Sound not found")
+    return FileResponse(filepath, media_type="audio/mpeg")
+
+
 @router.get("/config")
 async def get_auth_config():
     """Public endpoint to check auth configuration."""

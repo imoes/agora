@@ -469,11 +469,19 @@ static void download_notification_sound(AgoraMainWindow *win)
 {
     if (!win->api || !win->api->base_url) return;
 
-    /* Construct sound URL: strip /api suffix and append asset path */
+    /* Construct sound URL: use custom sound if set, otherwise default */
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *sess = agora_app_get_session(app);
+
     char *base = g_strdup(win->api->base_url);
     char *api_pos = g_strrstr(base, "/api");
     if (api_pos) *api_pos = '\0';
-    char *sound_url = g_strdup_printf("%s/assets/sounds/star-trek-communicator.mp3", base);
+
+    char *sound_url;
+    if (sess->notification_sound_path)
+        sound_url = g_strdup_printf("%s%s", base, sess->notification_sound_path);
+    else
+        sound_url = g_strdup_printf("%s/assets/sounds/star-trek-communicator.mp3", base);
     g_free(base);
 
     /* Download using a simple SoupSession */

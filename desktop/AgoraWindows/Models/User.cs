@@ -24,6 +24,9 @@ public class User
 
     [JsonPropertyName("language")]
     public string Language { get; set; } = "en";
+
+    [JsonPropertyName("notification_sound_path")]
+    public string? NotificationSoundPath { get; set; }
 }
 
 public class LoginRequest

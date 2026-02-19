@@ -22,6 +22,7 @@ class UserOut(BaseModel):
     email: str
     display_name: str
     avatar_path: str | None = None
+    notification_sound_path: str | None = None
     status: str = "offline"
     status_message: str | None = None
     is_admin: bool = False

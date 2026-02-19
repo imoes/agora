@@ -82,6 +82,23 @@ export class ApiService {
     return `${this.baseUrl.replace('/api', '')}${avatarPath}`;
   }
 
+  // Notification sound
+  uploadNotificationSound(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.baseUrl}/auth/me/notification-sound`, formData);
+  }
+
+  deleteNotificationSound(): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/auth/me/notification-sound`);
+  }
+
+  getNotificationSoundUrl(soundPath: string | null): string | null {
+    if (!soundPath) return null;
+    if (soundPath.startsWith('http')) return soundPath;
+    return `${this.baseUrl.replace('/api', '')}${soundPath}`;
+  }
+
   // Messages
   getMessages(channelId: string, limit: number = 50, before?: string): Observable<any[]> {
     let params = new HttpParams().set('limit', limit.toString());

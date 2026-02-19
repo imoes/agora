@@ -441,7 +441,11 @@ public partial class MainWindow : Window
         try
         {
             var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
-            var soundUrl = $"{baseUrl}/assets/sounds/star-trek-communicator.mp3";
+            string soundUrl;
+            if (!string.IsNullOrEmpty(_api.CurrentUser?.NotificationSoundPath))
+                soundUrl = $"{baseUrl}{_api.CurrentUser.NotificationSoundPath}";
+            else
+                soundUrl = $"{baseUrl}/assets/sounds/star-trek-communicator.mp3";
 
             var handler = new HttpClientHandler
             {

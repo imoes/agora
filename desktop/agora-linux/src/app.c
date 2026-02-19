@@ -26,6 +26,7 @@ static void agora_app_finalize(GObject *obj)
     g_free(app->session.user_id);
     g_free(app->session.display_name);
     g_free(app->session.language);
+    g_free(app->session.notification_sound_path);
     G_OBJECT_CLASS(agora_app_parent_class)->finalize(obj);
 }
 
@@ -55,18 +56,21 @@ AgoraSession *agora_app_get_session(AgoraApp *app)
 
 void agora_app_set_session(AgoraApp *app, const char *base_url,
                            const char *token, const char *user_id,
-                           const char *display_name, const char *language)
+                           const char *display_name, const char *language,
+                           const char *notification_sound_path)
 {
     g_free(app->session.base_url);
     g_free(app->session.token);
     g_free(app->session.user_id);
     g_free(app->session.display_name);
     g_free(app->session.language);
+    g_free(app->session.notification_sound_path);
     app->session.base_url = g_strdup(base_url);
     app->session.token = g_strdup(token);
     app->session.user_id = g_strdup(user_id);
     app->session.display_name = g_strdup(display_name);
     app->session.language = g_strdup(language ? language : "en");
+    app->session.notification_sound_path = notification_sound_path ? g_strdup(notification_sound_path) : NULL;
 }
 
 void agora_app_show_main_window(AgoraApp *app)
