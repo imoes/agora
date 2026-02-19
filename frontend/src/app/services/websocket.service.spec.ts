@@ -289,8 +289,8 @@ describe('WebSocketService', () => {
     service.globalMessages$.subscribe((msg) => {
       received.push(msg);
       if (received.length === 2) {
-        expect(received[0]).toEqual({ type: 'new_message', channel: 'ch1' });
-        expect(received[1]).toEqual({ type: 'new_message', channel: 'ch2' });
+        expect(received[0]).toEqual({ type: 'new_message', channel: 'ch1', _channelId: 'ch1' });
+        expect(received[1]).toEqual({ type: 'new_message', channel: 'ch2', _channelId: 'ch2' });
         done();
       }
     });
@@ -312,7 +312,7 @@ describe('WebSocketService', () => {
     ws2.simulateOpen();
 
     service.globalMessages$.subscribe((msg) => {
-      expect(msg).toEqual({ type: 'test', data: 'reconnected' });
+      expect(msg).toEqual({ type: 'test', data: 'reconnected', _channelId: 'ch1' });
       done();
     });
 

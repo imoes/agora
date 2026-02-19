@@ -193,6 +193,8 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
     'profile.notification_sound_custom': 'Custom sound',
     'profile.reset_sound': 'Reset to default',
     'profile.test_sound': 'Test',
+    'profile.mute_sound': 'Mute notifications',
+    'profile.unmute_sound': 'Unmute notifications',
     // Common
     'common.cancel': 'Cancel',
     'common.ok': 'OK',
@@ -355,6 +357,8 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
     'profile.notification_sound_custom': 'Eigener Sound',
     'profile.reset_sound': 'Standard wiederherstellen',
     'profile.test_sound': 'Test',
+    'profile.mute_sound': 'Benachrichtigungen stummschalten',
+    'profile.unmute_sound': 'Benachrichtigungen aktivieren',
     'common.cancel': 'Abbrechen',
     'common.ok': 'OK',
     'common.error': 'Fehler',
