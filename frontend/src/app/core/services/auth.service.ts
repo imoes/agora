@@ -33,6 +33,7 @@ export interface User {
   is_admin: boolean;
   auth_source: string;
   language: string;
+  notification_sound_path: string | null;
   created_at: string;
 }
 
