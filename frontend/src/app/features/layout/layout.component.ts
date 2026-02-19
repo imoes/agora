@@ -1278,6 +1278,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private unlockHandler = () => this.unlockAudio();
   private notificationAudio: HTMLAudioElement | null = null;
   notificationsMuted = false;
+  /** Track recently seen message IDs to avoid duplicate notification sounds. */
+  private recentMessageIds = new Set<string>();
 
   availableLanguages = EU_LANGUAGES;
 
@@ -1457,8 +1459,17 @@ export class LayoutComponent implements OnInit, OnDestroy {
         }
         // Refresh chat sidebar and play notification sound on new messages
         if (msg.type === 'new_message') {
+          const messageId = msg.message?.id;
+          // Deduplicate: a message may arrive via both channel WS and notification WS
+          if (messageId && this.recentMessageIds.has(messageId)) return;
+          if (messageId) {
+            this.recentMessageIds.add(messageId);
+            // Prevent memory leak – remove after 10 seconds
+            setTimeout(() => this.recentMessageIds.delete(messageId), 10000);
+          }
+
           const msgChannelId = msg._channelId || msg.channel_id || msg.message?.channel_id;
-          const isActiveChannel = msgChannelId && msgChannelId === this.activeChannelId;
+          const isActiveChannel = !!(msgChannelId && msgChannelId === this.activeChannelId);
           this.loadChatChannels(isActiveChannel ? msgChannelId : undefined);
           if (isActiveChannel) {
             // User is viewing this channel – mark its feed events as read
