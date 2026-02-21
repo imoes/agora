@@ -1581,13 +1581,15 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
             inject_video_user_scripts(win);
             g_print("[Video] Reminder join: navigating to %s\n", video_url);
             webkit_web_view_load_uri(win->video_webview, video_url);
+            /* Hide the content_stack so its native X11 windows are unmapped */
+            gtk_widget_hide(GTK_WIDGET(win->content_stack));
+            /* Show video overlay */
             gtk_widget_set_no_show_all(win->video_overlay, FALSE);
             gtk_widget_show_all(win->video_overlay);
             gtk_widget_set_no_show_all(win->video_overlay, TRUE);
-            g_print("[Video] Overlay shown (reminder). visible=%d, mapped=%d, has_window=%d\n",
+            g_print("[Video] Overlay shown (reminder). overlay visible=%d, content_stack visible=%d\n",
                     gtk_widget_get_visible(win->video_overlay),
-                    gtk_widget_get_mapped(win->video_overlay),
-                    gtk_widget_get_has_window(win->video_overlay));
+                    gtk_widget_get_visible(GTK_WIDGET(win->content_stack)));
         } else {
             char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
             GError *err = NULL;
@@ -1776,10 +1778,10 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     if (win->video_webview)
         webkit_web_view_load_uri(win->video_webview, "about:blank");
     gtk_widget_hide(win->video_overlay);
-    g_print("[Video] After hide: overlay visible=%d, mapped=%d\n",
+    /* Restore the content_stack */
+    gtk_widget_show_all(GTK_WIDGET(win->content_stack));
+    g_print("[Video] After leave: overlay visible=%d, content_stack visible=%d, page=%s\n",
             gtk_widget_get_visible(win->video_overlay),
-            gtk_widget_get_mapped(win->video_overlay));
-    g_print("[Video] content_stack visible=%d, active page=%s\n",
             gtk_widget_get_visible(GTK_WIDGET(win->content_stack)),
             gtk_stack_get_visible_child_name(win->content_stack));
 }
@@ -1885,16 +1887,16 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
         inject_video_user_scripts(win);
         g_print("[Video] Navigating to %s\n", video_url);
         webkit_web_view_load_uri(win->video_webview, video_url);
+        /* Hide the content_stack so its native X11 windows are unmapped */
+        gtk_widget_hide(GTK_WIDGET(win->content_stack));
+        /* Show video overlay */
         gtk_widget_set_no_show_all(win->video_overlay, FALSE);
         gtk_widget_show_all(win->video_overlay);
         gtk_widget_set_no_show_all(win->video_overlay, TRUE);
-        g_print("[Video] Overlay shown (call). visible=%d, mapped=%d, has_window=%d\n",
+        g_print("[Video] Overlay shown (call). overlay visible=%d mapped=%d, content_stack visible=%d\n",
                 gtk_widget_get_visible(win->video_overlay),
                 gtk_widget_get_mapped(win->video_overlay),
-                gtk_widget_get_has_window(win->video_overlay));
-        g_print("[Video] content_stack visible=%d, active page=%s\n",
-                gtk_widget_get_visible(GTK_WIDGET(win->content_stack)),
-                gtk_stack_get_visible_child_name(win->content_stack));
+                gtk_widget_get_visible(GTK_WIDGET(win->content_stack)));
     } else {
         /* Fallback to browser with token in URL */
         char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
