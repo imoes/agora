@@ -1773,17 +1773,29 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
     AgoraSession *session = agora_app_get_session(app);
 
-    /* Build JS that sets token + hides web app UI */
+    /* Build JS that sets token + hides web app UI via CSS + MutationObserver */
     char *js = g_strdup_printf(
-        "localStorage.setItem('access_token', '%s');"
-        "localStorage.setItem('current_user', JSON.stringify({id:'%s',display_name:'%s'}));"
-        "var s = document.createElement('style');"
-        "s.textContent = '"
-            "nav.sidebar{display:none!important}"
-            ".chat-sidebar{display:none!important}"
-            ".top-bar{display:none!important}"
-        "';"
-        "document.documentElement.appendChild(s);",
+        "(function(){"
+        "localStorage.setItem('access_token','%s');"
+        "localStorage.setItem('current_user',JSON.stringify({id:'%s',display_name:'%s'}));"
+        "var css='nav.sidebar{display:none !important}"
+            ".chat-sidebar{display:none !important}"
+            ".top-bar{display:none !important}"
+            ".main-body>.content{flex:1 !important;width:100%% !important}';"
+        "function addS(){"
+            "if(document.getElementById('_agoraHide'))return;"
+            "var s=document.createElement('style');s.id='_agoraHide';s.textContent=css;"
+            "(document.head||document.documentElement).appendChild(s);}"
+        "addS();"
+        "function hideEls(){"
+            "var sels=['nav.sidebar','.chat-sidebar','.top-bar'];"
+            "sels.forEach(function(q){"
+                "var el=document.querySelector(q);"
+                "if(el)el.style.setProperty('display','none','important');"
+            "});}"
+        "new MutationObserver(function(){addS();hideEls();})"
+            ".observe(document.documentElement,{childList:true,subtree:true});"
+        "})();",
         session->token,
         session->user_id ? session->user_id : "",
         session->display_name ? session->display_name : ""

@@ -1245,17 +1245,30 @@ function insertText(text) {
                 var token = _api.Token?.Replace("\\", "\\\\").Replace("'", "\\'") ?? "";
                 var currentUser = JsonSerializer.Serialize(_api.CurrentUser);
                 var escapedUser = currentUser.Replace("\\", "\\\\").Replace("'", "\\'");
-                var initScript = $@"
-                    localStorage.setItem('access_token', '{token}');
-                    localStorage.setItem('current_user', '{escapedUser}');
-                    var style = document.createElement('style');
-                    style.textContent = `
-                        nav.sidebar {{ display:none!important }}
-                        .chat-sidebar {{ display:none!important }}
-                        .top-bar {{ display:none!important }}
-                    `;
-                    document.documentElement.appendChild(style);
-                ";
+                // Build robust script: CSS injection + MutationObserver to force-hide layout elements
+                var hideJs = new System.Text.StringBuilder();
+                hideJs.Append("(function(){");
+                hideJs.Append("localStorage.setItem('access_token','").Append(token).Append("');");
+                hideJs.Append("localStorage.setItem('current_user','").Append(escapedUser).Append("');");
+                hideJs.Append("var css='nav.sidebar{display:none !important}");
+                hideJs.Append(".chat-sidebar{display:none !important}");
+                hideJs.Append(".top-bar{display:none !important}");
+                hideJs.Append(".main-body>.content{flex:1 !important;width:100% !important}';");
+                hideJs.Append("function addS(){");
+                hideJs.Append("if(document.getElementById(\"_agoraHide\"))return;");
+                hideJs.Append("var s=document.createElement(\"style\");s.id=\"_agoraHide\";s.textContent=css;");
+                hideJs.Append("(document.head||document.documentElement).appendChild(s);}");
+                hideJs.Append("addS();");
+                hideJs.Append("function hideEls(){");
+                hideJs.Append("var sels=['nav.sidebar','.chat-sidebar','.top-bar'];");
+                hideJs.Append("sels.forEach(function(q){");
+                hideJs.Append("var el=document.querySelector(q);");
+                hideJs.Append("if(el)el.style.setProperty('display','none','important');");
+                hideJs.Append("});}");
+                hideJs.Append("new MutationObserver(function(){addS();hideEls();})");
+                hideJs.Append(".observe(document.documentElement,{childList:true,subtree:true});");
+                hideJs.Append("})();");
+                var initScript = hideJs.ToString();
                 // Remove previous injected scripts, then add new one
                 await VideoWebView.CoreWebView2.ExecuteScriptAsync("void(0)");
                 // Remove previous init script if any
