@@ -572,7 +572,7 @@ import { AuthService } from '@core/services/auth.service';
       border-radius: 50%;
       border: 2px solid #333;
     }
-    .invite-status-dot.online { background: #92c353; }
+    .invite-status-dot.online { background: var(--online, #00c851); }
     .invite-status-dot.busy { background: #c4314b; }
     .invite-status-dot.away { background: #fcba12; }
     .invite-status-dot.dnd { background: #c4314b; }

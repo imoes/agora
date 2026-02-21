@@ -938,6 +938,23 @@ public partial class MainWindow : Window
 
     // === Video call ===
 
+    private bool _webViewInitialized = false;
+
+    private async Task InitializeVideoWebView()
+    {
+        if (_webViewInitialized) return;
+        try
+        {
+            var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                null, null,
+                new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions(
+                    "--ignore-certificate-errors"));
+            await VideoWebView.EnsureCoreWebView2Async(env);
+            _webViewInitialized = true;
+        }
+        catch { }
+    }
+
     private async void VideoCall_Click(object sender, RoutedEventArgs e)
     {
         if (_currentChannelId == null) return;
@@ -946,12 +963,35 @@ public partial class MainWindow : Window
         {
             await _api.CreateVideoRoomAsync(_currentChannelId);
             var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
-            var url = $"{baseUrl}/video/{_currentChannelId}";
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            var url = $"{baseUrl}/video/{_currentChannelId}?token={Uri.EscapeDataString(_api.Token ?? "")}";
+
+            await InitializeVideoWebView();
+
+            if (_webViewInitialized)
+            {
+                VideoCallTitle.Text = $"Video - {ChatTitle.Text}";
+                VideoCallLeaveBtn.Content = Services.Translations.T("reminder.dismiss");
+                VideoWebView.CoreWebView2.Navigate(url);
+                VideoCallView.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Fallback: open in browser if WebView2 not available
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"{Translations.T("common.error")}: {ex.Message}");
+            MessageBox.Show($"{Services.Translations.T("common.error")}: {ex.Message}");
+        }
+    }
+
+    private void VideoCallLeave_Click(object sender, RoutedEventArgs e)
+    {
+        VideoCallView.Visibility = Visibility.Collapsed;
+        if (_webViewInitialized && VideoWebView.CoreWebView2 != null)
+        {
+            VideoWebView.CoreWebView2.Navigate("about:blank");
         }
     }
 
