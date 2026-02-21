@@ -1292,6 +1292,10 @@ function insertText(text) {
                 System.Diagnostics.Debug.WriteLine($"[Video] Injected init script (id={_videoInitScriptId}), navigating to {url}");
                 VideoWebView.CoreWebView2.Navigate(url);
 
+                // Detect if user navigates away from video page (e.g. leaves call in Angular UI)
+                VideoWebView.CoreWebView2.NavigationStarting -= OnVideoNavigationStarting;
+                VideoWebView.CoreWebView2.NavigationStarting += OnVideoNavigationStarting;
+
                 // Hide all content views, show video overlay
                 ChatView.Visibility = Visibility.Collapsed;
                 EmptyState.Visibility = Visibility.Collapsed;
@@ -1315,16 +1319,53 @@ function insertText(text) {
 
     private void VideoCallLeave_Click(object sender, RoutedEventArgs e)
     {
+        LeaveVideoCall();
+    }
+
+    private void LeaveVideoCall()
+    {
+        if (VideoCallView.Visibility != Visibility.Visible) return;
+        System.Diagnostics.Debug.WriteLine("[Video] Leaving video call");
+
         VideoCallView.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Visible;
         if (_webViewInitialized && VideoWebView.CoreWebView2 != null)
         {
+            // Unhook navigation handler
+            VideoWebView.CoreWebView2.NavigationStarting -= OnVideoNavigationStarting;
+
             if (_videoInitScriptId != null)
             {
                 VideoWebView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_videoInitScriptId);
                 _videoInitScriptId = null;
             }
             VideoWebView.CoreWebView2.Navigate("about:blank");
+        }
+
+        // Bring window to foreground and focus the message input
+        this.Activate();
+        this.Focus();
+        if (_editorInitialized)
+        {
+            try { _ = EditorWebView.ExecuteScriptAsync("focusEditor()"); } catch { }
+        }
+        else
+        {
+            MessageInput.Focus();
+        }
+    }
+
+    private void OnVideoNavigationStarting(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2NavigationStartingEventArgs e)
+    {
+        // If the WebView navigates away from the /video/ page (user left call in Angular UI),
+        // automatically close the video overlay and return to chat
+        var uri = e.Uri;
+        System.Diagnostics.Debug.WriteLine($"[Video] Navigation starting: {uri}");
+        if (uri != null && !uri.Contains("/video/") && uri != "about:blank")
+        {
+            System.Diagnostics.Debug.WriteLine("[Video] Detected navigation away from video page, leaving call");
+            e.Cancel = true;
+            Dispatcher.InvokeAsync(() => LeaveVideoCall());
         }
     }
 
@@ -1627,7 +1668,7 @@ function insertText(text) {
         ReminderCountdown.Text = $"{Translations.T("reminder.starts_in")} {min}:{sec:D2}";
     }
 
-    private void ReminderJoin_Click(object sender, RoutedEventArgs e)
+    private async void ReminderJoin_Click(object sender, RoutedEventArgs e)
     {
         if (_reminderEventId != null)
             _dismissedReminders.Add(_reminderEventId);
@@ -1635,9 +1676,74 @@ function insertText(text) {
 
         if (_reminderChannelId != null)
         {
-            var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
-            var url = $"{baseUrl}/video/{_reminderChannelId}";
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            try
+            {
+                await _api.CreateVideoRoomAsync(_reminderChannelId);
+                var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
+                var url = $"{baseUrl}/video/{_reminderChannelId}";
+
+                await InitializeVideoWebView();
+
+                if (_webViewInitialized)
+                {
+                    VideoCallTitle.Text = $"Video - {Translations.T("reminder.event")}";
+                    VideoCallLeaveBtn.Content = Translations.T("reminder.dismiss");
+
+                    // Inject auth token
+                    var token = _api.Token?.Replace("\\", "\\\\").Replace("'", "\\'") ?? "";
+                    var currentUser = JsonSerializer.Serialize(_api.CurrentUser);
+                    var escapedUser = currentUser.Replace("\\", "\\\\").Replace("'", "\\'");
+                    var hideJs = new System.Text.StringBuilder();
+                    hideJs.Append("(function(){");
+                    hideJs.Append("localStorage.setItem('access_token','").Append(token).Append("');");
+                    hideJs.Append("localStorage.setItem('current_user','").Append(escapedUser).Append("');");
+                    hideJs.Append("var css='nav.sidebar{display:none !important}");
+                    hideJs.Append(".chat-sidebar{display:none !important}");
+                    hideJs.Append(".top-bar{display:none !important}");
+                    hideJs.Append(".main-body>.content{flex:1 !important;width:100% !important}';");
+                    hideJs.Append("function hide(){");
+                    hideJs.Append("if(!document.getElementById(\"_ah\")){");
+                    hideJs.Append("var s=document.createElement(\"style\");s.id=\"_ah\";s.textContent=css;");
+                    hideJs.Append("var t=document.head||document.documentElement;");
+                    hideJs.Append("if(t)t.appendChild(s);}");
+                    hideJs.Append("var sels=[\"nav.sidebar\",\".chat-sidebar\",\".top-bar\"];");
+                    hideJs.Append("for(var i=0;i<sels.length;i++){");
+                    hideJs.Append("var el=document.querySelector(sels[i]);");
+                    hideJs.Append("if(el)el.style.setProperty(\"display\",\"none\",\"important\");}}");
+                    hideJs.Append("try{hide();}catch(e){}");
+                    hideJs.Append("document.addEventListener(\"DOMContentLoaded\",function(){");
+                    hideJs.Append("hide();");
+                    hideJs.Append("new MutationObserver(function(){hide();})");
+                    hideJs.Append(".observe(document.body||document.documentElement,");
+                    hideJs.Append("{childList:true,subtree:true});});");
+                    hideJs.Append("var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);");
+                    hideJs.Append("})();");
+
+                    if (_videoInitScriptId != null)
+                        VideoWebView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_videoInitScriptId);
+                    _videoInitScriptId = await VideoWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(hideJs.ToString());
+                    VideoWebView.CoreWebView2.Navigate(url);
+
+                    VideoWebView.CoreWebView2.NavigationStarting -= OnVideoNavigationStarting;
+                    VideoWebView.CoreWebView2.NavigationStarting += OnVideoNavigationStarting;
+
+                    ChatView.Visibility = Visibility.Collapsed;
+                    EmptyState.Visibility = Visibility.Collapsed;
+                    FeedView.Visibility = Visibility.Collapsed;
+                    SettingsView.Visibility = Visibility.Collapsed;
+                    VideoCallView.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    // Fallback: open in browser
+                    var fallbackUrl = $"{url}?token={Uri.EscapeDataString(_api.Token ?? "")}";
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fallbackUrl) { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Video] Reminder join error: {ex.Message}");
+            }
         }
     }
 
