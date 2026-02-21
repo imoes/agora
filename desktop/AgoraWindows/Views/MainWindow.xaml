@@ -745,27 +745,27 @@
                 </Grid>
                 </Border>
             </Grid>
-        </Grid>
 
-        <!-- Video call overlay (WebView2) -->
-        <Grid x:Name="VideoCallView" Grid.Column="2" Visibility="Collapsed"
-              Background="#1a1a1a" Panel.ZIndex="10">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-            <Border Grid.Row="0" Padding="12,8" Background="#252525"
-                    BorderBrush="#333" BorderThickness="0,0,0,1">
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" x:Name="VideoCallLeaveBtn"
-                            Click="VideoCallLeave_Click"
-                            Background="#c4314b" Foreground="White" Padding="16,6"
-                            BorderThickness="0" Cursor="Hand" FontSize="12" />
-                    <TextBlock x:Name="VideoCallTitle" FontSize="14" FontWeight="SemiBold"
-                               Foreground="White" VerticalAlignment="Center" Margin="4,0,0,0" />
-                </DockPanel>
-            </Border>
-            <wv2:WebView2 x:Name="VideoWebView" Grid.Row="1" />
+            <!-- Video call overlay (WebView2) -->
+            <Grid x:Name="VideoCallView" Visibility="Collapsed"
+                  Background="#1a1a1a" Panel.ZIndex="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Padding="12,8" Background="#252525"
+                        BorderBrush="#333" BorderThickness="0,0,0,1">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" x:Name="VideoCallLeaveBtn"
+                                Click="VideoCallLeave_Click"
+                                Background="#c4314b" Foreground="White" Padding="16,6"
+                                BorderThickness="0" Cursor="Hand" FontSize="12" />
+                        <TextBlock x:Name="VideoCallTitle" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="White" VerticalAlignment="Center" Margin="4,0,0,0" />
+                    </DockPanel>
+                </Border>
+                <wv2:WebView2 x:Name="VideoWebView" Grid.Row="1" />
+            </Grid>
         </Grid>
 
         <!-- Toast notification popup -->

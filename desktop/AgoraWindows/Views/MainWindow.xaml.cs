@@ -418,6 +418,7 @@ function insertText(text) {
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Visible;
         FeedTitle.Text = Translations.T("nav.feed");
         _ = LoadFeedAsync();
@@ -433,6 +434,7 @@ function insertText(text) {
         FeedList.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
         if (_currentChannelId == null)
         {
             EmptyState.Visibility = Visibility.Visible;
@@ -453,6 +455,7 @@ function insertText(text) {
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("teams.teams");
         EmptyStateSubtitle.Text = Translations.T("teams.subtitle");
@@ -470,6 +473,7 @@ function insertText(text) {
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("nav.calendar");
         EmptyStateSubtitle.Text = Translations.T("calendar.subtitle");
@@ -670,6 +674,7 @@ function insertText(text) {
         EmptyState.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Visible;
 
         // Clear reply state
@@ -1287,7 +1292,11 @@ function insertText(text) {
                 System.Diagnostics.Debug.WriteLine($"[Video] Injected init script (id={_videoInitScriptId}), navigating to {url}");
                 VideoWebView.CoreWebView2.Navigate(url);
 
-                MainContentArea.Visibility = Visibility.Collapsed;
+                // Hide all content views, show video overlay
+                ChatView.Visibility = Visibility.Collapsed;
+                EmptyState.Visibility = Visibility.Collapsed;
+                FeedView.Visibility = Visibility.Collapsed;
+                SettingsView.Visibility = Visibility.Collapsed;
                 VideoCallView.Visibility = Visibility.Visible;
             }
             else
@@ -1307,7 +1316,7 @@ function insertText(text) {
     private void VideoCallLeave_Click(object sender, RoutedEventArgs e)
     {
         VideoCallView.Visibility = Visibility.Collapsed;
-        MainContentArea.Visibility = Visibility.Visible;
+        ChatView.Visibility = Visibility.Visible;
         if (_webViewInitialized && VideoWebView.CoreWebView2 != null)
         {
             if (_videoInitScriptId != null)
@@ -1700,6 +1709,7 @@ function insertText(text) {
         EmptyState.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
     }
 
