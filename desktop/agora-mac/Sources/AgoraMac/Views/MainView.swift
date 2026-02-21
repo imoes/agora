@@ -6,6 +6,9 @@ class AppState: ObservableObject {
     @Published var isLoggedIn = false
     @Published var currentUser: User?
     @Published var channels: [Channel] = []
+    @Published var teams: [Team] = []
+    @Published var teamChannels: [Channel] = []
+    @Published var selectedTeam: Team?
     @Published var selectedChannel: Channel?
     @Published var messages: [Message] = []
     @Published var typingUsers: [String: Date] = [:]
@@ -30,6 +33,7 @@ class AppState: ObservableObject {
         self.currentUser = user
         self.isLoggedIn = true
         loadChannels()
+        loadTeams()
         connectNotificationWebSocket()
         startTypingCleanup()
         startEventPolling()
@@ -65,6 +69,35 @@ class AppState: ObservableObject {
                 }
             } catch {
                 print("Failed to load channels: \(error)")
+            }
+        }
+    }
+
+    func loadTeams() {
+        guard let api = api else { return }
+        Task {
+            do {
+                let teams = try await api.getTeams()
+                await MainActor.run {
+                    self.teams = teams
+                }
+            } catch {
+                print("Failed to load teams: \(error)")
+            }
+        }
+    }
+
+    func selectTeam(_ team: Team) {
+        selectedTeam = team
+        guard let api = api else { return }
+        Task {
+            do {
+                let channels = try await api.getTeamChannels(teamId: team.id)
+                await MainActor.run {
+                    self.teamChannels = channels
+                }
+            } catch {
+                print("Failed to load team channels: \(error)")
             }
         }
     }
@@ -418,29 +451,22 @@ extension AppState: WebSocketClientDelegate {
               let userId = data["user_id"] as? String,
               let emoji = data["emoji"] as? String,
               let action = data["action"] as? String else { return }
+        let displayName = data["display_name"] as? String ?? "?"
 
         if let idx = messages.firstIndex(where: { $0.id == messageId }) {
-            var reactions = messages[idx].reactions ?? [:]
-            var users = reactions[emoji] ?? []
+            var reactions = messages[idx].reactions ?? []
 
             if action == "add" {
-                if !users.contains(userId) {
-                    users.append(userId)
+                if !reactions.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
+                    reactions.append(Reaction(emoji: emoji, userId: userId, displayName: displayName))
                 }
             } else {
-                users.removeAll { $0 == userId }
-            }
-
-            if users.isEmpty {
-                reactions.removeValue(forKey: emoji)
-            } else {
-                reactions[emoji] = users
+                reactions.removeAll { $0.emoji == emoji && $0.userId == userId }
             }
             messages[idx].reactions = reactions
 
             // Toast for reactions from others
-            if userId != currentUser?.id,
-               let displayName = data["display_name"] as? String {
+            if userId != currentUser?.id {
                 showToast(
                     title: "\(displayName) \(T("notify.reacted")) \(emoji)",
                     body: T("notify.reaction_body")
@@ -590,32 +616,74 @@ struct SidebarView: View {
 
             Divider()
 
-            // Section header
-            HStack {
-                Text(T("chat.chats"))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-
             // Channel list
-            List(appState.channels, selection: Binding(
+            List(selection: Binding(
                 get: { appState.selectedChannel },
                 set: { channel in
                     if let channel = channel {
                         appState.selectChannel(channel)
                     }
                 }
-            )) { channel in
-                ChannelRowView(channel: channel)
-                    .tag(channel)
+            )) {
+                Section(T("chat.chats")) {
+                    ForEach(appState.channels) { channel in
+                        ChannelRowView(channel: channel)
+                            .tag(channel)
+                    }
+                }
+
+                if !appState.teams.isEmpty {
+                    Section(T("teams.teams")) {
+                        ForEach(appState.teams) { team in
+                            TeamRowView(team: team)
+                                .onTapGesture {
+                                    appState.selectTeam(team)
+                                }
+                        }
+
+                        // Show channels for selected team
+                        if appState.selectedTeam != nil {
+                            ForEach(appState.teamChannels) { channel in
+                                ChannelRowView(channel: channel)
+                                    .tag(channel)
+                                    .padding(.leading, 16)
+                            }
+                        }
+                    }
+                }
             }
             .listStyle(.sidebar)
         }
+    }
+}
+
+struct TeamRowView: View {
+    let team: Team
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Text(String(team.name.prefix(1).uppercased()))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(team.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+
+                Text("\(team.memberCount) \(T("chat.members"))")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 2)
     }
 }
 

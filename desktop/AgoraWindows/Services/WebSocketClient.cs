@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -31,13 +32,19 @@ public class WebSocketClient : IDisposable
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
-        var buffer = new byte[8192];
+        var buffer = new byte[16384];
 
         try
         {
             while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
             {
-                var result = await _ws.ReceiveAsync(buffer, ct);
+                using var ms = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await _ws.ReceiveAsync(buffer, ct);
+                    ms.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -46,7 +53,7 @@ public class WebSocketClient : IDisposable
 
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var json = Encoding.UTF8.GetString(ms.ToArray());
                     try
                     {
                         var doc = JsonDocument.Parse(json);

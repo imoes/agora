@@ -97,6 +97,110 @@ class ApiClient {
         let _: EmptyResponse = try await post("/api/channels/\(channelId)/messages/\(messageId)/reactions", body: body)
     }
 
+    func removeReaction(channelId: String, messageId: String, emoji: String) async throws {
+        let encoded = emoji.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? emoji
+        try await delete("/api/channels/\(channelId)/messages/\(messageId)/reactions/\(encoded)")
+    }
+
+    // MARK: - Teams
+
+    func getTeams() async throws -> [Team] {
+        return try await get("/api/teams/")
+    }
+
+    func getTeamChannels(teamId: String) async throws -> [Channel] {
+        return try await get("/api/channels/?team_id=\(teamId)")
+    }
+
+    func createTeam(name: String, description: String?) async throws -> Team {
+        var body: [String: String] = ["name": name]
+        if let description = description { body["description"] = description }
+        return try await post("/api/teams/", body: body)
+    }
+
+    func getTeamMembers(teamId: String) async throws -> [TeamMember] {
+        return try await get("/api/teams/\(teamId)/members")
+    }
+
+    func addTeamMember(teamId: String, userId: String, role: String = "member") async throws {
+        let body = ["user_id": userId, "role": role]
+        let _: EmptyResponse = try await post("/api/teams/\(teamId)/members", body: body)
+    }
+
+    // MARK: - Profile
+
+    func updateProfile(displayName: String? = nil, email: String? = nil, language: String? = nil,
+                        password: String? = nil, currentPassword: String? = nil) async throws -> User {
+        var body: [String: String] = [:]
+        if let displayName = displayName { body["display_name"] = displayName }
+        if let email = email { body["email"] = email }
+        if let language = language { body["language"] = language }
+        if let password = password { body["password"] = password }
+        if let currentPassword = currentPassword { body["current_password"] = currentPassword }
+        return try await patch("/api/auth/me", body: body)
+    }
+
+    // MARK: - Feed
+
+    func getFeed(limit: Int = 20, offset: Int = 0) async throws -> FeedResponse {
+        return try await get("/api/feed/?limit=\(limit)&offset=\(offset)")
+    }
+
+    func getUnreadCount() async throws -> [String: Int] {
+        return try await get("/api/feed/unread-count")
+    }
+
+    // MARK: - Files
+
+    func getChannelFiles(channelId: String) async throws -> [[String: Any]] {
+        let data = try await downloadFile(path: "/api/files/channel/\(channelId)")
+        let json = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
+        return json
+    }
+
+    func getFileInlineURL(fileRefId: String) -> String {
+        return "\(baseURL)/api/files/inline/\(fileRefId)"
+    }
+
+    // MARK: - Video
+
+    func createVideoRoom(channelId: String) async throws {
+        let _: EmptyResponse = try await post("/api/video/rooms?channel_id=\(channelId)", body: EmptyBody())
+    }
+
+    // MARK: - Users
+
+    func getAllUsers() async throws -> [User] {
+        return try await get("/api/users/")
+    }
+
+    // MARK: - Channels (additional)
+
+    func createChannel(name: String, channelType: String = "group", description: String? = nil,
+                        teamId: String? = nil, memberIds: [String]? = nil) async throws -> Channel {
+        var body: [String: Any] = ["name": name, "channel_type": channelType]
+        if let description = description { body["description"] = description }
+        if let teamId = teamId { body["team_id"] = teamId }
+        if let memberIds = memberIds { body["member_ids"] = memberIds }
+        let jsonData = try JSONSerialization.data(withJSONObject: body)
+        var request = try buildRequest(path: "/api/channels/", method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        return try await execute(request)
+    }
+
+    func leaveChannel(channelId: String) async throws {
+        try await delete("/api/channels/\(channelId)/members/me")
+    }
+
+    func deleteChannel(channelId: String) async throws {
+        try await delete("/api/channels/\(channelId)")
+    }
+
+    func addChannelMember(channelId: String, userId: String) async throws {
+        let _: EmptyResponse = try await post("/api/channels/\(channelId)/members/\(userId)", body: EmptyBody())
+    }
+
     // MARK: - Calendar
 
     func getCalendarEvents(start: Date, end: Date) async throws -> [CalendarEvent] {
@@ -237,3 +341,4 @@ enum ApiError: LocalizedError {
 }
 
 struct EmptyResponse: Decodable {}
+struct EmptyBody: Encodable {}

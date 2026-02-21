@@ -85,7 +85,8 @@ class Translations {
             "reminder.starts_in": "Starts in",
             "reminder.now": "Now!",
             "reminder.join": "Join",
-            "reminder.dismiss": "Dismiss"
+            "reminder.dismiss": "Dismiss",
+            "teams.teams": "Teams"
         ]
 
         // German
@@ -122,7 +123,8 @@ class Translations {
             "reminder.starts_in": "Beginnt in",
             "reminder.now": "Jetzt!",
             "reminder.join": "Beitreten",
-            "reminder.dismiss": "Schliessen"
+            "reminder.dismiss": "Schliessen",
+            "teams.teams": "Teams"
         ]
 
         // French

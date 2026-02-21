@@ -38,8 +38,7 @@ static JsonNode *parse_response(SoupMessage *msg, GError **error)
 
     SoupMessageBody *body = msg->response_body;
     if (!body || !body->data || body->length == 0) {
-        g_set_error(error, g_quark_from_static_string("agora"), 0,
-                    "Empty response body");
+        /* Some DELETE/PUT endpoints return empty body on success */
         return NULL;
     }
 
@@ -131,6 +130,74 @@ JsonNode *agora_api_client_post(AgoraApiClient *client,
     }
 
     soup_session_send_message(client->session, msg);
+    JsonNode *result = parse_response(msg, error);
+
+    g_free(url);
+    g_object_unref(msg);
+    return result;
+}
+
+JsonNode *agora_api_client_patch(AgoraApiClient *client,
+                                  const char *path,
+                                  const char *json_body,
+                                  GError **error)
+{
+    char *url = g_strdup_printf("%s%s", client->base_url, path);
+    SoupMessage *msg = soup_message_new("PATCH", url);
+    add_auth_header(client, msg);
+
+    if (json_body) {
+        soup_message_set_request(msg, "application/json",
+                                 SOUP_MEMORY_COPY, json_body, strlen(json_body));
+    }
+
+    soup_session_send_message(client->session, msg);
+    JsonNode *result = parse_response(msg, error);
+
+    g_free(url);
+    g_object_unref(msg);
+    return result;
+}
+
+JsonNode *agora_api_client_put(AgoraApiClient *client,
+                                const char *path,
+                                const char *json_body,
+                                GError **error)
+{
+    char *url = g_strdup_printf("%s%s", client->base_url, path);
+    SoupMessage *msg = soup_message_new("PUT", url);
+    add_auth_header(client, msg);
+
+    if (json_body) {
+        soup_message_set_request(msg, "application/json",
+                                 SOUP_MEMORY_COPY, json_body, strlen(json_body));
+    }
+
+    soup_session_send_message(client->session, msg);
+    JsonNode *result = parse_response(msg, error);
+
+    g_free(url);
+    g_object_unref(msg);
+    return result;
+}
+
+JsonNode *agora_api_client_delete(AgoraApiClient *client,
+                                   const char *path,
+                                   GError **error)
+{
+    char *url = g_strdup_printf("%s%s", client->base_url, path);
+    SoupMessage *msg = soup_message_new("DELETE", url);
+    add_auth_header(client, msg);
+
+    soup_session_send_message(client->session, msg);
+
+    /* DELETE may return empty body on success */
+    if (msg->status_code >= 200 && msg->status_code < 300) {
+        g_free(url);
+        g_object_unref(msg);
+        return NULL;
+    }
+
     JsonNode *result = parse_response(msg, error);
 
     g_free(url);

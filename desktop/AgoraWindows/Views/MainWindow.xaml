@@ -2,93 +2,219 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AgoraWindows.Views"
-        Title="Agora" Width="1000" Height="650"
+        Title="Agora" Width="1100" Height="700"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BackgroundBrush}"
         Closing="Window_Closing">
 
     <Grid>
         <Grid.ColumnDefinitions>
+            <!-- Dark icon sidebar -->
+            <ColumnDefinition Width="52" />
+            <!-- Channel/list sidebar -->
             <ColumnDefinition Width="260" />
+            <!-- Main content area -->
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Sidebar -->
-        <Border Grid.Column="0" Background="White"
+        <!-- === COLUMN 0: Dark icon sidebar === -->
+        <Border Grid.Column="0" Background="{StaticResource SidebarDarkBrush}">
+            <DockPanel>
+                <!-- Bottom: User avatar -->
+                <Button DockPanel.Dock="Bottom" Click="SettingsButton_Click"
+                        Width="36" Height="36" Margin="0,0,0,12" Cursor="Hand"
+                        ToolTip="Settings">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="AvatarBorder" Width="36" Height="36" CornerRadius="18"
+                                    Background="{StaticResource PrimaryBrush}">
+                                <TextBlock x:Name="AvatarText" Text="U" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="White" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="AvatarBorder" Property="Background"
+                                            Value="{StaticResource PrimaryDarkBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Top: Navigation icons -->
+                <StackPanel Margin="0,8,0,0">
+                    <!-- App logo -->
+                    <Border Width="36" Height="36" CornerRadius="6"
+                            Background="{StaticResource PrimaryBrush}"
+                            HorizontalAlignment="Center" Margin="0,0,0,16">
+                        <TextBlock Text="A" FontSize="18" FontWeight="Bold"
+                                   Foreground="White" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <RadioButton x:Name="NavFeed" Style="{StaticResource NavButton}"
+                                 Content="&#xE71D;" Click="NavFeed_Click"
+                                 ToolTip="Feed" />
+                    <RadioButton x:Name="NavChat" Style="{StaticResource NavButton}"
+                                 Content="&#xE8BD;" Click="NavChat_Click"
+                                 IsChecked="True" ToolTip="Chat" />
+                    <RadioButton x:Name="NavTeams" Style="{StaticResource NavButton}"
+                                 Content="&#xE716;" Click="NavTeams_Click"
+                                 ToolTip="Teams" />
+                    <RadioButton x:Name="NavCalendar" Style="{StaticResource NavButton}"
+                                 Content="&#xE787;" Click="NavCalendar_Click"
+                                 ToolTip="Calendar" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- === COLUMN 1: Channel/list sidebar === -->
+        <Border Grid.Column="1" Background="White"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <DockPanel>
-                <!-- User header with settings button -->
-                <Border DockPanel.Dock="Top" Padding="16,12"
+                <!-- User header -->
+                <Border DockPanel.Dock="Top" Padding="14,10"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                     <DockPanel>
-                        <Button x:Name="SettingsButton" DockPanel.Dock="Right"
-                                Content="&#x2699;" FontSize="18" Padding="4,0"
-                                Background="Transparent" BorderThickness="0"
-                                Foreground="{StaticResource TextSecondaryBrush}"
-                                Cursor="Hand" Click="SettingsButton_Click"
-                                VerticalAlignment="Center" />
+                        <!-- Online indicator -->
+                        <Ellipse DockPanel.Dock="Left" Width="8" Height="8"
+                                 Fill="#4CAF50" Margin="0,0,8,0" VerticalAlignment="Center" />
                         <StackPanel>
-                            <TextBlock x:Name="UserDisplayName" FontSize="14" FontWeight="SemiBold"
+                            <TextBlock x:Name="UserDisplayName" FontSize="13" FontWeight="SemiBold"
                                        Foreground="{StaticResource TextPrimaryBrush}" />
                             <TextBlock x:Name="UserStatus" FontSize="11"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
                         </StackPanel>
                     </DockPanel>
                 </Border>
 
-                <!-- Channel list header -->
-                <Border DockPanel.Dock="Top" Padding="16,10"
+                <!-- Section header -->
+                <Border DockPanel.Dock="Top" Padding="14,8"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                    <TextBlock x:Name="ChatsHeader" Text="Chats" FontSize="14" FontWeight="SemiBold"
+                    <TextBlock x:Name="SidebarHeader" Text="Chats" FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimaryBrush}" />
                 </Border>
 
                 <!-- Scrollable sidebar content -->
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <!-- Channel list -->
+                        <!-- Chat channel list -->
                         <ListBox x:Name="ChannelList" BorderThickness="0"
                                  SelectionChanged="ChannelList_SelectionChanged"
                                  Background="Transparent">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="14,8" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Bd" Padding="{TemplateBinding Padding}"
+                                                        Background="Transparent">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background"
+                                                                Value="{StaticResource HoverBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background"
+                                                                Value="{StaticResource PrimaryLightBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Margin="4,6">
-                                        <DockPanel>
-                                            <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
-                                                       Foreground="{StaticResource TextPrimaryBrush}" />
-                                            <TextBlock Text="{Binding UnreadCount}" FontSize="11"
-                                                       Foreground="White" Background="{StaticResource PrimaryBrush}"
-                                                       Padding="4,1" HorizontalAlignment="Right"
-                                                       Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
-                                        </DockPanel>
-                                        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
-                                            <Run Text="{Binding MemberCount}" /><Run Text=" members" />
+                                    <DockPanel>
+                                        <!-- Channel type icon -->
+                                        <Border DockPanel.Dock="Left" Width="32" Height="32"
+                                                CornerRadius="4" Background="{StaticResource HoverBrush}"
+                                                Margin="0,0,10,0">
+                                            <TextBlock Text="#" FontSize="16" FontWeight="Bold"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <!-- Channel info -->
+                                        <TextBlock Text="{Binding UnreadCount}" FontSize="10"
+                                                   Foreground="White" DockPanel.Dock="Right"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}">
+                                            <TextBlock.Background>
+                                                <SolidColorBrush Color="#6264A7" />
+                                            </TextBlock.Background>
+                                            <TextBlock.Padding>
+                                                <Thickness>5,1,5,1</Thickness>
+                                            </TextBlock.Padding>
                                         </TextBlock>
-                                    </StackPanel>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontSize="13"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                                <Run Text="{Binding MemberCount}" /><Run Text=" members" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DockPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <!-- Teams header -->
-                        <Border Padding="16,10"
-                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-                            <TextBlock x:Name="TeamsHeader" Text="Teams" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimaryBrush}" />
-                        </Border>
-
-                        <!-- Teams list -->
+                        <!-- Teams list (visible when Teams nav selected) -->
                         <ListBox x:Name="TeamList" BorderThickness="0"
                                  SelectionChanged="TeamList_SelectionChanged"
-                                 Background="Transparent">
+                                 Background="Transparent" Visibility="Collapsed">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="14,8" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Bd" Padding="{TemplateBinding Padding}"
+                                                        Background="Transparent">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background"
+                                                                Value="{StaticResource HoverBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background"
+                                                                Value="{StaticResource PrimaryLightBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Margin="4,6">
-                                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
-                                                   Foreground="{StaticResource TextPrimaryBrush}" />
-                                        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
-                                            <Run Text="{Binding MemberCount}" /><Run Text=" members" />
-                                        </TextBlock>
-                                    </StackPanel>
+                                    <DockPanel>
+                                        <Border DockPanel.Dock="Left" Width="32" Height="32"
+                                                CornerRadius="4" Background="{StaticResource PrimaryBrush}"
+                                                Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Name, Converter={x:Static local:Converters.FirstChar}}"
+                                                       FontSize="14" FontWeight="Bold"
+                                                       Foreground="White"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontSize="13"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                                <Run Text="{Binding MemberCount}" /><Run Text=" members" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DockPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
@@ -101,34 +227,124 @@
                                 <ListBox x:Name="TeamChannelList" BorderThickness="0"
                                          SelectionChanged="TeamChannelList_SelectionChanged"
                                          Background="Transparent">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="10,6" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="Bd" Padding="{TemplateBinding Padding}"
+                                                                Background="Transparent" CornerRadius="4">
+                                                            <ContentPresenter />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Bd" Property="Background"
+                                                                        Value="{StaticResource HoverBrush}" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="Bd" Property="Background"
+                                                                        Value="{StaticResource PrimaryLightBrush}" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <StackPanel Margin="4,4">
-                                                <DockPanel>
-                                                    <TextBlock FontSize="12" Foreground="{StaticResource TextPrimaryBrush}">
-                                                        <Run Text="# " /><Run Text="{Binding Name}" />
-                                                    </TextBlock>
-                                                    <TextBlock Text="{Binding UnreadCount}" FontSize="10"
-                                                               Foreground="White" Background="{StaticResource PrimaryBrush}"
-                                                               Padding="4,1" HorizontalAlignment="Right"
-                                                               Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
-                                                </DockPanel>
-                                            </StackPanel>
+                                            <DockPanel>
+                                                <TextBlock FontSize="12" Foreground="{StaticResource TextPrimaryBrush}">
+                                                    <Run Text="# " Foreground="{StaticResource TextSecondaryBrush}" /><Run Text="{Binding Name}" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding UnreadCount}" FontSize="10"
+                                                           Foreground="White" Background="#6264A7"
+                                                           Padding="4,1" HorizontalAlignment="Right"
+                                                           Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
+                                            </DockPanel>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
                             </StackPanel>
                         </Border>
+
+                        <!-- Feed items (visible when Feed nav selected) -->
+                        <ItemsControl x:Name="FeedList" Visibility="Collapsed" Margin="4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="4,2" Padding="12,8" Background="White"
+                                            CornerRadius="4" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1" Cursor="Hand">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <Ellipse Width="6" Height="6" Margin="0,0,6,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{StaticResource PrimaryBrush}"
+                                                         Visibility="{Binding IsReadInverted, Converter={x:Static local:Converters.BoolToVisibility}}" />
+                                                <TextBlock Text="{Binding ActorName}" FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                                <TextBlock Text="{Binding CreatedAt}" FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           HorizontalAlignment="Right"
+                                                           VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Message}" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,2,0,0" />
+                                            <TextBlock FontSize="11" Foreground="{StaticResource PrimaryBrush}"
+                                                       Margin="0,2,0,0">
+                                                <Run Text="in " /><Run Text="{Binding ChannelName}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Calendar events list (visible when Calendar nav selected) -->
+                        <ItemsControl x:Name="CalendarList" Visibility="Collapsed" Margin="4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="4,2" Padding="12,8" Background="White"
+                                            CornerRadius="4" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Title}" FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="{Binding TimeRange}" FontSize="11"
+                                                       Foreground="{StaticResource PrimaryBrush}"
+                                                       Margin="0,2,0,0" />
+                                            <TextBlock Text="{Binding Description}" FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,2,0,0"
+                                                       Visibility="{Binding Description, Converter={x:Static local:Converters.StringToVisibility}}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>
         </Border>
 
-        <!-- Main content area -->
-        <Grid Grid.Column="1">
+        <!-- === COLUMN 2: Main content area === -->
+        <Grid Grid.Column="2">
             <!-- Empty state -->
             <StackPanel x:Name="EmptyState" VerticalAlignment="Center"
                         HorizontalAlignment="Center">
+                <Border Width="64" Height="64" CornerRadius="32"
+                        Background="{StaticResource PrimaryLightBrush}"
+                        HorizontalAlignment="Center" Margin="0,0,0,16">
+                    <TextBlock Text="&#xE8BD;" FontFamily="Segoe MDL2 Assets"
+                               FontSize="28" Foreground="{StaticResource PrimaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
                 <TextBlock x:Name="EmptyStateTitle" Text="Welcome to Agora" FontSize="20" FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimaryBrush}"
                            HorizontalAlignment="Center" />
@@ -201,28 +417,55 @@
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!-- Chat header -->
-                <Border Grid.Row="0" Padding="16,12" Background="White"
+                <Border Grid.Row="0" Padding="16,10" Background="White"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                    <TextBlock x:Name="ChatTitle" FontSize="16" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <DockPanel>
+                        <!-- Video call button -->
+                        <Button x:Name="VideoCallBtn" DockPanel.Dock="Right" Cursor="Hand"
+                                Click="VideoCall_Click" ToolTip="Video Call"
+                                Background="Transparent" BorderThickness="0" Padding="8,4">
+                            <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="18" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Button>
+                        <!-- File upload button -->
+                        <Button x:Name="FileUploadHeaderBtn" DockPanel.Dock="Right" Cursor="Hand"
+                                Click="FileUpload_Click" ToolTip="Upload File"
+                                Background="Transparent" BorderThickness="0" Padding="8,4">
+                            <TextBlock Text="&#xE723;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="18" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Button>
+                        <StackPanel>
+                            <TextBlock x:Name="ChatTitle" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock x:Name="ChatSubtitle" FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                        </StackPanel>
+                    </DockPanel>
                 </Border>
 
                 <!-- Messages -->
                 <ScrollViewer Grid.Row="1" x:Name="MessageScroll"
-                              VerticalScrollBarVisibility="Auto" Padding="16">
+                              VerticalScrollBarVisibility="Auto" Padding="16,8"
+                              Background="{StaticResource BackgroundBrush}">
                     <ItemsControl x:Name="MessageList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Margin="0,4" Padding="8,6" Background="White"
-                                        CornerRadius="6">
+                                <Border Margin="0,2" Padding="10,6"
+                                        CornerRadius="6" Cursor="Hand"
+                                        Background="{Binding BubbleColor}"
+                                        HorizontalAlignment="{Binding BubbleAlignment}"
+                                        MaxWidth="600"
+                                        MouseRightButtonUp="Message_RightClick"
+                                        Tag="{Binding Id}">
                                     <StackPanel>
                                         <!-- Reply quote -->
                                         <Border Margin="0,0,0,4" Padding="6,4"
                                                 BorderBrush="{StaticResource PrimaryBrush}"
-                                                BorderThickness="3,0,0,0" Background="#F0F0F0"
+                                                BorderThickness="3,0,0,0" Background="#E8E8E8"
                                                 CornerRadius="2"
                                                 Visibility="{Binding ReplyToSender, Converter={x:Static local:Converters.StringToVisibility}}">
                                             <StackPanel>
@@ -244,18 +487,54 @@
                                             <TextBlock Text="{Binding CreatedAt}" FontSize="10"
                                                        Foreground="{StaticResource TextSecondaryBrush}"
                                                        HorizontalAlignment="Right"
-                                                       VerticalAlignment="Center" />
+                                                       VerticalAlignment="Center" Margin="12,0,0,0" />
                                         </DockPanel>
 
                                         <!-- Content -->
                                         <TextBlock Text="{Binding Content}" FontSize="13"
-                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   TextWrapping="Wrap" Margin="0,3,0,0"
                                                    Foreground="{StaticResource TextPrimaryBrush}" />
 
+                                        <!-- File attachment -->
+                                        <Border Margin="0,4,0,0" Padding="6,4"
+                                                Background="#E0E0E0" CornerRadius="4"
+                                                Visibility="{Binding MessageType, Converter={x:Static local:Converters.FileTypeToVisibility}}"
+                                                Cursor="Hand" MouseLeftButtonUp="FileAttachment_Click"
+                                                Tag="{Binding FileReferenceId}">
+                                            <DockPanel>
+                                                <TextBlock Text="&#xE723;" FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="14" Foreground="{StaticResource PrimaryBrush}"
+                                                           VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBlock Text="{Binding Content}" FontSize="12"
+                                                           Foreground="{StaticResource PrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" />
+                                            </DockPanel>
+                                        </Border>
+
                                         <!-- Reactions -->
-                                        <TextBlock Text="{Binding DisplayReactions}" FontSize="12"
-                                                   Margin="0,4,0,0"
-                                                   Visibility="{Binding DisplayReactions, Converter={x:Static local:Converters.StringToVisibility}}" />
+                                        <ItemsControl ItemsSource="{Binding ReactionGroups}" Margin="0,3,0,0"
+                                                      Visibility="{Binding HasReactions, Converter={x:Static local:Converters.BoolToVisibility}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,4,0" Padding="4,1"
+                                                            Background="#E0E0E0" CornerRadius="10"
+                                                            Cursor="Hand"
+                                                            MouseLeftButtonUp="Reaction_Click"
+                                                            Tag="{Binding Emoji}">
+                                                        <TextBlock FontSize="12">
+                                                            <Run Text="{Binding Emoji}" />
+                                                            <Run Text="{Binding Count}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="10" />
+                                                        </TextBlock>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -263,23 +542,61 @@
                     </ItemsControl>
                 </ScrollViewer>
 
+                <!-- Reply indicator -->
+                <Border Grid.Row="2" x:Name="ReplyBar" Padding="10,6" Background="White"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                        Visibility="Collapsed">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="&#x2715;" FontSize="14"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                Click="ReplyCancel_Click" Padding="6,0"
+                                Foreground="{StaticResource TextSecondaryBrush}" />
+                        <StackPanel>
+                            <TextBlock FontSize="11" Foreground="{StaticResource PrimaryBrush}">
+                                <Run Text="Replying to " /><Run x:Name="ReplyToName" FontWeight="SemiBold" />
+                            </TextBlock>
+                            <TextBlock x:Name="ReplyToPreview" FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
                 <!-- Typing indicator -->
-                <Border Grid.Row="2" x:Name="TypingBar" Padding="12,4" Background="White"
+                <Border Grid.Row="3" x:Name="TypingBar" Padding="12,4" Background="White"
                         Visibility="Collapsed">
                     <TextBlock x:Name="TypingText" FontSize="11" FontStyle="Italic"
                                Foreground="{StaticResource TextSecondaryBrush}" />
                 </Border>
 
                 <!-- Message input -->
-                <Border Grid.Row="3" Padding="12" Background="White"
+                <Border Grid.Row="4" Padding="12,8" Background="White"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
                     <DockPanel>
-                        <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send"
+                        <!-- Send button -->
+                        <Button x:Name="SendButton" DockPanel.Dock="Right"
                                 Style="{StaticResource PrimaryButton}"
                                 Click="SendButton_Click" Margin="8,0,0,0"
-                                Height="34" Padding="16,0" />
+                                Height="34" Padding="16,0">
+                            <TextBlock Text="&#xE724;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="16" />
+                        </Button>
+                        <!-- Attach file button -->
+                        <Button DockPanel.Dock="Right" Click="FileUpload_Click"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                Padding="6,0" Margin="4,0" ToolTip="Attach File">
+                            <TextBlock Text="&#xE723;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Button>
+                        <!-- Emoji button -->
+                        <Button DockPanel.Dock="Right"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                Padding="6,0" Click="EmojiButton_Click" ToolTip="Emoji">
+                            <TextBlock Text="&#xE76E;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Button>
                         <TextBox x:Name="MessageInput" Padding="8,6" FontSize="13"
-                                 BorderBrush="{StaticResource BorderBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}" VerticalAlignment="Center"
                                  KeyDown="MessageInput_KeyDown"
                                  AcceptsReturn="False" />
                     </DockPanel>
@@ -288,7 +605,7 @@
         </Grid>
 
         <!-- Toast notification popup -->
-        <Border x:Name="ToastBorder" Grid.Column="1"
+        <Border x:Name="ToastBorder" Grid.Column="2"
                 VerticalAlignment="Top" HorizontalAlignment="Right"
                 Margin="16,16" Padding="12,10" CornerRadius="8"
                 Background="#323232" Visibility="Collapsed"
@@ -306,7 +623,7 @@
         </Border>
 
         <!-- Event Reminder Popup -->
-        <Border x:Name="ReminderBorder" Grid.Column="1"
+        <Border x:Name="ReminderBorder" Grid.Column="2"
                 VerticalAlignment="Top" HorizontalAlignment="Right"
                 Margin="16,16" Padding="16,14" CornerRadius="10"
                 Background="White" Visibility="Collapsed"
@@ -334,5 +651,91 @@
                 </StackPanel>
             </StackPanel>
         </Border>
+
+        <!-- Message context menu -->
+        <Popup x:Name="MessageContextMenu" StaysOpen="False"
+               Placement="MousePoint" AllowsTransparency="True">
+            <Border Background="White" CornerRadius="6" Padding="4"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" Opacity="0.15" ShadowDepth="2" />
+                </Border.Effect>
+                <StackPanel MinWidth="160">
+                    <Button x:Name="CtxReply" Content="Reply" Click="CtxReply_Click"
+                            Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Left" Padding="12,6" Cursor="Hand" />
+                    <Button x:Name="CtxEdit" Content="Edit" Click="CtxEdit_Click"
+                            Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Left" Padding="12,6" Cursor="Hand" />
+                    <Button x:Name="CtxDelete" Content="Delete" Click="CtxDelete_Click"
+                            Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Left" Padding="12,6" Cursor="Hand"
+                            Foreground="Red" />
+                    <Separator Margin="4,2" />
+                    <StackPanel Orientation="Horizontal" Margin="8,4">
+                        <Button Content="&#x1F44D;" Click="CtxReaction_Click" Tag="&#x1F44D;"
+                                Background="Transparent" BorderThickness="0" FontSize="18"
+                                Padding="4,2" Cursor="Hand" />
+                        <Button Content="&#x2764;" Click="CtxReaction_Click" Tag="&#x2764;&#xFE0F;"
+                                Background="Transparent" BorderThickness="0" FontSize="18"
+                                Padding="4,2" Cursor="Hand" />
+                        <Button Content="&#x1F602;" Click="CtxReaction_Click" Tag="&#x1F602;"
+                                Background="Transparent" BorderThickness="0" FontSize="18"
+                                Padding="4,2" Cursor="Hand" />
+                        <Button Content="&#x1F389;" Click="CtxReaction_Click" Tag="&#x1F389;"
+                                Background="Transparent" BorderThickness="0" FontSize="18"
+                                Padding="4,2" Cursor="Hand" />
+                        <Button Content="&#x1F44E;" Click="CtxReaction_Click" Tag="&#x1F44E;"
+                                Background="Transparent" BorderThickness="0" FontSize="18"
+                                Padding="4,2" Cursor="Hand" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- Emoji picker popup -->
+        <Popup x:Name="EmojiPicker" StaysOpen="False"
+               Placement="Top" AllowsTransparency="True">
+            <Border Background="White" CornerRadius="8" Padding="8"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" Opacity="0.15" ShadowDepth="2" />
+                </Border.Effect>
+                <WrapPanel MaxWidth="280">
+                    <Button Content="&#x1F44D;" Click="EmojiPick_Click" Tag="&#x1F44D;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F44E;" Click="EmojiPick_Click" Tag="&#x1F44E;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x2764;" Click="EmojiPick_Click" Tag="&#x2764;&#xFE0F;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F602;" Click="EmojiPick_Click" Tag="&#x1F602;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F389;" Click="EmojiPick_Click" Tag="&#x1F389;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F60A;" Click="EmojiPick_Click" Tag="&#x1F60A;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F914;" Click="EmojiPick_Click" Tag="&#x1F914;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F44F;" Click="EmojiPick_Click" Tag="&#x1F44F;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F525;" Click="EmojiPick_Click" Tag="&#x1F525;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x2705;" Click="EmojiPick_Click" Tag="&#x2705;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x274C;" Click="EmojiPick_Click" Tag="&#x274C;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F4AF;" Click="EmojiPick_Click" Tag="&#x1F4AF;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F440;" Click="EmojiPick_Click" Tag="&#x1F440;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F64F;" Click="EmojiPick_Click" Tag="&#x1F64F;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x1F680;" Click="EmojiPick_Click" Tag="&#x1F680;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                    <Button Content="&#x2B50;" Click="EmojiPick_Click" Tag="&#x2B50;"
+                            Background="Transparent" BorderThickness="0" FontSize="22" Padding="4" Cursor="Hand" />
+                </WrapPanel>
+            </Border>
+        </Popup>
     </Grid>
 </Window>

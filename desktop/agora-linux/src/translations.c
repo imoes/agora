@@ -61,6 +61,8 @@ static const TransEntry en_entries[] = {
     {"reminder.now", "Now!"},
     {"reminder.join", "Join"},
     {"reminder.dismiss", "Dismiss"},
+    {"teams.teams", "Teams"},
+    {"teams.error_loading", "Error loading teams"},
     {NULL, NULL}
 };
 
@@ -99,6 +101,8 @@ static const TransEntry de_entries[] = {
     {"reminder.now", "Jetzt!"},
     {"reminder.join", "Beitreten"},
     {"reminder.dismiss", "Schliessen"},
+    {"teams.teams", "Teams"},
+    {"teams.error_loading", "Fehler beim Laden der Teams"},
     {NULL, NULL}
 };
 

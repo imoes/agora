@@ -1,5 +1,17 @@
 import Foundation
 
+struct Reaction: Codable, Equatable {
+    let emoji: String
+    let userId: String
+    let displayName: String
+
+    enum CodingKeys: String, CodingKey {
+        case emoji
+        case userId = "user_id"
+        case displayName = "display_name"
+    }
+}
+
 struct Message: Codable, Identifiable, Equatable {
     let id: String
     let senderId: String
@@ -13,7 +25,7 @@ struct Message: Codable, Identifiable, Equatable {
     let replyToContent: String?
     let replyToSender: String?
     let mentions: [String]?
-    var reactions: [String: [String]]?
+    var reactions: [Reaction]?
     let createdAt: String
     var editedAt: String?
 
@@ -69,7 +81,8 @@ struct Message: Codable, Identifiable, Equatable {
 
     var reactionsDisplay: [(emoji: String, count: Int, userIds: [String])] {
         guard let reactions = reactions else { return [] }
-        return reactions.map { (emoji: $0.key, count: $0.value.count, userIds: $0.value) }
+        let grouped = Dictionary(grouping: reactions, by: { $0.emoji })
+        return grouped.map { (emoji: $0.key, count: $0.value.count, userIds: $0.value.map { $0.userId }) }
             .sorted { $0.emoji < $1.emoji }
     }
 }

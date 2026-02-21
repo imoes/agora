@@ -3,21 +3,33 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="Views/LoginWindow.xaml">
     <Application.Resources>
-        <!-- Agora theme colors -->
-        <SolidColorBrush x:Key="PrimaryBrush" Color="#1976D2" />
-        <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#1565C0" />
+        <!-- Agora theme colors (matching web frontend) -->
+        <SolidColorBrush x:Key="PrimaryBrush" Color="#6264A7" />
+        <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#525497" />
+        <SolidColorBrush x:Key="PrimaryLightBrush" Color="#E8E5FC" />
         <SolidColorBrush x:Key="AccentBrush" Color="#FF9800" />
         <SolidColorBrush x:Key="BackgroundBrush" Color="#F5F5F5" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#333333" />
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#999999" />
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#252423" />
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#616161" />
         <SolidColorBrush x:Key="BorderBrush" Color="#E0E0E0" />
 
-        <!-- Button style -->
+        <!-- Dark sidebar -->
+        <SolidColorBrush x:Key="SidebarDarkBrush" Color="#292929" />
+        <SolidColorBrush x:Key="SidebarDarkHoverBrush" Color="#3D3D3D" />
+        <SolidColorBrush x:Key="SidebarIconBrush" Color="#BFBFC3" />
+        <SolidColorBrush x:Key="SidebarIconActiveBrush" Color="#FFFFFF" />
+
+        <!-- Chat bubbles -->
+        <SolidColorBrush x:Key="MessageOwnBrush" Color="#E8E5FC" />
+        <SolidColorBrush x:Key="MessageOtherBrush" Color="#F0F0F0" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#F3F2F1" />
+
+        <!-- Primary button style -->
         <Style x:Key="PrimaryButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
             <Setter Property="Foreground" Value="White" />
-            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="Padding" Value="16,8" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
@@ -33,6 +45,43 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="{StaticResource PrimaryDarkBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Nav icon button style (dark sidebar) -->
+        <Style x:Key="NavButton" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource SidebarIconBrush}" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Width" Value="52" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="GroupName" Value="Nav" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}"
+                                BorderThickness="3,0,0,0" BorderBrush="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background"
+                                        Value="{StaticResource SidebarDarkHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground"
+                                        Value="{StaticResource SidebarIconActiveBrush}" />
+                                <Setter TargetName="Bg" Property="BorderBrush"
+                                        Value="{StaticResource PrimaryBrush}" />
+                                <Setter TargetName="Bg" Property="Background"
+                                        Value="{StaticResource SidebarDarkHoverBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

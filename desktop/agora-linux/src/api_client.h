@@ -38,4 +38,27 @@ JsonNode *agora_api_client_post(AgoraApiClient *client,
                                 const char *json_body,
                                 GError **error);
 
+/**
+ * PATCH request with JSON body, returning a JsonNode. Caller must unref.
+ */
+JsonNode *agora_api_client_patch(AgoraApiClient *client,
+                                  const char *path,
+                                  const char *json_body,
+                                  GError **error);
+
+/**
+ * PUT request with JSON body, returning a JsonNode. Caller must unref.
+ */
+JsonNode *agora_api_client_put(AgoraApiClient *client,
+                                const char *path,
+                                const char *json_body,
+                                GError **error);
+
+/**
+ * DELETE request, returning a JsonNode or NULL. Caller must unref if non-NULL.
+ */
+JsonNode *agora_api_client_delete(AgoraApiClient *client,
+                                   const char *path,
+                                   GError **error);
+
 #endif /* AGORA_API_CLIENT_H */
