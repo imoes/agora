@@ -44,6 +44,10 @@ struct _AgoraMainWindow {
     GtkListBox *feed_list;
     GtkWidget *feed_scroll;
 
+    /* Calendar */
+    GtkListBox *calendar_list;
+    GtkWidget *calendar_scroll;
+
     /* Video call overlay */
     GtkWidget *video_overlay;
     WebKitWebView *video_webview;
@@ -83,6 +87,7 @@ static void show_notification(const char *title, const char *body);
 static void set_active_nav(AgoraMainWindow *win, GtkWidget *active_btn);
 static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath);
 static void load_feed(AgoraMainWindow *win);
+static void load_calendar_events(AgoraMainWindow *win);
 static void load_messages(AgoraMainWindow *win, const char *channel_id);
 
 /* Accept self-signed certificates callback */
@@ -178,6 +183,15 @@ static void load_channels(AgoraMainWindow *win)
         JsonObject *ch = json_array_get_object_element(arr, i);
         const char *id = json_object_get_string_member(ch, "id");
         const char *name = json_object_get_string_member(ch, "name");
+
+        /* Skip team channels - they belong in the Teams view */
+        const char *channel_type = json_object_has_member(ch, "channel_type")
+            ? json_object_get_string_member(ch, "channel_type") : NULL;
+        gboolean has_team_id = json_object_has_member(ch, "team_id") &&
+            !json_object_get_null_member(ch, "team_id");
+        if (has_team_id || (channel_type && g_strcmp0(channel_type, "team") == 0))
+            continue;
+
         gint64 member_count = json_object_get_int_member(ch, "member_count");
         gint64 unread = 0;
         if (json_object_has_member(ch, "unread_count"))
@@ -508,6 +522,183 @@ static void load_feed(AgoraMainWindow *win)
     }
 
     gtk_widget_show_all(GTK_WIDGET(win->feed_list));
+    json_node_unref(result);
+}
+
+/* --- Calendar loading --- */
+
+static void load_calendar_events(AgoraMainWindow *win)
+{
+    /* Fetch events for current month range */
+    GDateTime *now = g_date_time_new_now_utc();
+    int year = g_date_time_get_year(now);
+    int month = g_date_time_get_month(now);
+
+    GDateTime *start = g_date_time_new_utc(year, month, 1, 0, 0, 0);
+    /* End of next month */
+    int end_month = month + 2;
+    int end_year = year;
+    if (end_month > 12) { end_month -= 12; end_year++; }
+    GDateTime *end = g_date_time_new_utc(end_year, end_month, 1, 0, 0, 0);
+
+    char *start_str = g_date_time_format_iso8601(start);
+    char *end_str = g_date_time_format_iso8601(end);
+    g_date_time_unref(now);
+    g_date_time_unref(start);
+    g_date_time_unref(end);
+
+    char *path = g_strdup_printf("/api/calendar/events?start=%s&end=%s", start_str, end_str);
+    g_free(start_str);
+    g_free(end_str);
+
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &error);
+    g_free(path);
+
+    /* Clear existing list */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->calendar_list));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+
+    if (!result) {
+        if (error) g_error_free(error);
+        return;
+    }
+
+    if (!JSON_NODE_HOLDS_ARRAY(result)) {
+        json_node_unref(result);
+        return;
+    }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+
+    for (guint i = 0; i < len; i++) {
+        JsonObject *ev = json_array_get_object_element(arr, i);
+        const char *title = json_object_has_member(ev, "title")
+            ? json_object_get_string_member(ev, "title") : "";
+        const char *description = json_object_has_member(ev, "description") &&
+            !json_object_get_null_member(ev, "description")
+            ? json_object_get_string_member(ev, "description") : NULL;
+        const char *start_time = json_object_has_member(ev, "start_time")
+            ? json_object_get_string_member(ev, "start_time") : "";
+        const char *end_time = json_object_has_member(ev, "end_time")
+            ? json_object_get_string_member(ev, "end_time") : "";
+        gboolean all_day = json_object_has_member(ev, "all_day") &&
+            json_object_get_boolean_member(ev, "all_day");
+        const char *location = json_object_has_member(ev, "location") &&
+            !json_object_get_null_member(ev, "location")
+            ? json_object_get_string_member(ev, "location") : NULL;
+        const char *channel_id = json_object_has_member(ev, "channel_id") &&
+            !json_object_get_null_member(ev, "channel_id")
+            ? json_object_get_string_member(ev, "channel_id") : NULL;
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        gtk_container_set_border_width(GTK_CONTAINER(row_box), 12);
+
+        /* Title row with icon */
+        GtkWidget *title_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        GtkWidget *icon_lbl = gtk_label_new(
+            all_day ? "\xF0\x9F\x93\x85" : "\xE2\x8F\xB0");  /* 📅 or ⏰ */
+        gtk_box_pack_start(GTK_BOX(title_hbox), icon_lbl, FALSE, FALSE, 0);
+
+        GtkWidget *title_lbl = gtk_label_new(NULL);
+        char *title_markup = g_strdup_printf("<b>%s</b>", title);
+        gtk_label_set_markup(GTK_LABEL(title_lbl), title_markup);
+        g_free(title_markup);
+        gtk_label_set_ellipsize(GTK_LABEL(title_lbl), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_halign(title_lbl, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(title_hbox), title_lbl, TRUE, TRUE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), title_hbox, FALSE, FALSE, 0);
+
+        /* Time info */
+        char *time_text;
+        if (all_day) {
+            /* Parse just the date from start_time */
+            GDateTime *dt = g_date_time_new_from_iso8601(start_time, NULL);
+            if (dt) {
+                time_text = g_date_time_format(dt, "%A, %B %d, %Y (All day)");
+                g_date_time_unref(dt);
+            } else {
+                time_text = g_strdup("All day");
+            }
+        } else {
+            GDateTime *dt_start = g_date_time_new_from_iso8601(start_time, NULL);
+            GDateTime *dt_end = g_date_time_new_from_iso8601(end_time, NULL);
+            if (dt_start && dt_end) {
+                GDateTime *local_start = g_date_time_to_local(dt_start);
+                GDateTime *local_end = g_date_time_to_local(dt_end);
+                char *s = g_date_time_format(local_start, "%a %b %d, %H:%M");
+                char *e = g_date_time_format(local_end, "%H:%M");
+                time_text = g_strdup_printf("%s - %s", s, e);
+                g_free(s);
+                g_free(e);
+                g_date_time_unref(local_start);
+                g_date_time_unref(local_end);
+            } else {
+                time_text = g_strdup("");
+            }
+            if (dt_start) g_date_time_unref(dt_start);
+            if (dt_end) g_date_time_unref(dt_end);
+        }
+
+        GtkWidget *time_lbl = gtk_label_new(time_text);
+        g_free(time_text);
+        gtk_widget_set_halign(time_lbl, GTK_ALIGN_START);
+        PangoAttrList *time_attrs = pango_attr_list_new();
+        pango_attr_list_insert(time_attrs, pango_attr_foreground_new(0x6600, 0x6600, 0x6600));
+        pango_attr_list_insert(time_attrs, pango_attr_scale_new(0.9));
+        gtk_label_set_attributes(GTK_LABEL(time_lbl), time_attrs);
+        pango_attr_list_unref(time_attrs);
+        gtk_box_pack_start(GTK_BOX(row_box), time_lbl, FALSE, FALSE, 0);
+
+        /* Location */
+        if (location) {
+            GtkWidget *loc_lbl = gtk_label_new(NULL);
+            char *loc_markup = g_strdup_printf(
+                "<span color='#888888'>\xF0\x9F\x93\x8D %s</span>", location); /* 📍 */
+            gtk_label_set_markup(GTK_LABEL(loc_lbl), loc_markup);
+            g_free(loc_markup);
+            gtk_widget_set_halign(loc_lbl, GTK_ALIGN_START);
+            gtk_label_set_ellipsize(GTK_LABEL(loc_lbl), PANGO_ELLIPSIZE_END);
+            gtk_box_pack_start(GTK_BOX(row_box), loc_lbl, FALSE, FALSE, 0);
+        }
+
+        /* Description */
+        if (description) {
+            GtkWidget *desc_lbl = gtk_label_new(description);
+            gtk_widget_set_halign(desc_lbl, GTK_ALIGN_START);
+            gtk_label_set_ellipsize(GTK_LABEL(desc_lbl), PANGO_ELLIPSIZE_END);
+            gtk_label_set_max_width_chars(GTK_LABEL(desc_lbl), 80);
+            gtk_label_set_line_wrap(GTK_LABEL(desc_lbl), TRUE);
+            gtk_label_set_lines(GTK_LABEL(desc_lbl), 2);
+            PangoAttrList *desc_attrs = pango_attr_list_new();
+            pango_attr_list_insert(desc_attrs, pango_attr_scale_new(0.9));
+            pango_attr_list_insert(desc_attrs, pango_attr_foreground_new(0x5500, 0x5500, 0x5500));
+            gtk_label_set_attributes(GTK_LABEL(desc_lbl), desc_attrs);
+            pango_attr_list_unref(desc_attrs);
+            gtk_box_pack_start(GTK_BOX(row_box), desc_lbl, FALSE, FALSE, 0);
+        }
+
+        /* Video call join button */
+        if (channel_id) {
+            GtkWidget *join_btn = gtk_button_new_with_label(
+                "\xF0\x9F\x93\xB9 Join Video Call"); /* 📹 */
+            gtk_widget_set_halign(join_btn, GTK_ALIGN_START);
+            gtk_widget_set_margin_top(join_btn, 4);
+            g_object_set_data_full(G_OBJECT(join_btn), "channel-id",
+                                   g_strdup(channel_id), g_free);
+            gtk_box_pack_start(GTK_BOX(row_box), join_btn, FALSE, FALSE, 0);
+        }
+
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->calendar_list, row, -1);
+    }
+
+    gtk_widget_show_all(GTK_WIDGET(win->calendar_list));
     json_node_unref(result);
 }
 
@@ -1316,6 +1507,7 @@ static void on_nav_teams_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    load_teams(win);
     gtk_stack_set_visible_child_name(win->sidebar_stack, "teams");
     set_active_nav(win, win->nav_teams_btn);
 }
@@ -1333,11 +1525,8 @@ static void on_nav_calendar_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
-    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
-    AgoraSession *session = agora_app_get_session(app);
-    char *url = g_strdup_printf("%s/calendar", session->base_url);
-    g_app_info_launch_default_for_uri(url, NULL, NULL);
-    g_free(url);
+    load_calendar_events(win);
+    gtk_stack_set_visible_child_name(win->content_stack, "calendar");
     set_active_nav(win, win->nav_calendar_btn);
 }
 
@@ -1356,6 +1545,24 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
     if (!win->current_channel_id) return;
 
+    /* Create video room via API */
+    char *room_path = g_strdup_printf("/api/video/rooms?channel_id=%s",
+                                       win->current_channel_id);
+    GError *error = NULL;
+    JsonNode *room_result = agora_api_client_post(win->api, room_path, NULL, &error);
+    g_free(room_path);
+    if (room_result) json_node_unref(room_result);
+    if (error) { g_error_free(error); error = NULL; }
+
+    /* Join video room via API */
+    char *join_path = g_strdup_printf("/api/video/rooms/%s/join",
+                                       win->current_channel_id);
+    JsonNode *join_result = agora_api_client_post(win->api, join_path, NULL, &error);
+    g_free(join_path);
+    if (join_result) json_node_unref(join_result);
+    if (error) { g_error_free(error); error = NULL; }
+
+    /* Build video URL */
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
     AgoraSession *session = agora_app_get_session(app);
     char *base = g_strdup(session->base_url);
@@ -1369,7 +1576,9 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
         gtk_widget_show_all(win->video_overlay);
     } else {
         /* Fallback to browser */
-        g_app_info_launch_default_for_uri(url, NULL, NULL);
+        GError *launch_err = NULL;
+        g_app_info_launch_default_for_uri(url, NULL, &launch_err);
+        if (launch_err) g_error_free(launch_err);
     }
     g_free(url);
 }
@@ -1746,6 +1955,36 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_box_pack_start(GTK_BOX(feed_box), win->feed_scroll, TRUE, TRUE, 0);
 
     gtk_stack_add_named(win->content_stack, feed_box, "feed");
+
+    /* --- Calendar view --- */
+    GtkWidget *calendar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Calendar header */
+    GtkWidget *cal_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(cal_header), 0);
+    gtk_style_context_add_class(gtk_widget_get_style_context(cal_header), "chat-header");
+
+    GtkWidget *cal_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(cal_title),
+        "<span weight='bold' size='large'>\xF0\x9F\x93\x85 Calendar</span>");
+    gtk_widget_set_margin_start(cal_title, 16);
+    gtk_widget_set_margin_top(cal_title, 12);
+    gtk_widget_set_margin_bottom(cal_title, 12);
+    gtk_box_pack_start(GTK_BOX(cal_header), cal_title, TRUE, TRUE, 0);
+    gtk_widget_set_halign(cal_title, GTK_ALIGN_START);
+
+    gtk_box_pack_start(GTK_BOX(calendar_box), cal_header, FALSE, FALSE, 0);
+
+    /* Scrollable calendar event list */
+    win->calendar_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(win->calendar_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->calendar_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(win->calendar_list, GTK_SELECTION_NONE);
+    gtk_container_add(GTK_CONTAINER(win->calendar_scroll), GTK_WIDGET(win->calendar_list));
+    gtk_box_pack_start(GTK_BOX(calendar_box), win->calendar_scroll, TRUE, TRUE, 0);
+
+    gtk_stack_add_named(win->content_stack, calendar_box, "calendar");
 
     /* --- Chat view --- */
     win->chat_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
