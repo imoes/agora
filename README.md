@@ -509,19 +509,19 @@ A native Linux desktop application built with GTK3 and libsoup, designed for X S
 **Prerequisites (Debian/Ubuntu):**
 
 ```bash
-sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev libnotify-dev libgstreamer1.0-dev
+sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev libnotify-dev libgstreamer1.0-dev libwebkit2gtk-4.1-dev
 ```
 
 **Prerequisites (Fedora):**
 
 ```bash
-sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel libnotify-devel gstreamer1-devel
+sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel libnotify-devel gstreamer1-devel webkit2gtk4.1-devel
 ```
 
 **Prerequisites (Arch Linux):**
 
 ```bash
-sudo pacman -S base-devel gtk3 json-glib libsoup libnotify gstreamer
+sudo pacman -S base-devel gtk3 json-glib libsoup libnotify gstreamer webkit2gtk-4.1
 ```
 
 **Build & Run:**
@@ -540,8 +540,17 @@ sudo make install
 
 **Features:**
 - Login with server URL, username, and password
+- 3-column layout: navigation sidebar, channel/team sidebar, content area
+- Activity feed with real-time event display
 - Channel list sidebar with member count and unread indicators
-- Message display and sending
+- Teams with expandable channel lists
+- Message display and sending with WebSocket real-time updates
+- Integrated video calls via embedded WebKitWebView
+- File upload and attachment support
+- Calendar event reminders with countdown timer
+- Desktop notifications via libnotify
+- Custom notification sounds via GStreamer
+- Multi-language support (24 languages)
 - Native X Server integration with `.desktop` file
 
 ### macOS (Swift / SwiftUI)

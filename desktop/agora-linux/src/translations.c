@@ -70,6 +70,9 @@ static const TransEntry en_entries[] = {
     {"chat.video_call", "Video Call"},
     {"chat.attach_file", "Attach File"},
     {"chat.emoji", "Emoji"},
+    {"feed.title", "Activity Feed"},
+    {"feed.empty", "No new activity"},
+    {"video.leave", "Leave Call"},
     {NULL, NULL}
 };
 
@@ -117,6 +120,9 @@ static const TransEntry de_entries[] = {
     {"chat.video_call", "Videoanruf"},
     {"chat.attach_file", "Datei anh\xc3\xa4ngen"},
     {"chat.emoji", "Emoji"},
+    {"feed.title", "Aktivit\xc3\xa4ten"},
+    {"feed.empty", "Keine neuen Aktivit\xc3\xa4ten"},
+    {"video.leave", "Anruf verlassen"},
     {NULL, NULL}
 };
 

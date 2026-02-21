@@ -4,6 +4,7 @@
 #include <libnotify/notify.h>
 #include <string.h>
 #include <gst/gst.h>
+#include <webkit2/webkit2.h>
 
 struct _AgoraMainWindow {
     GtkApplicationWindow parent;
@@ -39,6 +40,14 @@ struct _AgoraMainWindow {
     GtkWidget *video_btn;
     GtkWidget *attach_header_btn;
 
+    /* Feed */
+    GtkListBox *feed_list;
+    GtkWidget *feed_scroll;
+
+    /* Video call overlay */
+    GtkWidget *video_overlay;
+    WebKitWebView *video_webview;
+
     /* State */
     char *current_channel_id;
     char *current_channel_name;
@@ -73,6 +82,8 @@ static void download_notification_sound(AgoraMainWindow *win);
 static void show_notification(const char *title, const char *body);
 static void set_active_nav(AgoraMainWindow *win, GtkWidget *active_btn);
 static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath);
+static void load_feed(AgoraMainWindow *win);
+static void load_messages(AgoraMainWindow *win, const char *channel_id);
 
 /* Application CSS */
 static const char *app_css =
@@ -299,6 +310,183 @@ static void load_team_channels(AgoraMainWindow *win, const char *team_id)
     }
 
     gtk_widget_show_all(GTK_WIDGET(win->team_channel_list));
+    json_node_unref(result);
+}
+
+/* --- Feed loading --- */
+
+static char *format_relative_time(const char *iso_str)
+{
+    if (!iso_str) return g_strdup("");
+    GDateTime *dt = g_date_time_new_from_iso8601(iso_str, NULL);
+    if (!dt) return g_strdup("");
+    GDateTime *now = g_date_time_new_now_utc();
+    GTimeSpan diff = g_date_time_difference(now, dt);
+    g_date_time_unref(dt);
+    g_date_time_unref(now);
+
+    gint64 seconds = diff / G_TIME_SPAN_SECOND;
+    if (seconds < 60) return g_strdup_printf("%lds", (long)seconds);
+    if (seconds < 3600) return g_strdup_printf("%ldm", (long)(seconds / 60));
+    if (seconds < 86400) return g_strdup_printf("%ldh", (long)(seconds / 3600));
+    return g_strdup_printf("%ldd", (long)(seconds / 86400));
+}
+
+static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpointer data)
+{
+    (void)list_box;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!row) return;
+
+    const char *channel_id = g_object_get_data(G_OBJECT(row), "channel-id");
+    const char *channel_name = g_object_get_data(G_OBJECT(row), "channel-name");
+    const char *event_id = g_object_get_data(G_OBJECT(row), "event-id");
+    if (!channel_id) return;
+
+    /* Mark as read */
+    if (event_id) {
+        char *body = g_strdup_printf("{\"event_ids\":[\"%s\"]}", event_id);
+        GError *err = NULL;
+        JsonNode *res = agora_api_client_post(win->api, "/api/feed/read", body, &err);
+        g_free(body);
+        if (res) json_node_unref(res);
+        if (err) g_error_free(err);
+    }
+
+    /* Switch to chat nav */
+    gtk_stack_set_visible_child_name(win->sidebar_stack, "chats");
+    set_active_nav(win, win->nav_chat_btn);
+
+    /* Open channel */
+    g_free(win->current_channel_id);
+    win->current_channel_id = g_strdup(channel_id);
+    g_free(win->current_channel_name);
+    win->current_channel_name = g_strdup(channel_name ? channel_name : "");
+
+    gtk_label_set_text(win->chat_title, win->current_channel_name);
+    gtk_stack_set_visible_child_name(win->content_stack, "chat");
+    load_messages(win, channel_id);
+    connect_channel_ws(win, channel_id);
+    gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
+}
+
+static void load_feed(AgoraMainWindow *win)
+{
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, "/api/feed/?limit=50&offset=0", &error);
+    if (!result) {
+        if (error) g_error_free(error);
+        return;
+    }
+
+    /* Clear existing list */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->feed_list));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+
+    JsonObject *root = json_node_get_object(result);
+    if (!json_object_has_member(root, "events")) {
+        json_node_unref(result);
+        return;
+    }
+
+    JsonArray *events = json_object_get_array_member(root, "events");
+    guint len = json_array_get_length(events);
+
+    for (guint i = 0; i < len; i++) {
+        JsonObject *ev = json_array_get_object_element(events, i);
+        const char *id = json_object_get_string_member(ev, "id");
+        const char *sender_name = json_object_has_member(ev, "sender_name")
+            ? json_object_get_string_member(ev, "sender_name") : "";
+        const char *channel_name = json_object_has_member(ev, "channel_name")
+            ? json_object_get_string_member(ev, "channel_name") : "";
+        const char *channel_id = json_object_has_member(ev, "channel_id")
+            ? json_object_get_string_member(ev, "channel_id") : NULL;
+        const char *event_type = json_object_has_member(ev, "event_type")
+            ? json_object_get_string_member(ev, "event_type") : "message";
+        const char *preview = json_object_has_member(ev, "preview_text") &&
+            !json_object_get_null_member(ev, "preview_text")
+            ? json_object_get_string_member(ev, "preview_text") : "";
+        gboolean is_read = json_object_has_member(ev, "is_read")
+            ? json_object_get_boolean_member(ev, "is_read") : TRUE;
+        const char *created_at = json_object_has_member(ev, "created_at")
+            ? json_object_get_string_member(ev, "created_at") : NULL;
+
+        /* Build row */
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_container_set_border_width(GTK_CONTAINER(row_box), 10);
+
+        /* Unread indicator */
+        if (!is_read) {
+            GtkWidget *dot = gtk_label_new("\xE2\x97\x8F"); /* ● */
+            PangoAttrList *dot_attrs = pango_attr_list_new();
+            pango_attr_list_insert(dot_attrs, pango_attr_foreground_new(0x6200, 0x6400, 0xa700));
+            gtk_label_set_attributes(GTK_LABEL(dot), dot_attrs);
+            pango_attr_list_unref(dot_attrs);
+            gtk_box_pack_start(GTK_BOX(row_box), dot, FALSE, FALSE, 0);
+        }
+
+        /* Icon based on event type */
+        const char *icon = "\xF0\x9F\x92\xAC"; /* 💬 message */
+        if (g_strcmp0(event_type, "call") == 0) icon = "\xF0\x9F\x93\xB9"; /* 📹 */
+        else if (g_strcmp0(event_type, "reaction") == 0) icon = "\xF0\x9F\x91\x8D"; /* 👍 */
+        else if (g_strcmp0(event_type, "mention") == 0) icon = "@";
+
+        GtkWidget *icon_lbl = gtk_label_new(icon);
+        gtk_box_pack_start(GTK_BOX(row_box), icon_lbl, FALSE, FALSE, 0);
+
+        /* Text content */
+        GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+
+        /* Sender + channel */
+        char *header = g_strdup_printf("<b>%s</b>  <span color='#888888'>in %s</span>",
+                                        sender_name, channel_name);
+        GtkWidget *header_lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(header_lbl), header);
+        g_free(header);
+        gtk_label_set_ellipsize(GTK_LABEL(header_lbl), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_halign(header_lbl, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(text_box), header_lbl, FALSE, FALSE, 0);
+
+        /* Preview text */
+        GtkWidget *preview_lbl = gtk_label_new(preview);
+        gtk_label_set_ellipsize(GTK_LABEL(preview_lbl), PANGO_ELLIPSIZE_END);
+        gtk_label_set_max_width_chars(GTK_LABEL(preview_lbl), 60);
+        gtk_widget_set_halign(preview_lbl, GTK_ALIGN_START);
+        PangoAttrList *prev_attrs = pango_attr_list_new();
+        pango_attr_list_insert(prev_attrs, pango_attr_scale_new(0.9));
+        pango_attr_list_insert(prev_attrs, pango_attr_foreground_new(0x6600, 0x6600, 0x6600));
+        gtk_label_set_attributes(GTK_LABEL(preview_lbl), prev_attrs);
+        pango_attr_list_unref(prev_attrs);
+        gtk_box_pack_start(GTK_BOX(text_box), preview_lbl, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), text_box, TRUE, TRUE, 0);
+
+        /* Time */
+        char *time_str = format_relative_time(created_at);
+        GtkWidget *time_lbl = gtk_label_new(time_str);
+        g_free(time_str);
+        PangoAttrList *time_attrs = pango_attr_list_new();
+        pango_attr_list_insert(time_attrs, pango_attr_scale_new(0.85));
+        pango_attr_list_insert(time_attrs, pango_attr_foreground_new(0x9900, 0x9900, 0x9900));
+        gtk_label_set_attributes(GTK_LABEL(time_lbl), time_attrs);
+        pango_attr_list_unref(time_attrs);
+        gtk_widget_set_valign(time_lbl, GTK_ALIGN_START);
+        gtk_box_pack_end(GTK_BOX(row_box), time_lbl, FALSE, FALSE, 0);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        if (channel_id)
+            g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(channel_id), g_free);
+        if (channel_name)
+            g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(channel_name), g_free);
+        if (id)
+            g_object_set_data_full(G_OBJECT(row), "event-id", g_strdup(id), g_free);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->feed_list, row, -1);
+    }
+
+    gtk_widget_show_all(GTK_WIDGET(win->feed_list));
     json_node_unref(result);
 }
 
@@ -747,7 +935,7 @@ static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
 
     gtk_label_set_text(win->team_channels_header, team_name);
     load_team_channels(win, team_id);
-    gtk_widget_show(win->team_channels_box);
+    gtk_widget_show_all(win->team_channels_box);
 }
 
 static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
@@ -951,17 +1139,23 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
         g_hash_table_add(win->dismissed_reminders, g_strdup(win->reminder_event_id));
 
     if (win->reminder_channel_id) {
-        /* Open video room in browser */
-        char *base = g_strdup(win->api->base_url);
-        /* Remove /api suffix if present */
+        /* Open video room in embedded WebView */
+        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+        AgoraSession *session = agora_app_get_session(app);
+        char *base = g_strdup(session->base_url);
         char *api_pos = g_strrstr(base, "/api");
         if (api_pos) *api_pos = '\0';
-        char *url = g_strdup_printf("%s/video/%s", base, win->reminder_channel_id);
+        char *url = g_strdup_printf("%s/video/%s?token=%s", base, win->reminder_channel_id, session->token);
         g_free(base);
 
-        GError *err = NULL;
-        g_app_info_launch_default_for_uri(url, NULL, &err);
-        if (err) g_error_free(err);
+        if (win->video_webview) {
+            webkit_web_view_load_uri(win->video_webview, url);
+            gtk_widget_show_all(win->video_overlay);
+        } else {
+            GError *err = NULL;
+            g_app_info_launch_default_for_uri(url, NULL, &err);
+            if (err) g_error_free(err);
+        }
         g_free(url);
     }
     hide_reminder(win);
@@ -1100,6 +1294,7 @@ static void on_nav_feed_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    load_feed(win);
     gtk_stack_set_visible_child_name(win->content_stack, "feed");
     set_active_nav(win, win->nav_feed_btn);
 }
@@ -1116,6 +1311,15 @@ static void on_nav_calendar_clicked(GtkButton *btn, gpointer data)
     set_active_nav(win, win->nav_calendar_btn);
 }
 
+static void on_video_leave_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (win->video_webview)
+        webkit_web_view_load_uri(win->video_webview, "about:blank");
+    gtk_widget_hide(win->video_overlay);
+}
+
 static void on_video_call_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
@@ -1127,9 +1331,16 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
     char *base = g_strdup(session->base_url);
     char *api_pos = g_strrstr(base, "/api");
     if (api_pos) *api_pos = '\0';
-    char *url = g_strdup_printf("%s/video/%s", base, win->current_channel_id);
+    char *url = g_strdup_printf("%s/video/%s?token=%s", base, win->current_channel_id, session->token);
     g_free(base);
-    g_app_info_launch_default_for_uri(url, NULL, NULL);
+
+    if (win->video_webview) {
+        webkit_web_view_load_uri(win->video_webview, url);
+        gtk_widget_show_all(win->video_overlay);
+    } else {
+        /* Fallback to browser */
+        g_app_info_launch_default_for_uri(url, NULL, NULL);
+    }
     g_free(url);
 }
 
@@ -1463,25 +1674,34 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_stack_add_named(win->content_stack, empty_box, "empty");
 
-    /* Feed placeholder */
-    GtkWidget *feed_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_valign(feed_box, GTK_ALIGN_CENTER);
-    gtk_widget_set_halign(feed_box, GTK_ALIGN_CENTER);
+    /* Feed view with scrollable list */
+    GtkWidget *feed_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
-    GtkWidget *feed_icon = gtk_label_new("\xF0\x9F\x93\xB0");  /* 📰 */
-    PangoAttrList *feed_icon_attrs = pango_attr_list_new();
-    pango_attr_list_insert(feed_icon_attrs, pango_attr_size_new(32 * PANGO_SCALE));
-    gtk_label_set_attributes(GTK_LABEL(feed_icon), feed_icon_attrs);
-    pango_attr_list_unref(feed_icon_attrs);
-    gtk_box_pack_start(GTK_BOX(feed_box), feed_icon, FALSE, FALSE, 0);
+    /* Feed header */
+    GtkWidget *feed_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(feed_header), 0);
+    gtk_style_context_add_class(gtk_widget_get_style_context(feed_header), "chat-header");
 
     GtkWidget *feed_title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(feed_title),
-        "<span size='large' weight='bold'>Activity Feed</span>");
-    gtk_box_pack_start(GTK_BOX(feed_box), feed_title, FALSE, FALSE, 0);
+        "<span weight='bold' size='large'>Activity Feed</span>");
+    gtk_widget_set_margin_start(feed_title, 16);
+    gtk_widget_set_margin_top(feed_title, 12);
+    gtk_widget_set_margin_bottom(feed_title, 12);
+    gtk_box_pack_start(GTK_BOX(feed_header), feed_title, TRUE, TRUE, 0);
+    gtk_widget_set_halign(feed_title, GTK_ALIGN_START);
 
-    GtkWidget *feed_hint = gtk_label_new(T("welcome.subtitle"));
-    gtk_box_pack_start(GTK_BOX(feed_box), feed_hint, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(feed_box), feed_header, FALSE, FALSE, 0);
+
+    /* Scrollable feed list */
+    win->feed_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(win->feed_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->feed_list = GTK_LIST_BOX(gtk_list_box_new());
+    g_signal_connect(win->feed_list, "row-activated",
+                     G_CALLBACK(on_feed_row_activated), win);
+    gtk_container_add(GTK_CONTAINER(win->feed_scroll), GTK_WIDGET(win->feed_list));
+    gtk_box_pack_start(GTK_BOX(feed_box), win->feed_scroll, TRUE, TRUE, 0);
 
     gtk_stack_add_named(win->content_stack, feed_box, "feed");
 
@@ -1595,6 +1815,51 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_stack_set_visible_child_name(win->content_stack, "empty");
 
     gtk_box_pack_start(GTK_BOX(right_vbox), GTK_WIDGET(win->content_stack), TRUE, TRUE, 0);
+
+    /* --- Video call overlay (hidden by default) --- */
+    win->video_overlay = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_no_show_all(win->video_overlay, TRUE);
+
+    /* Video header with leave button */
+    GtkWidget *video_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GdkRGBA video_header_bg = {0.15, 0.15, 0.15, 1.0};
+    gtk_widget_override_background_color(video_header, GTK_STATE_FLAG_NORMAL, &video_header_bg);
+    gtk_container_set_border_width(GTK_CONTAINER(video_header), 8);
+
+    GtkWidget *video_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(video_title),
+        "<span color='white' weight='bold'>Video Call</span>");
+    gtk_box_pack_start(GTK_BOX(video_header), video_title, TRUE, TRUE, 0);
+    gtk_widget_set_halign(video_title, GTK_ALIGN_START);
+
+    GtkWidget *leave_btn = gtk_button_new_with_label(T("video.leave"));
+    GdkRGBA leave_bg = {0.8, 0.2, 0.2, 1.0};
+    GdkRGBA leave_fg = {1.0, 1.0, 1.0, 1.0};
+    gtk_widget_override_background_color(leave_btn, GTK_STATE_FLAG_NORMAL, &leave_bg);
+    gtk_widget_override_color(leave_btn, GTK_STATE_FLAG_NORMAL, &leave_fg);
+    g_signal_connect(leave_btn, "clicked", G_CALLBACK(on_video_leave_clicked), win);
+    gtk_box_pack_end(GTK_BOX(video_header), leave_btn, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(win->video_overlay), video_header, FALSE, FALSE, 0);
+
+    /* WebKitWebView for video */
+    /* Create WebView for video calls */
+    win->video_webview = WEBKIT_WEB_VIEW(webkit_web_view_new());
+    WebKitSettings *web_settings = webkit_web_view_get_settings(win->video_webview);
+    webkit_settings_set_enable_media_stream(web_settings, TRUE);
+    webkit_settings_set_enable_mediasource(web_settings, TRUE);
+    webkit_settings_set_enable_webaudio(web_settings, TRUE);
+    webkit_settings_set_media_playback_requires_user_gesture(web_settings, FALSE);
+
+    /* Accept self-signed TLS certs */
+    WebKitWebContext *wv_ctx = webkit_web_view_get_context(win->video_webview);
+    WebKitWebsiteDataManager *wv_data_mgr = webkit_web_context_get_website_data_manager(wv_ctx);
+    webkit_website_data_manager_set_tls_errors_policy(wv_data_mgr, WEBKIT_TLS_ERRORS_POLICY_IGNORE);
+
+    gtk_box_pack_start(GTK_BOX(win->video_overlay), GTK_WIDGET(win->video_webview), TRUE, TRUE, 0);
+
+    gtk_box_pack_start(GTK_BOX(right_vbox), win->video_overlay, TRUE, TRUE, 0);
+
     gtk_box_pack_start(GTK_BOX(main_hbox), right_vbox, TRUE, TRUE, 0);
 
     gtk_widget_show_all(main_hbox);
@@ -1617,9 +1882,10 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
     /* Download notification sound */
     download_notification_sound(win);
 
-    /* Load channels and teams */
+    /* Load channels, teams, and feed */
     load_channels(win);
     load_teams(win);
+    load_feed(win);
 
     /* Start event reminder polling (every 60 seconds) */
     check_event_reminders(win);
