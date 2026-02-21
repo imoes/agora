@@ -9,8 +9,7 @@
 
     <Grid>
         <Border Background="White" CornerRadius="8" Margin="40"
-                Padding="30" VerticalAlignment="Center"
-                Effect="{x:Null}">
+                Padding="30" VerticalAlignment="Center">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="20" ShadowDepth="2" Opacity="0.15" />
             </Border.Effect>

@@ -2,6 +2,38 @@
 
 Agora is a self-hosted collaboration platform with chat, video conferencing, file management, and calendar integration - an open-source alternative to Microsoft Teams.
 
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Services](#services)
+- [Architecture](#architecture)
+  - [Overview](#overview)
+  - [Directory Structure](#directory-structure)
+  - [Backend (FastAPI / Python 3.12)](#backend-fastapi--python-312)
+  - [Frontend (Angular 17)](#frontend-angular-17)
+  - [Infrastructure](#infrastructure)
+- [Configuration](#configuration)
+  - [JWT Secret](#jwt-secret-required-for-production)
+  - [Email (SMTP)](#email-smtp)
+  - [LDAP / Active Directory](#ldap--active-directory)
+- [Google Calendar Setup](#google-calendar-setup)
+- [Additional Calendar Integrations](#additional-calendar-integrations)
+  - [WebDAV / CalDAV](#webdav--caldav)
+  - [Outlook / Exchange](#outlook--exchange)
+- [Desktop Applications](#desktop-applications)
+  - [Windows (.NET/WPF)](#windows-netwpf)
+  - [Linux (GTK3 / X Server)](#linux-gtk3--x-server)
+  - [macOS (Swift / SwiftUI)](#macos-swift--swiftui)
+- [Development](#development)
+- [Admin User & User Management](#admin-user--user-management)
+- [Authentication Flows](#authentication-flows)
+- [License](#license)
+
+---
+
 ## Features
 
 - **Chat** - Real-time messaging with file attachments, mentions, and read receipts
@@ -15,6 +47,7 @@ Agora is a self-hosted collaboration platform with chat, video conferencing, fil
 - **Admin Panel** - User management and system statistics
 - **Windows Desktop App** - Native .NET/WPF client for Windows
 - **Linux Desktop App** - Native GTK3 client for Linux (X Server)
+- **macOS Desktop App** - Native Swift/SwiftUI client for macOS
 
 ---
 
@@ -184,9 +217,13 @@ agora/
 │   │   ├── Services/         # API client, WebSocket client
 │   │   ├── Views/            # WPF windows (Login, Main)
 │   │   └── AgoraWindows.csproj
-│   └── agora-linux/          # GTK3 Linux application (X Server)
-│       ├── src/              # C source files
-│       ├── resources/        # Desktop entry, icons
+│   ├── agora-linux/          # GTK3 Linux application (X Server)
+│   │   ├── src/              # C source files
+│   │   ├── resources/        # Desktop entry, icons
+│   │   └── Makefile
+│   └── agora-mac/            # SwiftUI macOS application
+│       ├── Sources/AgoraMac/ # Swift source files
+│       ├── Package.swift     # Swift Package Manager config
 │       └── Makefile
 ├── nginx/
 │   ├── Dockerfile            # Nginx with self-signed certs
@@ -506,6 +543,51 @@ sudo make install
 - Channel list sidebar with member count and unread indicators
 - Message display and sending
 - Native X Server integration with `.desktop` file
+
+### macOS (Swift / SwiftUI)
+
+A native macOS desktop application built with Swift and SwiftUI.
+
+**Prerequisites:**
+- macOS 13.0 (Ventura) or later
+- Swift 5.9+
+- Xcode Command Line Tools (`xcode-select --install`)
+
+**Build & Run:**
+
+```bash
+cd desktop/agora-mac
+make build
+make run
+```
+
+**Create Application Bundle:**
+
+```bash
+# Create Agora.app bundle
+make bundle
+
+# Install to /Applications
+make install
+```
+
+**Release Build:**
+
+```bash
+make release
+```
+
+**Features:**
+- Real-time messaging via WebSocket with typing indicators
+- Channel management - direct messages, group chats, and team channels
+- Message reactions with emoji picker
+- Message replies with quoted context
+- Desktop notifications via macOS Notification Center
+- Custom notification sounds (configurable per user)
+- Calendar event reminders with countdown timer and video call join
+- Multi-language support (24 languages with automatic system language detection)
+- Self-signed certificate support for development environments
+- Native macOS UI with SwiftUI, NavigationSplitView sidebar, and system theme integration
 
 ---
 
