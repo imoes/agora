@@ -1578,7 +1578,9 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
             inject_video_user_scripts(win);
             g_print("[Video] Reminder join: navigating to %s\n", video_url);
             webkit_web_view_load_uri(win->video_webview, video_url);
-            gtk_widget_show_all(win->video_overlay);
+            gtk_widget_set_no_show_all(win->video_overlay, FALSE);
+        gtk_widget_show_all(win->video_overlay);
+        gtk_widget_set_no_show_all(win->video_overlay, TRUE);
         } else {
             char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
             GError *err = NULL;
@@ -1771,17 +1773,29 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
     AgoraSession *session = agora_app_get_session(app);
 
-    /* Build JS that sets token + hides web app UI */
+    /* Build JS that sets token + hides web app UI via CSS + MutationObserver */
     char *js = g_strdup_printf(
-        "localStorage.setItem('access_token', '%s');"
-        "localStorage.setItem('current_user', JSON.stringify({id:'%s',display_name:'%s'}));"
-        "var s = document.createElement('style');"
-        "s.textContent = '"
-            "nav.sidebar{display:none!important}"
-            ".chat-sidebar{display:none!important}"
-            ".top-bar{display:none!important}"
-        "';"
-        "document.documentElement.appendChild(s);",
+        "(function(){"
+        "localStorage.setItem('access_token','%s');"
+        "localStorage.setItem('current_user',JSON.stringify({id:'%s',display_name:'%s'}));"
+        "var css='nav.sidebar{display:none !important}"
+            ".chat-sidebar{display:none !important}"
+            ".top-bar{display:none !important}"
+            ".main-body>.content{flex:1 !important;width:100%% !important}';"
+        "function addS(){"
+            "if(document.getElementById('_agoraHide'))return;"
+            "var s=document.createElement('style');s.id='_agoraHide';s.textContent=css;"
+            "(document.head||document.documentElement).appendChild(s);}"
+        "addS();"
+        "function hideEls(){"
+            "var sels=['nav.sidebar','.chat-sidebar','.top-bar'];"
+            "sels.forEach(function(q){"
+                "var el=document.querySelector(q);"
+                "if(el)el.style.setProperty('display','none','important');"
+            "});}"
+        "new MutationObserver(function(){addS();hideEls();})"
+            ".observe(document.documentElement,{childList:true,subtree:true});"
+        "})();",
         session->token,
         session->user_id ? session->user_id : "",
         session->display_name ? session->display_name : ""
@@ -1852,7 +1866,9 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
         inject_video_user_scripts(win);
         g_print("[Video] Navigating to %s\n", video_url);
         webkit_web_view_load_uri(win->video_webview, video_url);
+        gtk_widget_set_no_show_all(win->video_overlay, FALSE);
         gtk_widget_show_all(win->video_overlay);
+        gtk_widget_set_no_show_all(win->video_overlay, TRUE);
     } else {
         /* Fallback to browser with token in URL */
         char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);

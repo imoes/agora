@@ -509,19 +509,19 @@ A native Linux desktop application built with GTK3 and libsoup, designed for X S
 **Prerequisites (Debian/Ubuntu):**
 
 ```bash
-sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev libnotify-dev libgstreamer1.0-dev libwebkit2gtk-4.1-dev
+sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev libnotify-dev libgstreamer1.0-dev gstreamer1.0-plugins-bad libwebkit2gtk-4.1-dev
 ```
 
 **Prerequisites (Fedora):**
 
 ```bash
-sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel libnotify-devel gstreamer1-devel webkit2gtk4.1-devel
+sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel libnotify-devel gstreamer1-devel gstreamer1-plugins-bad-free webkit2gtk4.1-devel
 ```
 
 **Prerequisites (Arch Linux):**
 
 ```bash
-sudo pacman -S base-devel gtk3 json-glib libsoup libnotify gstreamer webkit2gtk-4.1
+sudo pacman -S base-devel gtk3 json-glib libsoup libnotify gstreamer gst-plugins-bad webkit2gtk-4.1
 ```
 
 **Build & Run:**
