@@ -1578,7 +1578,9 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
             inject_video_user_scripts(win);
             g_print("[Video] Reminder join: navigating to %s\n", video_url);
             webkit_web_view_load_uri(win->video_webview, video_url);
-            gtk_widget_show_all(win->video_overlay);
+            gtk_widget_set_no_show_all(win->video_overlay, FALSE);
+        gtk_widget_show_all(win->video_overlay);
+        gtk_widget_set_no_show_all(win->video_overlay, TRUE);
         } else {
             char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
             GError *err = NULL;
@@ -1852,7 +1854,9 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
         inject_video_user_scripts(win);
         g_print("[Video] Navigating to %s\n", video_url);
         webkit_web_view_load_uri(win->video_webview, video_url);
+        gtk_widget_set_no_show_all(win->video_overlay, FALSE);
         gtk_widget_show_all(win->video_overlay);
+        gtk_widget_set_no_show_all(win->video_overlay, TRUE);
     } else {
         /* Fallback to browser with token in URL */
         char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
