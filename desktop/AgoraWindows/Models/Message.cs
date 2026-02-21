@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -111,17 +112,69 @@ public class Message
     [JsonIgnore]
     public bool HasImage => ImageSource != null;
 
+    /// <summary>
+    /// Extract the actual filename from Content which may be in format:
+    /// "filename.ext" or "Datei: filename.ext\nmime:image/jpeg\ncaption:text"
+    /// </summary>
+    public string GetFileName()
+    {
+        if (string.IsNullOrEmpty(Content)) return "";
+        var firstLine = Content.Split('\n')[0].Trim();
+        if (firstLine.StartsWith("Datei: ", System.StringComparison.OrdinalIgnoreCase))
+            return firstLine.Substring(7).Trim();
+        return firstLine;
+    }
+
+    /// <summary>
+    /// Extract mime type from content if present (format: "\nmime:image/jpeg")
+    /// </summary>
+    public string? GetMimeType()
+    {
+        if (string.IsNullOrEmpty(Content)) return null;
+        var match = Regex.Match(Content, @"\nmime:([^\n]+)");
+        return match.Success ? match.Groups[1].Value.Trim() : null;
+    }
+
     [JsonIgnore]
     public bool IsImageMessage
     {
         get
         {
             if (MessageType != "file" || string.IsNullOrEmpty(FileReferenceId)) return false;
-            var ext = System.IO.Path.GetExtension(Content)?.ToLower();
+
+            // Check mime type first
+            var mime = GetMimeType();
+            if (mime != null && mime.StartsWith("image/")) return true;
+
+            // Fall back to extension check using extracted filename
+            var fileName = GetFileName();
+            var ext = System.IO.Path.GetExtension(fileName)?.ToLower();
             return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp" or ".svg";
         }
     }
 
     [JsonIgnore]
     public bool IsNonImageFile => MessageType == "file" && !IsImageMessage;
+
+    /// <summary>
+    /// Whether this message contains HTML/rich content that needs special rendering.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsRichMessage
+    {
+        get
+        {
+            if (MessageType == "rich") return true;
+            if (MessageType != "text" || string.IsNullOrEmpty(Content)) return false;
+            return Regex.IsMatch(Content,
+                @"<(h[1-6]|p|div|br\s*/?>|strong|em|b|i|u|s|blockquote|pre|code|ul|ol|li|a)\b",
+                RegexOptions.IgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Whether this is a plain text message (not rich/HTML, not file).
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPlainTextMessage => !IsRichMessage;
 }

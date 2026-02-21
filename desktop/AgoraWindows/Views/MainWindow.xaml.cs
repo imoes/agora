@@ -135,6 +135,9 @@ public partial class MainWindow : Window
     // Calendar
     private ObservableCollection<CalendarEventItem> _calendarEvents = new();
 
+    // WYSIWYG editor
+    private bool _editorInitialized = false;
+
     public MainWindow(ApiClient apiClient)
     {
         _api = apiClient;
@@ -149,6 +152,7 @@ public partial class MainWindow : Window
         TeamChannelList.ItemsSource = _teamChannels;
         MessageList.ItemsSource = _messages;
         FeedList.ItemsSource = _feedEvents;
+        FeedMainList.ItemsSource = _feedEvents;
         CalendarList.ItemsSource = _calendarEvents;
 
         InitLanguageComboBox();
@@ -160,6 +164,7 @@ public partial class MainWindow : Window
             await ConnectNotificationWsAsync();
             StartReminderPolling();
             await DownloadNotificationSoundAsync();
+            await InitializeEditorAsync();
         };
     }
 
@@ -183,6 +188,222 @@ public partial class MainWindow : Window
         CtxDelete.Content = Translations.T("ctx.delete");
     }
 
+    // === WYSIWYG Editor ===
+
+    private static readonly string QuillEditorHtml = @"<!DOCTYPE html>
+<html><head><meta charset=""UTF-8"">
+<link href=""https://cdn.quilljs.com/1.3.7/quill.snow.css"" rel=""stylesheet"">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+#toolbar { border: none !important; border-bottom: 1px solid #e0e0e0 !important; padding: 2px 4px !important; background: #fafafa; }
+#editor { font-size: 13px; }
+.ql-container { border: none !important; }
+.ql-editor { min-height: 36px; max-height: 100px; overflow-y: auto; padding: 6px 8px; }
+.ql-editor.ql-blank::before { font-style: italic; color: #999; }
+.ql-toolbar .ql-formats { margin-right: 6px !important; }
+.ql-snow .ql-picker-label { padding: 0 2px !important; }
+.ql-snow .ql-stroke { stroke: #666 !important; }
+.ql-snow .ql-fill { fill: #666 !important; }
+.ql-snow .ql-picker { font-size: 12px !important; }
+.ql-snow button { width: 24px !important; height: 24px !important; }
+</style>
+</head><body>
+<div id=""toolbar"">
+<span class=""ql-formats"">
+<button class=""ql-bold""></button>
+<button class=""ql-italic""></button>
+<button class=""ql-underline""></button>
+<button class=""ql-strike""></button>
+</span>
+<span class=""ql-formats"">
+<select class=""ql-header""><option value=""1"">H1</option><option value=""2"">H2</option><option value=""3"">H3</option><option selected>Normal</option></select>
+</span>
+<span class=""ql-formats"">
+<button class=""ql-list"" value=""ordered""></button>
+<button class=""ql-list"" value=""bullet""></button>
+</span>
+<span class=""ql-formats"">
+<button class=""ql-blockquote""></button>
+<button class=""ql-code-block""></button>
+</span>
+<span class=""ql-formats"">
+<button class=""ql-link""></button>
+<button class=""ql-clean""></button>
+</span>
+</div>
+<div id=""editor""></div>
+<script src=""https://cdn.quilljs.com/1.3.7/quill.min.js""></script>
+<script>
+var quill = new Quill('#editor', {
+  theme: 'snow',
+  placeholder: 'Type a message...',
+  modules: { toolbar: '#toolbar' }
+});
+quill.root.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+    var range = quill.getSelection();
+    if (range) {
+      var fmt = quill.getFormat(range);
+      if (fmt.list || fmt['code-block']) return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    var html = quill.root.innerHTML;
+    var text = quill.getText().trim();
+    if (text.length > 0) {
+      window.chrome.webview.postMessage(JSON.stringify({ type: 'send', html: html, text: text }));
+    }
+  } else if (e.key === 'Escape') {
+    window.chrome.webview.postMessage(JSON.stringify({ type: 'escape' }));
+  } else {
+    window.chrome.webview.postMessage(JSON.stringify({ type: 'typing' }));
+  }
+});
+function getContent() {
+  return JSON.stringify({ html: quill.root.innerHTML, text: quill.getText().trim() });
+}
+function clearContent() { quill.setContents([]); }
+function setContent(html) { quill.clipboard.dangerouslyPasteHTML(html); }
+function focusEditor() { quill.focus(); }
+function insertText(text) {
+  var range = quill.getSelection(true);
+  quill.insertText(range.index, text);
+}
+</script>
+</body></html>";
+
+    private async Task InitializeEditorAsync()
+    {
+        try
+        {
+            var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                null, null,
+                new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions(
+                    "--ignore-certificate-errors"));
+            await EditorWebView.EnsureCoreWebView2Async(env);
+
+            EditorWebView.CoreWebView2.WebMessageReceived += OnEditorMessage;
+            EditorWebView.NavigateToString(QuillEditorHtml);
+
+            _editorInitialized = true;
+            RichEditorContainer.Visibility = Visibility.Visible;
+            PlainEditorContainer.Visibility = Visibility.Collapsed;
+        }
+        catch
+        {
+            // Fall back to plain TextBox
+            RichEditorContainer.Visibility = Visibility.Collapsed;
+            PlainEditorContainer.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnEditorMessage(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            var json = JsonSerializer.Deserialize<JsonElement>(e.WebMessageAsJson);
+            var type = json.GetProperty("type").GetString();
+
+            switch (type)
+            {
+                case "send":
+                    var html = json.GetProperty("html").GetString() ?? "";
+                    var text = json.GetProperty("text").GetString() ?? "";
+                    _ = SendRichMessageAsync(html, text);
+                    break;
+                case "escape":
+                    ClearReplyState();
+                    break;
+                case "typing":
+                    SendTypingIndicator();
+                    break;
+            }
+        }
+        catch { }
+    }
+
+    private async void EditorSendButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_editorInitialized) return;
+        try
+        {
+            var result = await EditorWebView.ExecuteScriptAsync("getContent()");
+            var unescaped = JsonSerializer.Deserialize<string>(result) ?? "";
+            var json = JsonSerializer.Deserialize<JsonElement>(unescaped);
+            var html = json.GetProperty("html").GetString() ?? "";
+            var text = json.GetProperty("text").GetString() ?? "";
+            if (!string.IsNullOrEmpty(text))
+            {
+                await SendRichMessageAsync(html, text);
+            }
+        }
+        catch { }
+    }
+
+    private async Task SendRichMessageAsync(string html, string plainText)
+    {
+        if (string.IsNullOrEmpty(plainText) || _currentChannelId == null) return;
+
+        // Clear editor
+        if (_editorInitialized)
+        {
+            try { await EditorWebView.ExecuteScriptAsync("clearContent()"); } catch { }
+        }
+
+        // Determine if content is truly rich (has formatting) or just plain text
+        var isRich = html != $"<p>{plainText}</p>" && html != $"<p>{System.Net.WebUtility.HtmlEncode(plainText)}</p>";
+        var content = isRich ? html : plainText;
+        var messageType = isRich ? "rich" : "text";
+
+        try
+        {
+            // Check if we're editing
+            if (MessageInput.Tag is string tag && tag.StartsWith("edit:"))
+            {
+                var messageId = tag[5..];
+                MessageInput.Tag = null;
+                await _api.EditMessageAsync(_currentChannelId, messageId, content);
+                ClearReplyState();
+                return;
+            }
+
+            if (_chatWs?.IsConnected == true)
+            {
+                var wsMsg = new Dictionary<string, object?>
+                {
+                    ["type"] = "message",
+                    ["content"] = content,
+                    ["message_type"] = messageType,
+                };
+                if (_replyToId != null)
+                {
+                    wsMsg["reply_to_id"] = _replyToId;
+                    wsMsg["reply_to_content"] = _replyToContent;
+                    wsMsg["reply_to_sender"] = _replyToSender;
+                }
+                await _chatWs.SendAsync(wsMsg);
+            }
+            else
+            {
+                var msg = await _api.SendMessageAsync(_currentChannelId, content,
+                    messageType: messageType,
+                    replyToId: _replyToId, replyToContent: _replyToContent,
+                    replyToSender: _replyToSender);
+                SetMessageBubbleProperties(msg);
+                _messages.Add(msg);
+                ScrollToBottom();
+            }
+
+            ClearReplyState();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"{Translations.T("chat.error_sending")}: {ex.Message}", Translations.T("common.error"),
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // === Navigation ===
 
     private void NavFeed_Click(object sender, RoutedEventArgs e)
@@ -196,9 +417,9 @@ public partial class MainWindow : Window
         CalendarList.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
-        EmptyState.Visibility = Visibility.Visible;
-        EmptyStateTitle.Text = Translations.T("nav.feed");
-        EmptyStateSubtitle.Text = Translations.T("feed.subtitle");
+        EmptyState.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Visible;
+        FeedTitle.Text = Translations.T("nav.feed");
         _ = LoadFeedAsync();
     }
 
@@ -211,6 +432,7 @@ public partial class MainWindow : Window
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
         FeedList.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Collapsed;
         if (_currentChannelId == null)
         {
             EmptyState.Visibility = Visibility.Visible;
@@ -230,6 +452,7 @@ public partial class MainWindow : Window
         CalendarList.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("teams.teams");
         EmptyStateSubtitle.Text = Translations.T("teams.subtitle");
@@ -246,6 +469,7 @@ public partial class MainWindow : Window
         CalendarList.Visibility = Visibility.Visible;
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("nav.calendar");
         EmptyStateSubtitle.Text = Translations.T("calendar.subtitle");
@@ -267,6 +491,11 @@ public partial class MainWindow : Window
             }
         }
         catch { }
+    }
+
+    private void FeedRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        _ = LoadFeedAsync();
     }
 
     // === Calendar ===
@@ -320,6 +549,9 @@ public partial class MainWindow : Window
             _channels.Clear();
             foreach (var ch in channels)
             {
+                // Filter out team channels - they belong in the Teams view
+                if (!string.IsNullOrEmpty(ch.TeamId) || ch.ChannelType == "team")
+                    continue;
                 _channels.Add(ch);
             }
         }
@@ -423,6 +655,7 @@ public partial class MainWindow : Window
         ChatSubtitle.Text = $"{channel.MemberCount} {Translations.T("chat.members")}";
         EmptyState.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Visible;
 
         // Clear reply state
@@ -478,7 +711,15 @@ public partial class MainWindow : Window
             // WebSocket is optional - chat still works via REST
         }
 
-        MessageInput.Focus();
+        // Focus editor
+        if (_editorInitialized)
+        {
+            try { await EditorWebView.ExecuteScriptAsync("focusEditor()"); } catch { }
+        }
+        else
+        {
+            MessageInput.Focus();
+        }
     }
 
     private void SetMessageBubbleProperties(Message msg)
@@ -777,7 +1018,15 @@ public partial class MainWindow : Window
         ReplyToName.Text = message.SenderName;
         ReplyToPreview.Text = _replyToContent;
         ReplyBar.Visibility = Visibility.Visible;
-        MessageInput.Focus();
+
+        if (_editorInitialized)
+        {
+            try { _ = EditorWebView.ExecuteScriptAsync("focusEditor()"); } catch { }
+        }
+        else
+        {
+            MessageInput.Focus();
+        }
     }
 
     private void CtxEdit_Click(object sender, RoutedEventArgs e)
@@ -786,10 +1035,19 @@ public partial class MainWindow : Window
         var message = _messages.FirstOrDefault(m => m.Id == _contextMessageId);
         if (message == null || _currentChannelId == null) return;
 
-        // Put current content in input for editing
-        MessageInput.Text = message.Content;
+        if (_editorInitialized)
+        {
+            // Load content into rich editor
+            var escaped = message.Content.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\n", "\\n");
+            _ = EditorWebView.ExecuteScriptAsync($"setContent('{escaped}')");
+            _ = EditorWebView.ExecuteScriptAsync("focusEditor()");
+        }
+        else
+        {
+            MessageInput.Text = message.Content;
+            MessageInput.Focus();
+        }
         MessageInput.Tag = $"edit:{message.Id}";
-        MessageInput.Focus();
     }
 
     private async void CtxDelete_Click(object sender, RoutedEventArgs e)
@@ -1008,11 +1266,27 @@ public partial class MainWindow : Window
     {
         if (sender is Button btn && btn.Tag is string emoji)
         {
-            MessageInput.Text += emoji;
-            MessageInput.CaretIndex = MessageInput.Text.Length;
+            if (_editorInitialized)
+            {
+                var escaped = emoji.Replace("\\", "\\\\").Replace("'", "\\'");
+                _ = EditorWebView.ExecuteScriptAsync($"insertText('{escaped}')");
+            }
+            else
+            {
+                MessageInput.Text += emoji;
+                MessageInput.CaretIndex = MessageInput.Text.Length;
+            }
         }
         EmojiPicker.IsOpen = false;
-        MessageInput.Focus();
+
+        if (_editorInitialized)
+        {
+            try { _ = EditorWebView.ExecuteScriptAsync("focusEditor()"); } catch { }
+        }
+        else
+        {
+            MessageInput.Focus();
+        }
     }
 
     // === Toast notification ===
@@ -1073,7 +1347,7 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    // === Send message ===
+    // === Send message (plain TextBox fallback) ===
 
     private async void SendButton_Click(object sender, RoutedEventArgs e)
     {
@@ -1360,6 +1634,7 @@ public partial class MainWindow : Window
 
         EmptyState.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
     }
 
