@@ -42,9 +42,6 @@ public static class Converters
     }
 }
 
-// Alias for XAML namespace
-using local = AgoraWindows.Views;
-
 public partial class MainWindow : Window
 {
     private readonly ApiClient _api;
