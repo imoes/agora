@@ -252,7 +252,7 @@ export class CreateChannelDialogComponent {
       border-radius: 50%;
       border: 2px solid white;
     }
-    .member-status-dot.online { background: var(--online, #92c353); }
+    .member-status-dot.online { background: var(--online, #00c851); }
     .member-status-dot.busy { background: var(--busy, #c4314b); }
     .member-status-dot.away { background: var(--away, #fcba04); }
     .member-status-dot.dnd { background: var(--busy, #c4314b); }

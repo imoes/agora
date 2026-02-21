@@ -565,7 +565,7 @@ import Quill from 'quill';
       border-radius: 50%;
       border: 2px solid white;
     }
-    .msg-status-dot.online { background: var(--online, #92c353); }
+    .msg-status-dot.online { background: var(--online, #00c851); }
     .msg-status-dot.busy { background: var(--busy, #c4314b); }
     .msg-status-dot.away { background: var(--away, #fcba04); }
     .msg-status-dot.dnd { background: var(--busy, #c4314b); }
@@ -1034,7 +1034,7 @@ import Quill from 'quill';
       border-radius: 50%;
       border: 1.5px solid white;
     }
-    .mention-status-dot.online { background: var(--online, #92c353); }
+    .mention-status-dot.online { background: var(--online, #00c851); }
     .mention-status-dot.busy { background: var(--busy, #c4314b); }
     .mention-status-dot.away { background: var(--away, #fcba04); }
     .mention-status-dot.dnd { background: var(--busy, #c4314b); }
