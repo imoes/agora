@@ -1,7 +1,20 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace AgoraWindows.Models;
+
+public class Reaction
+{
+    [JsonPropertyName("emoji")]
+    public string Emoji { get; set; } = "";
+
+    [JsonPropertyName("user_id")]
+    public string UserId { get; set; } = "";
+
+    [JsonPropertyName("display_name")]
+    public string DisplayName { get; set; } = "";
+}
 
 public class Message
 {
@@ -48,7 +61,7 @@ public class Message
     public List<string>? Mentions { get; set; }
 
     [JsonPropertyName("reactions")]
-    public Dictionary<string, List<string>>? Reactions { get; set; }
+    public List<Reaction>? Reactions { get; set; }
 
     [JsonPropertyName("created_at")]
     public string CreatedAt { get; set; } = "";
@@ -66,12 +79,10 @@ public class Message
         get
         {
             if (Reactions == null || Reactions.Count == 0) return "";
-            var parts = new List<string>();
-            foreach (var (emoji, users) in Reactions)
-            {
-                parts.Add($"{emoji} {users.Count}");
-            }
-            return string.Join("  ", parts);
+            var grouped = Reactions
+                .GroupBy(r => r.Emoji)
+                .Select(g => $"{g.Key} {g.Count()}");
+            return string.Join("  ", grouped);
         }
     }
 

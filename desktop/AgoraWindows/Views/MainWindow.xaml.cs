@@ -48,6 +48,8 @@ public partial class MainWindow : Window
     private readonly WebSocketClient _notificationWs = new();
     private WebSocketClient? _chatWs;
     private ObservableCollection<Channel> _channels = new();
+    private ObservableCollection<Team> _teams = new();
+    private ObservableCollection<Channel> _teamChannels = new();
     private ObservableCollection<Message> _messages = new();
     private string? _currentChannelId;
     private string? _currentChannelName;
@@ -82,11 +84,16 @@ public partial class MainWindow : Window
         ApplyTranslations();
 
         ChannelList.ItemsSource = _channels;
+        TeamList.ItemsSource = _teams;
+        TeamChannelList.ItemsSource = _teamChannels;
         MessageList.ItemsSource = _messages;
+
+        InitLanguageComboBox();
 
         Loaded += async (_, _) =>
         {
             await LoadChannelsAsync();
+            await LoadTeamsAsync();
             await ConnectNotificationWsAsync();
             StartReminderPolling();
             await DownloadNotificationSoundAsync();
@@ -95,12 +102,21 @@ public partial class MainWindow : Window
 
     private void ApplyTranslations()
     {
-        // These elements have hardcoded text in XAML, override at runtime
         EmptyStateTitle.Text = Translations.T("welcome.title");
         EmptyStateSubtitle.Text = Translations.T("welcome.subtitle");
         ChatsHeader.Text = Translations.T("chat.chats");
+        TeamsHeader.Text = Translations.T("teams.teams");
         SendButton.Content = Translations.T("chat.send");
         MessageInput.ToolTip = Translations.T("chat.input_placeholder");
+        SettingsTitle.Text = Translations.T("settings.title");
+        SettingsDisplayNameLabel.Text = Translations.T("settings.display_name");
+        SettingsEmailLabel.Text = Translations.T("settings.email");
+        SettingsLanguageLabel.Text = Translations.T("settings.language");
+        SettingsPasswordHeader.Text = Translations.T("settings.change_password");
+        SettingsCurrentPasswordLabel.Text = Translations.T("settings.current_password");
+        SettingsNewPasswordLabel.Text = Translations.T("settings.new_password");
+        SettingsSaveBtn.Content = Translations.T("settings.save");
+        SettingsCancelBtn.Content = Translations.T("settings.cancel");
     }
 
     private async System.Threading.Tasks.Task LoadChannelsAsync()
@@ -119,6 +135,59 @@ public partial class MainWindow : Window
             MessageBox.Show($"{Translations.T("chat.error_loading_chats")}: {ex.Message}", Translations.T("common.error"),
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private async System.Threading.Tasks.Task LoadTeamsAsync()
+    {
+        try
+        {
+            var teams = await _api.GetTeamsAsync();
+            _teams.Clear();
+            foreach (var t in teams)
+            {
+                _teams.Add(t);
+            }
+        }
+        catch
+        {
+            // Teams loading is optional
+        }
+    }
+
+    private async void TeamList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TeamList.SelectedItem is not Team team) return;
+
+        // Deselect channel list
+        ChannelList.SelectedIndex = -1;
+
+        TeamChannelsHeader.Text = team.Name;
+        TeamChannelsBorder.Visibility = Visibility.Visible;
+
+        try
+        {
+            var channels = await _api.GetTeamChannelsAsync(team.Id);
+            _teamChannels.Clear();
+            foreach (var ch in channels)
+            {
+                _teamChannels.Add(ch);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"{Translations.T("teams.error_loading")}: {ex.Message}", Translations.T("common.error"),
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void TeamChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TeamChannelList.SelectedItem is not Channel channel) return;
+
+        // Deselect main channel list
+        ChannelList.SelectedIndex = -1;
+
+        await OpenChannelAsync(channel);
     }
 
     private async System.Threading.Tasks.Task ConnectNotificationWsAsync()
@@ -156,10 +225,19 @@ public partial class MainWindow : Window
     {
         if (ChannelList.SelectedItem is not Channel channel) return;
 
+        // Deselect team channel list
+        TeamChannelList.SelectedIndex = -1;
+
+        await OpenChannelAsync(channel);
+    }
+
+    private async System.Threading.Tasks.Task OpenChannelAsync(Channel channel)
+    {
         _currentChannelId = channel.Id;
         _currentChannelName = channel.Name;
         ChatTitle.Text = channel.Name;
         EmptyState.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Visible;
 
         // Clear typing state
@@ -321,23 +399,16 @@ public partial class MainWindow : Window
         var existing = _messages.FirstOrDefault(m => m.Id == messageId);
         if (existing != null)
         {
-            existing.Reactions ??= new Dictionary<string, List<string>>();
+            existing.Reactions ??= new List<Reaction>();
 
             if (action == "add" && emoji != null && userId != null)
             {
-                if (!existing.Reactions.ContainsKey(emoji))
-                    existing.Reactions[emoji] = new List<string>();
-                if (!existing.Reactions[emoji].Contains(userId))
-                    existing.Reactions[emoji].Add(userId);
+                if (!existing.Reactions.Any(r => r.Emoji == emoji && r.UserId == userId))
+                    existing.Reactions.Add(new Reaction { Emoji = emoji, UserId = userId, DisplayName = displayName ?? "?" });
             }
             else if (action == "remove" && emoji != null && userId != null)
             {
-                if (existing.Reactions.ContainsKey(emoji))
-                {
-                    existing.Reactions[emoji].Remove(userId);
-                    if (existing.Reactions[emoji].Count == 0)
-                        existing.Reactions.Remove(emoji);
-                }
+                existing.Reactions.RemoveAll(r => r.Emoji == emoji && r.UserId == userId);
             }
 
             // Force UI refresh
@@ -686,6 +757,133 @@ public partial class MainWindow : Window
         _reminderTickTimer?.Stop();
         _reminderEventId = null;
         _reminderChannelId = null;
+    }
+
+    // --- Settings ---
+
+    private static readonly string[] LanguageCodes =
+    {
+        "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr",
+        "ga", "hr", "hu", "it", "lt", "lv", "mt", "nl", "pl", "pt",
+        "ro", "sk", "sl", "sv"
+    };
+
+    private static readonly Dictionary<string, string> LanguageNames = new()
+    {
+        ["bg"] = "Bulgarian", ["cs"] = "Czech", ["da"] = "Danish", ["de"] = "Deutsch",
+        ["el"] = "Greek", ["en"] = "English", ["es"] = "Spanish", ["et"] = "Estonian",
+        ["fi"] = "Finnish", ["fr"] = "French", ["ga"] = "Irish", ["hr"] = "Croatian",
+        ["hu"] = "Hungarian", ["it"] = "Italian", ["lt"] = "Lithuanian", ["lv"] = "Latvian",
+        ["mt"] = "Maltese", ["nl"] = "Dutch", ["pl"] = "Polish", ["pt"] = "Portuguese",
+        ["ro"] = "Romanian", ["sk"] = "Slovak", ["sl"] = "Slovenian", ["sv"] = "Swedish"
+    };
+
+    private void InitLanguageComboBox()
+    {
+        foreach (var code in LanguageCodes)
+        {
+            SettingsLanguage.Items.Add(new ComboBoxItem
+            {
+                Content = LanguageNames.GetValueOrDefault(code, code),
+                Tag = code
+            });
+        }
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Populate fields with current user data
+        var user = _api.CurrentUser;
+        SettingsDisplayName.Text = user?.DisplayName ?? "";
+        SettingsEmail.Text = user?.Email ?? "";
+        SettingsCurrentPassword.Password = "";
+        SettingsNewPassword.Password = "";
+        SettingsStatus.Visibility = Visibility.Collapsed;
+
+        // Select current language
+        var userLang = user?.Language ?? Translations.CurrentLang;
+        for (int i = 0; i < SettingsLanguage.Items.Count; i++)
+        {
+            if (SettingsLanguage.Items[i] is ComboBoxItem item && (string)item.Tag == userLang)
+            {
+                SettingsLanguage.SelectedIndex = i;
+                break;
+            }
+        }
+
+        EmptyState.Visibility = Visibility.Collapsed;
+        ChatView.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Visible;
+    }
+
+    private async void SettingsSave_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            SettingsSaveBtn.IsEnabled = false;
+
+            var displayName = SettingsDisplayName.Text.Trim();
+            var email = SettingsEmail.Text.Trim();
+            var lang = SettingsLanguage.SelectedItem is ComboBoxItem sel ? (string)sel.Tag : null;
+            var currentPw = SettingsCurrentPassword.Password;
+            var newPw = SettingsNewPassword.Password;
+
+            string? password = null;
+            string? currentPassword = null;
+            if (!string.IsNullOrEmpty(newPw))
+            {
+                if (string.IsNullOrEmpty(currentPw))
+                {
+                    ShowSettingsStatus(Translations.T("settings.current_password_required"), true);
+                    return;
+                }
+                password = newPw;
+                currentPassword = currentPw;
+            }
+
+            var updatedUser = await _api.UpdateProfileAsync(
+                displayName: string.IsNullOrEmpty(displayName) ? null : displayName,
+                email: string.IsNullOrEmpty(email) ? null : email,
+                language: lang,
+                password: password,
+                currentPassword: currentPassword
+            );
+
+            // Update UI
+            UserDisplayName.Text = updatedUser.DisplayName;
+            if (lang != null)
+            {
+                Translations.InitFromUser(lang);
+                ApplyTranslations();
+            }
+
+            SettingsCurrentPassword.Password = "";
+            SettingsNewPassword.Password = "";
+            ShowSettingsStatus(Translations.T("settings.saved"), false);
+        }
+        catch (Exception ex)
+        {
+            ShowSettingsStatus($"{Translations.T("settings.error")}: {ex.Message}", true);
+        }
+        finally
+        {
+            SettingsSaveBtn.IsEnabled = true;
+        }
+    }
+
+    private void SettingsCancel_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsView.Visibility = Visibility.Collapsed;
+        EmptyState.Visibility = Visibility.Visible;
+    }
+
+    private void ShowSettingsStatus(string message, bool isError)
+    {
+        SettingsStatus.Text = message;
+        SettingsStatus.Foreground = isError
+            ? new SolidColorBrush(Colors.Red)
+            : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CAF50"));
+        SettingsStatus.Visibility = Visibility.Visible;
     }
 
     private async void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)

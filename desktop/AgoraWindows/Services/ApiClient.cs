@@ -109,10 +109,36 @@ public class ApiClient : IDisposable
 
     // --- Teams ---
 
-    public async Task<List<Dictionary<string, object>>> GetTeamsAsync()
+    public async Task<List<Team>> GetTeamsAsync()
     {
-        return await _http.GetFromJsonAsync<List<Dictionary<string, object>>>("/api/teams/")
-               ?? new List<Dictionary<string, object>>();
+        return await _http.GetFromJsonAsync<List<Team>>("/api/teams/")
+               ?? new List<Team>();
+    }
+
+    public async Task<List<Channel>> GetTeamChannelsAsync(string teamId)
+    {
+        return await _http.GetFromJsonAsync<List<Channel>>($"/api/teams/{teamId}/channels")
+               ?? new List<Channel>();
+    }
+
+    // --- Profile ---
+
+    public async Task<User> UpdateProfileAsync(string? displayName = null, string? email = null,
+        string? language = null, string? password = null, string? currentPassword = null)
+    {
+        var body = new Dictionary<string, string?>();
+        if (displayName != null) body["display_name"] = displayName;
+        if (email != null) body["email"] = email;
+        if (language != null) body["language"] = language;
+        if (password != null) body["password"] = password;
+        if (currentPassword != null) body["current_password"] = currentPassword;
+
+        var response = await _http.PatchAsJsonAsync("/api/auth/me", body);
+        response.EnsureSuccessStatusCode();
+        var user = await response.Content.ReadFromJsonAsync<User>()
+                   ?? throw new Exception("Failed to update profile");
+        _currentUser = user;
+        return user;
     }
 
     // --- Users ---
