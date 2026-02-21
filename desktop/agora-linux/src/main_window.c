@@ -43,6 +43,8 @@ struct _AgoraMainWindow {
     /* Feed */
     GtkListBox *feed_list;
     GtkWidget *feed_scroll;
+    GtkWidget *feed_unread_toggle;
+    gboolean feed_unread_only;
 
     /* Calendar */
     GtkListBox *calendar_list;
@@ -493,7 +495,12 @@ static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpoi
 static void load_feed(AgoraMainWindow *win)
 {
     GError *error = NULL;
-    JsonNode *result = agora_api_client_get(win->api, "/api/feed/?limit=50&offset=0", &error);
+    char *feed_path = win->feed_unread_only
+        ? g_strdup("/api/feed/?limit=50&offset=0&unread_only=true")
+        : g_strdup("/api/feed/?limit=50&offset=0");
+    g_print("[Feed] Loading feed (unread_only=%s)\n", win->feed_unread_only ? "true" : "false");
+    JsonNode *result = agora_api_client_get(win->api, feed_path, &error);
+    g_free(feed_path);
     if (!result) {
         if (error) g_error_free(error);
         return;
@@ -1566,12 +1573,10 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
         char *video_url = g_strdup_printf("%s/video/%s", base, win->reminder_channel_id);
 
         if (win->video_webview) {
-            /* Inject token via base-page-first approach */
-            g_object_set_data_full(G_OBJECT(win->video_webview), "pending-video-url",
-                                   video_url, g_free);
-            video_url = NULL;
-            g_print("[Video] Reminder join: loading base URL %s\n", base);
-            webkit_web_view_load_uri(win->video_webview, base);
+            /* Inject token + CSS as UserScript, then navigate directly */
+            inject_video_user_scripts(win);
+            g_print("[Video] Reminder join: navigating to %s\n", video_url);
+            webkit_web_view_load_uri(win->video_webview, video_url);
             gtk_widget_show_all(win->video_overlay);
         } else {
             char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
@@ -1716,6 +1721,13 @@ static void on_nav_teams_clicked(GtkButton *btn, gpointer data)
     set_active_nav(win, win->nav_teams_btn);
 }
 
+static void on_feed_unread_toggled(GtkToggleButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    win->feed_unread_only = gtk_toggle_button_get_active(btn);
+    load_feed(win);
+}
+
 static void on_nav_feed_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
@@ -1753,38 +1765,41 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     gtk_widget_hide(win->video_overlay);
 }
 
-static void on_video_page_loaded(WebKitWebView *webview, WebKitLoadEvent event, gpointer data)
+static void inject_video_user_scripts(AgoraMainWindow *win)
 {
-    if (event != WEBKIT_LOAD_FINISHED) return;
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *session = agora_app_get_session(app);
 
-    const char *uri = webkit_web_view_get_uri(webview);
-    const char *video_url = (const char *)g_object_get_data(G_OBJECT(webview), "pending-video-url");
+    /* Build JS that sets token + hides web app UI */
+    char *js = g_strdup_printf(
+        "localStorage.setItem('access_token', '%s');"
+        "localStorage.setItem('current_user', JSON.stringify({id:'%s',display_name:'%s'}));"
+        "var s = document.createElement('style');"
+        "s.textContent = '"
+            "nav.sidebar{display:none!important}"
+            ".chat-sidebar{display:none!important}"
+            ".top-bar{display:none!important}"
+        "';"
+        "document.documentElement.appendChild(s);",
+        session->token,
+        session->user_id ? session->user_id : "",
+        session->display_name ? session->display_name : ""
+    );
 
-    /* After the base page loads, inject token into localStorage and navigate to video */
-    if (video_url && uri && !g_str_has_prefix(uri, "about:")) {
-        /* Check if we're on the base page (not the video page yet) */
-        if (!strstr(uri, "/video/")) {
-            AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
-            AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
-            AgoraSession *session = agora_app_get_session(app);
+    WebKitUserContentManager *ucm = webkit_web_view_get_user_content_manager(win->video_webview);
+    webkit_user_content_manager_remove_all_scripts(ucm);
 
-            char *js = g_strdup_printf(
-                "localStorage.setItem('access_token', '%s');"
-                "localStorage.setItem('current_user', JSON.stringify({id:'%s',display_name:'%s'}));"
-                "window.location.href = '%s';",
-                session->token,
-                session->user_id ? session->user_id : "",
-                session->display_name ? session->display_name : "",
-                video_url
-            );
-            g_print("[Video] Injecting auth token and navigating to %s\n", video_url);
-            webkit_web_view_run_javascript(webview, js, NULL, NULL, NULL);
-            g_free(js);
+    WebKitUserScript *script = webkit_user_script_new(
+        js,
+        WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+        WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
+        NULL, NULL
+    );
+    webkit_user_content_manager_add_script(ucm, script);
+    webkit_user_script_unref(script);
+    g_free(js);
 
-            /* Clear pending URL so we don't redirect again */
-            g_object_set_data(G_OBJECT(webview), "pending-video-url", NULL);
-        }
-    }
+    g_print("[Video] Injected UserScript with auth token and CSS\n");
 }
 
 static void on_video_call_clicked(GtkButton *btn, gpointer data)
@@ -1832,13 +1847,10 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
     char *video_url = g_strdup_printf("%s/video/%s", base, win->current_channel_id);
 
     if (win->video_webview) {
-        /* Store the video URL, navigate to base first to set localStorage */
-        g_object_set_data_full(G_OBJECT(win->video_webview), "pending-video-url",
-                               video_url, g_free);
-        video_url = NULL; /* ownership transferred */
-
-        g_print("[Video] Loading base URL %s to inject token\n", base);
-        webkit_web_view_load_uri(win->video_webview, base);
+        /* Inject token + CSS as UserScript that runs before Angular boots */
+        inject_video_user_scripts(win);
+        g_print("[Video] Navigating to %s\n", video_url);
+        webkit_web_view_load_uri(win->video_webview, video_url);
         gtk_widget_show_all(win->video_overlay);
     } else {
         /* Fallback to browser with token in URL */
@@ -2235,6 +2247,14 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_box_pack_start(GTK_BOX(feed_header), feed_title, TRUE, TRUE, 0);
     gtk_widget_set_halign(feed_title, GTK_ALIGN_START);
 
+    /* Unread filter toggle */
+    win->feed_unread_toggle = gtk_toggle_button_new_with_label(T("feed.unread_only"));
+    gtk_widget_set_valign(win->feed_unread_toggle, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_end(win->feed_unread_toggle, 12);
+    g_signal_connect(win->feed_unread_toggle, "toggled",
+                     G_CALLBACK(on_feed_unread_toggled), win);
+    gtk_box_pack_end(GTK_BOX(feed_header), win->feed_unread_toggle, FALSE, FALSE, 0);
+
     gtk_box_pack_start(GTK_BOX(feed_box), feed_header, FALSE, FALSE, 0);
 
     /* Scrollable feed list */
@@ -2428,10 +2448,6 @@ static void agora_main_window_init(AgoraMainWindow *win)
     /* Grant camera/microphone permissions automatically */
     g_signal_connect(win->video_webview, "permission-request",
                      G_CALLBACK(on_video_permission_request), win);
-
-    /* Inject auth token when page loads */
-    g_signal_connect(win->video_webview, "load-changed",
-                     G_CALLBACK(on_video_page_loaded), win);
 
     /* Accept self-signed TLS certs */
     WebKitWebContext *wv_ctx = webkit_web_view_get_context(win->video_webview);

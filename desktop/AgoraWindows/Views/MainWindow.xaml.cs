@@ -1193,6 +1193,7 @@ function insertText(text) {
     // === Video call ===
 
     private bool _webViewInitialized = false;
+    private string? _videoInitScriptId;
 
     private async Task InitializeVideoWebView()
     {
@@ -1226,28 +1227,29 @@ function insertText(text) {
                 VideoCallTitle.Text = $"Video - {ChatTitle.Text}";
                 VideoCallLeaveBtn.Content = Services.Translations.T("reminder.dismiss");
 
-                // Navigate to base URL first so localStorage is on the correct origin
-                var videoUrl = url;
-                EventHandler<Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs>? handler = null;
-                handler = async (s, args) =>
-                {
-                    VideoWebView.CoreWebView2.NavigationCompleted -= handler;
-                    if (args.IsSuccess)
-                    {
-                        // Inject auth token into localStorage so Angular authGuard passes
-                        var token = _api.Token?.Replace("\\", "\\\\").Replace("'", "\\'") ?? "";
-                        var currentUser = JsonSerializer.Serialize(_api.CurrentUser);
-                        var escapedUser = currentUser.Replace("\\", "\\\\").Replace("'", "\\'");
-                        await VideoWebView.CoreWebView2.ExecuteScriptAsync(
-                            $"localStorage.setItem('access_token', '{token}');" +
-                            $"localStorage.setItem('current_user', '{escapedUser}');"
-                        );
-                        System.Diagnostics.Debug.WriteLine($"[Video] Token injected, navigating to {videoUrl}");
-                        VideoWebView.CoreWebView2.Navigate(videoUrl);
-                    }
-                };
-                VideoWebView.CoreWebView2.NavigationCompleted += handler;
-                VideoWebView.CoreWebView2.Navigate(baseUrl);
+                // Inject token + hide web UI via script that runs before Angular boots
+                var token = _api.Token?.Replace("\\", "\\\\").Replace("'", "\\'") ?? "";
+                var currentUser = JsonSerializer.Serialize(_api.CurrentUser);
+                var escapedUser = currentUser.Replace("\\", "\\\\").Replace("'", "\\'");
+                var initScript = $@"
+                    localStorage.setItem('access_token', '{token}');
+                    localStorage.setItem('current_user', '{escapedUser}');
+                    var style = document.createElement('style');
+                    style.textContent = `
+                        nav.sidebar {{ display:none!important }}
+                        .chat-sidebar {{ display:none!important }}
+                        .top-bar {{ display:none!important }}
+                    `;
+                    document.documentElement.appendChild(style);
+                ";
+                // Remove previous injected scripts, then add new one
+                await VideoWebView.CoreWebView2.ExecuteScriptAsync("void(0)");
+                // Remove previous init script if any
+                if (_videoInitScriptId != null)
+                    VideoWebView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_videoInitScriptId);
+                _videoInitScriptId = await VideoWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(initScript);
+                System.Diagnostics.Debug.WriteLine($"[Video] Injected init script (id={scriptId}), navigating to {url}");
+                VideoWebView.CoreWebView2.Navigate(url);
 
                 VideoCallView.Visibility = Visibility.Visible;
             }
@@ -1270,6 +1272,11 @@ function insertText(text) {
         VideoCallView.Visibility = Visibility.Collapsed;
         if (_webViewInitialized && VideoWebView.CoreWebView2 != null)
         {
+            if (_videoInitScriptId != null)
+            {
+                VideoWebView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_videoInitScriptId);
+                _videoInitScriptId = null;
+            }
             VideoWebView.CoreWebView2.Navigate("about:blank");
         }
     }
