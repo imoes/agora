@@ -25,3 +25,15 @@ public class Team
     [JsonPropertyName("member_count")]
     public int MemberCount { get; set; }
 }
+
+public class TeamMember
+{
+    [JsonPropertyName("user")]
+    public User? User { get; set; }
+
+    [JsonPropertyName("role")]
+    public string Role { get; set; } = "member";
+
+    [JsonPropertyName("joined_at")]
+    public string? JoinedAt { get; set; }
+}

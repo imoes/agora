@@ -16,6 +16,12 @@ public class Channel
     [JsonPropertyName("channel_type")]
     public string ChannelType { get; set; } = "";
 
+    [JsonPropertyName("team_id")]
+    public string? TeamId { get; set; }
+
+    [JsonPropertyName("team_name")]
+    public string? TeamName { get; set; }
+
     [JsonPropertyName("member_count")]
     public int MemberCount { get; set; }
 
@@ -24,4 +30,19 @@ public class Channel
 
     [JsonPropertyName("last_activity_at")]
     public string? LastActivityAt { get; set; }
+
+    [JsonPropertyName("invite_token")]
+    public string? InviteToken { get; set; }
+
+    [JsonPropertyName("is_subscribed")]
+    public bool IsSubscribed { get; set; } = true;
+}
+
+public class ChannelMember
+{
+    [JsonPropertyName("user")]
+    public User? User { get; set; }
+
+    [JsonPropertyName("last_read_at")]
+    public string? LastReadAt { get; set; }
 }

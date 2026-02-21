@@ -247,8 +247,9 @@ public partial class MainWindow : Window
         // Disconnect old chat WebSocket
         if (_chatWs != null)
         {
-            await _chatWs.DisconnectAsync();
-            _chatWs.Dispose();
+            try { await _chatWs.DisconnectAsync(); } catch { }
+            try { _chatWs.Dispose(); } catch { }
+            _chatWs = null;
         }
 
         // Load messages
