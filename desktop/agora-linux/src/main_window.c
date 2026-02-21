@@ -1578,9 +1578,10 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
             inject_video_user_scripts(win);
             g_print("[Video] Reminder join: navigating to %s\n", video_url);
             webkit_web_view_load_uri(win->video_webview, video_url);
+            gtk_widget_hide(GTK_WIDGET(win->content_stack));
             gtk_widget_set_no_show_all(win->video_overlay, FALSE);
-        gtk_widget_show_all(win->video_overlay);
-        gtk_widget_set_no_show_all(win->video_overlay, TRUE);
+            gtk_widget_show_all(win->video_overlay);
+            gtk_widget_set_no_show_all(win->video_overlay, TRUE);
         } else {
             char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
             GError *err = NULL;
@@ -1766,6 +1767,7 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     if (win->video_webview)
         webkit_web_view_load_uri(win->video_webview, "about:blank");
     gtk_widget_hide(win->video_overlay);
+    gtk_widget_show(GTK_WIDGET(win->content_stack));
 }
 
 static void inject_video_user_scripts(AgoraMainWindow *win)
@@ -1866,6 +1868,7 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
         inject_video_user_scripts(win);
         g_print("[Video] Navigating to %s\n", video_url);
         webkit_web_view_load_uri(win->video_webview, video_url);
+        gtk_widget_hide(GTK_WIDGET(win->content_stack));
         gtk_widget_set_no_show_all(win->video_overlay, FALSE);
         gtk_widget_show_all(win->video_overlay);
         gtk_widget_set_no_show_all(win->video_overlay, TRUE);
