@@ -52,6 +52,7 @@ struct _AgoraMainWindow {
 
     /* Video call overlay */
     GtkWidget *video_overlay;
+    GtkWidget *right_overlay;
     WebKitWebView *video_webview;
 
     /* State */
@@ -1580,7 +1581,9 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
             inject_video_user_scripts(win);
             g_print("[Video] Reminder join: navigating to %s\n", video_url);
             webkit_web_view_load_uri(win->video_webview, video_url);
-            gtk_stack_set_visible_child_name(win->content_stack, "video");
+            gtk_widget_set_no_show_all(win->video_overlay, FALSE);
+            gtk_widget_show_all(win->video_overlay);
+            gtk_widget_set_no_show_all(win->video_overlay, TRUE);
         } else {
             char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
             GError *err = NULL;
@@ -1765,7 +1768,7 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
     if (win->video_webview)
         webkit_web_view_load_uri(win->video_webview, "about:blank");
-    gtk_stack_set_visible_child_name(win->content_stack, "chat");
+    gtk_widget_hide(win->video_overlay);
 }
 
 static void inject_video_user_scripts(AgoraMainWindow *win)
@@ -1869,7 +1872,9 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
         inject_video_user_scripts(win);
         g_print("[Video] Navigating to %s\n", video_url);
         webkit_web_view_load_uri(win->video_webview, video_url);
-        gtk_stack_set_visible_child_name(win->content_stack, "video");
+        gtk_widget_set_no_show_all(win->video_overlay, FALSE);
+        gtk_widget_show_all(win->video_overlay);
+        gtk_widget_set_no_show_all(win->video_overlay, TRUE);
     } else {
         /* Fallback to browser with token in URL */
         char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
@@ -2426,9 +2431,12 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_stack_add_named(win->content_stack, win->chat_box, "chat");
     gtk_stack_set_visible_child_name(win->content_stack, "empty");
 
-    gtk_box_pack_start(GTK_BOX(right_vbox), GTK_WIDGET(win->content_stack), TRUE, TRUE, 0);
+    /* Wrap content_stack in a GtkOverlay so video can cover it completely */
+    win->right_overlay = gtk_overlay_new();
+    gtk_container_add(GTK_CONTAINER(win->right_overlay), GTK_WIDGET(win->content_stack));
+    gtk_box_pack_start(GTK_BOX(right_vbox), win->right_overlay, TRUE, TRUE, 0);
 
-    /* --- Video call overlay (as content_stack page) --- */
+    /* --- Video call overlay (drawn ON TOP of content_stack via GtkOverlay) --- */
     win->video_overlay = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
     /* Video header with leave button */
@@ -2473,7 +2481,21 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_box_pack_start(GTK_BOX(win->video_overlay), GTK_WIDGET(win->video_webview), TRUE, TRUE, 0);
 
-    gtk_stack_add_named(win->content_stack, win->video_overlay, "video");
+    /* Set opaque background on video overlay so it fully covers content underneath */
+    GdkRGBA video_overlay_bg = {0.10, 0.10, 0.10, 1.0};
+    gtk_widget_override_background_color(win->video_overlay, GTK_STATE_FLAG_NORMAL, &video_overlay_bg);
+
+    /* Make video overlay fill the entire GtkOverlay area */
+    gtk_widget_set_halign(win->video_overlay, GTK_ALIGN_FILL);
+    gtk_widget_set_valign(win->video_overlay, GTK_ALIGN_FILL);
+    gtk_widget_set_hexpand(win->video_overlay, TRUE);
+    gtk_widget_set_vexpand(win->video_overlay, TRUE);
+
+    /* Add video overlay ON TOP of content_stack in the GtkOverlay */
+    gtk_overlay_add_overlay(GTK_OVERLAY(win->right_overlay), win->video_overlay);
+
+    /* Initially hide the video overlay */
+    gtk_widget_set_no_show_all(win->video_overlay, TRUE);
 
     gtk_box_pack_start(GTK_BOX(main_hbox), right_vbox, TRUE, TRUE, 0);
 
