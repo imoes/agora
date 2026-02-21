@@ -11,11 +11,16 @@ struct _AgoraMainWindow {
 
     /* Sidebar */
     GtkListBox *channel_list;
+    GtkListBox *team_list;
+    GtkListBox *team_channel_list;
+    GtkWidget *team_channels_box;
+    GtkLabel *team_channels_header;
     GtkLabel *user_label;
 
     /* Chat area */
     GtkStack *content_stack;
     GtkLabel *chat_title;
+    GtkLabel *chat_subtitle;
     GtkTextView *message_view;
     GtkTextBuffer *message_buffer;
     GtkEntry *message_entry;
@@ -129,6 +134,113 @@ static void load_channels(AgoraMainWindow *win)
     json_node_unref(result);
 }
 
+/* --- Teams loading --- */
+
+static void load_teams(AgoraMainWindow *win)
+{
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, "/api/teams/", &error);
+    if (!result) {
+        if (error) g_error_free(error);
+        return;
+    }
+
+    /* Clear existing list */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->team_list));
+    for (GList *l = children; l; l = l->next) {
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    }
+    g_list_free(children);
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+
+    for (guint i = 0; i < len; i++) {
+        JsonObject *team = json_array_get_object_element(arr, i);
+        const char *id = json_object_get_string_member(team, "id");
+        const char *name = json_object_get_string_member(team, "name");
+        gint64 member_count = json_object_has_member(team, "member_count")
+            ? json_object_get_int_member(team, "member_count") : 0;
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        gtk_container_set_border_width(GTK_CONTAINER(row_box), 8);
+
+        GtkWidget *name_label = gtk_label_new(name);
+        gtk_label_set_ellipsize(GTK_LABEL(name_label), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_halign(name_label, GTK_ALIGN_START);
+        PangoAttrList *attrs = pango_attr_list_new();
+        pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+        gtk_label_set_attributes(GTK_LABEL(name_label), attrs);
+        pango_attr_list_unref(attrs);
+        gtk_box_pack_start(GTK_BOX(row_box), name_label, FALSE, FALSE, 0);
+
+        char *members_text = g_strdup_printf("%ld %s", (long)member_count, T("chat.members"));
+        GtkWidget *members_label = gtk_label_new(members_text);
+        g_free(members_text);
+        gtk_widget_set_halign(members_label, GTK_ALIGN_START);
+        PangoAttrList *small_attrs = pango_attr_list_new();
+        pango_attr_list_insert(small_attrs, pango_attr_scale_new(0.85));
+        gtk_label_set_attributes(GTK_LABEL(members_label), small_attrs);
+        pango_attr_list_unref(small_attrs);
+        gtk_box_pack_start(GTK_BOX(row_box), members_label, FALSE, FALSE, 0);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        g_object_set_data_full(G_OBJECT(row), "team-id", g_strdup(id), g_free);
+        g_object_set_data_full(G_OBJECT(row), "team-name", g_strdup(name), g_free);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_list, row, -1);
+    }
+
+    gtk_widget_show_all(GTK_WIDGET(win->team_list));
+    json_node_unref(result);
+}
+
+static void load_team_channels(AgoraMainWindow *win, const char *team_id)
+{
+    char *path = g_strdup_printf("/api/channels/?team_id=%s", team_id);
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &error);
+    g_free(path);
+
+    /* Clear existing list */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->team_channel_list));
+    for (GList *l = children; l; l = l->next) {
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    }
+    g_list_free(children);
+
+    if (!result) {
+        if (error) g_error_free(error);
+        return;
+    }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+
+    for (guint i = 0; i < len; i++) {
+        JsonObject *ch = json_array_get_object_element(arr, i);
+        const char *id = json_object_get_string_member(ch, "id");
+        const char *name = json_object_get_string_member(ch, "name");
+
+        char *display = g_strdup_printf("# %s", name);
+        GtkWidget *label = gtk_label_new(display);
+        g_free(display);
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(label, 8);
+        gtk_widget_set_margin_top(label, 4);
+        gtk_widget_set_margin_bottom(label, 4);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
+        g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(name), g_free);
+        gtk_container_add(GTK_CONTAINER(row), label);
+        gtk_list_box_insert(win->team_channel_list, row, -1);
+    }
+
+    gtk_widget_show_all(GTK_WIDGET(win->team_channel_list));
+    json_node_unref(result);
+}
+
 /* --- Message loading --- */
 
 static void load_messages(AgoraMainWindow *win, const char *channel_id)
@@ -194,23 +306,33 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
         gtk_text_buffer_insert(win->message_buffer, &iter, line, -1);
         g_free(line);
 
-        /* Reactions */
+        /* Reactions (backend sends as array of {emoji, user_id, display_name}) */
         if (json_object_has_member(msg, "reactions") &&
             !json_object_get_null_member(msg, "reactions")) {
-            JsonObject *reactions = json_object_get_object_member(msg, "reactions");
-            GList *keys = json_object_get_members(reactions);
-            if (keys) {
+            JsonArray *reactions = json_object_get_array_member(msg, "reactions");
+            guint rlen = reactions ? json_array_get_length(reactions) : 0;
+            if (rlen > 0) {
+                /* Count reactions grouped by emoji */
+                GHashTable *counts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+                for (guint r = 0; r < rlen; r++) {
+                    JsonObject *reaction = json_array_get_object_element(reactions, r);
+                    const char *emoji = json_object_get_string_member(reaction, "emoji");
+                    if (!emoji) continue;
+                    gpointer val = g_hash_table_lookup(counts, emoji);
+                    int count = GPOINTER_TO_INT(val) + 1;
+                    g_hash_table_replace(counts, g_strdup(emoji), GINT_TO_POINTER(count));
+                }
                 GString *reaction_str = g_string_new("  ");
-                for (GList *k = keys; k; k = k->next) {
-                    const char *emoji = (const char *)k->data;
-                    JsonArray *users = json_object_get_array_member(reactions, emoji);
-                    guint count = json_array_get_length(users);
-                    g_string_append_printf(reaction_str, "%s %u  ", emoji, count);
+                GHashTableIter hiter;
+                gpointer key, value;
+                g_hash_table_iter_init(&hiter, counts);
+                while (g_hash_table_iter_next(&hiter, &key, &value)) {
+                    g_string_append_printf(reaction_str, "%s %d  ", (char *)key, GPOINTER_TO_INT(value));
                 }
                 g_string_append_c(reaction_str, '\n');
                 gtk_text_buffer_insert(win->message_buffer, &iter, reaction_str->str, -1);
                 g_string_free(reaction_str, TRUE);
-                g_list_free(keys);
+                g_hash_table_destroy(counts);
             }
         }
     }
@@ -549,6 +671,50 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
     /* Connect WebSocket for real-time updates */
     connect_channel_ws(win, channel_id);
 
+    gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
+}
+
+static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
+                              gpointer user_data)
+{
+    (void)list_box;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
+    if (!row) return;
+
+    const char *team_id = g_object_get_data(G_OBJECT(row), "team-id");
+    const char *team_name = g_object_get_data(G_OBJECT(row), "team-name");
+
+    gtk_label_set_text(win->team_channels_header, team_name);
+    load_team_channels(win, team_id);
+    gtk_widget_show(win->team_channels_box);
+}
+
+static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
+                                      gpointer user_data)
+{
+    (void)list_box;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
+    if (!row) return;
+
+    const char *channel_id = g_object_get_data(G_OBJECT(row), "channel-id");
+    const char *channel_name = g_object_get_data(G_OBJECT(row), "channel-name");
+
+    /* Deselect main channel list */
+    gtk_list_box_unselect_all(win->channel_list);
+
+    g_free(win->current_channel_id);
+    win->current_channel_id = g_strdup(channel_id);
+    g_free(win->current_channel_name);
+    win->current_channel_name = g_strdup(channel_name);
+
+    gtk_label_set_text(win->chat_title, channel_name);
+    gtk_stack_set_visible_child_name(win->content_stack, "chat");
+
+    gtk_label_set_text(win->typing_label, "");
+    gtk_widget_hide(GTK_WIDGET(win->typing_label));
+
+    load_messages(win, channel_id);
+    connect_channel_ws(win, channel_id);
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
 }
 
@@ -915,6 +1081,51 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_container_add(GTK_CONTAINER(scroll), GTK_WIDGET(win->channel_list));
     gtk_box_pack_start(GTK_BOX(sidebar), scroll, TRUE, TRUE, 0);
 
+    /* "Teams" header */
+    GtkWidget *teams_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_pack_start(GTK_BOX(sidebar), teams_sep, FALSE, FALSE, 0);
+
+    GtkWidget *teams_label = gtk_label_new(NULL);
+    char *teams_markup = g_strdup_printf("<b>%s</b>", T("teams.teams"));
+    gtk_label_set_markup(GTK_LABEL(teams_label), teams_markup);
+    g_free(teams_markup);
+    gtk_widget_set_halign(teams_label, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(teams_label, 12);
+    gtk_widget_set_margin_top(teams_label, 8);
+    gtk_widget_set_margin_bottom(teams_label, 4);
+    gtk_box_pack_start(GTK_BOX(sidebar), teams_label, FALSE, FALSE, 0);
+
+    /* Team list */
+    GtkWidget *team_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(team_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->team_list = GTK_LIST_BOX(gtk_list_box_new());
+    g_signal_connect(win->team_list, "row-selected",
+                     G_CALLBACK(on_team_selected), win);
+    gtk_container_add(GTK_CONTAINER(team_scroll), GTK_WIDGET(win->team_list));
+    gtk_box_pack_start(GTK_BOX(sidebar), team_scroll, TRUE, TRUE, 0);
+
+    /* Team channels (hidden until a team is selected) */
+    win->team_channels_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
+
+    win->team_channels_header = GTK_LABEL(gtk_label_new(""));
+    PangoAttrList *tch_attrs = pango_attr_list_new();
+    pango_attr_list_insert(tch_attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+    gtk_label_set_attributes(win->team_channels_header, tch_attrs);
+    pango_attr_list_unref(tch_attrs);
+    gtk_widget_set_halign(GTK_WIDGET(win->team_channels_header), GTK_ALIGN_START);
+    gtk_widget_set_margin_start(GTK_WIDGET(win->team_channels_header), 12);
+    gtk_widget_set_margin_top(GTK_WIDGET(win->team_channels_header), 4);
+    gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channels_header), FALSE, FALSE, 0);
+
+    win->team_channel_list = GTK_LIST_BOX(gtk_list_box_new());
+    g_signal_connect(win->team_channel_list, "row-selected",
+                     G_CALLBACK(on_team_channel_selected), win);
+    gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channel_list), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(sidebar), win->team_channels_box, FALSE, FALSE, 0);
+
     gtk_paned_pack1(GTK_PANED(paned), sidebar, FALSE, FALSE);
 
     /* --- Content area (stack: empty / chat) --- */
@@ -1089,8 +1300,9 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
     /* Download notification sound */
     download_notification_sound(win);
 
-    /* Load channels */
+    /* Load channels and teams */
     load_channels(win);
+    load_teams(win);
 
     /* Start event reminder polling (every 60 seconds) */
     check_event_reminders(win);
