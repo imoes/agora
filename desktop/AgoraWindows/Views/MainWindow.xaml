@@ -339,7 +339,7 @@
         </Border>
 
         <!-- === COLUMN 2: Main content area === -->
-        <Grid Grid.Column="2">
+        <Grid x:Name="MainContentArea" Grid.Column="2">
             <!-- Empty state -->
             <StackPanel x:Name="EmptyState" VerticalAlignment="Center"
                         HorizontalAlignment="Center">
