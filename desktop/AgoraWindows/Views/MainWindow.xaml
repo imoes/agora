@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AgoraWindows.Views"
+        xmlns:helpers="clr-namespace:AgoraWindows.Helpers"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Agora" Width="1100" Height="700"
@@ -273,7 +274,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Feed items (visible when Feed nav selected) -->
+                        <!-- Feed items in sidebar (visible when Feed nav selected) -->
                         <ItemsControl x:Name="FeedList" Visibility="Collapsed" Margin="4">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -356,6 +357,75 @@
                            Foreground="{StaticResource TextSecondaryBrush}"
                            HorizontalAlignment="Center" Margin="0,8,0,0" />
             </StackPanel>
+
+            <!-- Feed view (3-column layout in main content area) -->
+            <Border x:Name="FeedView" Visibility="Collapsed" Background="{StaticResource BackgroundBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- Feed header -->
+                    <Border Grid.Row="0" Padding="16,12" Background="White"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Click="FeedRefresh_Click"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Padding="8,4" ToolTip="Refresh">
+                                <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
+                            </Button>
+                            <TextBlock x:Name="FeedTitle" Text="Feed" FontSize="18" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </Border>
+                    <!-- Feed grid (3 columns) -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12">
+                        <ItemsControl x:Name="FeedMainList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="3" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="6" Padding="14,12" Background="White"
+                                            CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1" Cursor="Hand">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="4" Opacity="0.08" ShadowDepth="1" />
+                                        </Border.Effect>
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <Ellipse Width="8" Height="8" Margin="0,0,8,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{StaticResource PrimaryBrush}"
+                                                         Visibility="{Binding IsReadInverted, Converter={x:Static local:Converters.BoolToVisibility}}" />
+                                                <TextBlock Text="{Binding ActorName}" FontSize="13"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Message}" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextWrapping="Wrap" MaxHeight="60"
+                                                       Margin="0,6,0,0" />
+                                            <DockPanel Margin="0,8,0,0">
+                                                <TextBlock FontSize="11" Foreground="{StaticResource PrimaryBrush}">
+                                                    <Run Text="in " /><Run Text="{Binding ChannelName}" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding CreatedAt}" FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           HorizontalAlignment="Right" />
+                                            </DockPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
 
             <!-- Settings view -->
             <Border x:Name="SettingsView" Visibility="Collapsed" Padding="32">
@@ -494,10 +564,18 @@
                                                        VerticalAlignment="Center" Margin="12,0,0,0" />
                                         </DockPanel>
 
-                                        <!-- Content -->
+                                        <!-- Content: plain text (for non-HTML messages) -->
                                         <emoji:TextBlock Text="{Binding Content}" FontSize="13"
                                                    TextWrapping="Wrap" Margin="0,3,0,0"
-                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Visibility="{Binding IsPlainTextMessage, Converter={x:Static local:Converters.BoolToVisibility}}" />
+
+                                        <!-- Content: HTML/rich messages rendered as formatted text -->
+                                        <RichTextBox helpers:RichTextBoxHelper.Html="{Binding Content}"
+                                                     IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                                     Margin="0,3,0,0" Padding="0" IsTabStop="False"
+                                                     Foreground="{StaticResource TextPrimaryBrush}"
+                                                     Visibility="{Binding IsRichMessage, Converter={x:Static local:Converters.BoolToVisibility}}" />
 
                                         <!-- Inline image -->
                                         <Border Margin="0,4,0,0" CornerRadius="6"
@@ -587,10 +665,40 @@
                                Foreground="{StaticResource TextSecondaryBrush}" />
                 </Border>
 
-                <!-- Message input -->
-                <Border Grid.Row="4" Padding="12,8" Background="White"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-                    <DockPanel>
+                <!-- Message input area with WYSIWYG editor -->
+                <Grid Grid.Row="4" Background="White"
+                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                    <!-- WebView2 WYSIWYG editor (primary) -->
+                    <Grid x:Name="RichEditorContainer" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <wv2:WebView2 x:Name="EditorWebView" Grid.Column="0"
+                                      MinHeight="90" MaxHeight="180" />
+                        <StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Bottom" Margin="4,4,8,4">
+                            <Button Click="FileUpload_Click"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Padding="6,4" Margin="0,2" ToolTip="Attach File">
+                                <TextBlock Text="&#xE723;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
+                            </Button>
+                            <Button Click="EmojiButton_Click"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Padding="6,4" Margin="0,2" ToolTip="Emoji">
+                                <TextBlock Text="&#xE76E;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
+                            </Button>
+                            <Button x:Name="EditorSendButton" Style="{StaticResource PrimaryButton}"
+                                    Click="EditorSendButton_Click"
+                                    Height="34" Width="34" Padding="0" Margin="0,2">
+                                <TextBlock Text="&#xE724;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Fallback: plain TextBox editor -->
+                    <DockPanel x:Name="PlainEditorContainer" Padding="12,8">
                         <!-- Send button -->
                         <Button x:Name="SendButton" DockPanel.Dock="Right"
                                 Style="{StaticResource PrimaryButton}"
@@ -618,7 +726,7 @@
                                  KeyDown="MessageInput_KeyDown"
                                  AcceptsReturn="False" />
                     </DockPanel>
-                </Border>
+                </Grid>
             </Grid>
         </Grid>
 

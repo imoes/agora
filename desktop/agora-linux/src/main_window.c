@@ -85,6 +85,27 @@ static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath);
 static void load_feed(AgoraMainWindow *win);
 static void load_messages(AgoraMainWindow *win, const char *channel_id);
 
+/* Accept self-signed certificates callback */
+static gboolean accept_cert_cb(SoupMessage *msg, GTlsCertificate *cert,
+                                GTlsCertificateFlags errors, gpointer data)
+{
+    (void)msg; (void)cert; (void)errors; (void)data;
+    return TRUE;
+}
+
+/* Helper: read full body from GInputStream */
+static char *read_stream_full(GInputStream *stream, gsize *out_length)
+{
+    GByteArray *array = g_byte_array_new();
+    guint8 buf[4096];
+    gssize n;
+    while ((n = g_input_stream_read(stream, buf, sizeof(buf), NULL, NULL)) > 0)
+        g_byte_array_append(array, buf, (guint)n);
+    if (out_length) *out_length = array->len;
+    g_byte_array_append(array, (guint8 *)"\0", 1);
+    return (char *)g_byte_array_free(array, FALSE);
+}
+
 /* Application CSS */
 static const char *app_css =
     /* Navigation sidebar */
@@ -774,18 +795,20 @@ static void connect_channel_ws(AgoraMainWindow *win, const char *channel_id)
     }
 
     if (!win->ws_session) {
-        win->ws_session = soup_session_new_with_options(
-            SOUP_SESSION_SSL_STRICT, FALSE,
-            NULL);
+        win->ws_session = soup_session_new();
     }
 
     SoupMessage *msg = soup_message_new("GET", ws_url);
     g_free(ws_url);
     if (!msg) return;
 
+    /* Accept self-signed certificates for WebSocket connections */
+    g_signal_connect(msg, "accept-certificate",
+                     G_CALLBACK(accept_cert_cb), NULL);
+
     soup_session_websocket_connect_async(win->ws_session, msg,
-                                          NULL, NULL, NULL,
-                                          on_ws_connected, win);
+                                          NULL, NULL, G_PRIORITY_DEFAULT,
+                                          NULL, on_ws_connected, win);
     g_object_unref(msg);
 }
 
@@ -856,8 +879,7 @@ static void download_notification_sound(AgoraMainWindow *win)
     g_free(base);
 
     /* Download using a simple SoupSession */
-    SoupSession *session = soup_session_new_with_options(
-        SOUP_SESSION_SSL_STRICT, FALSE, NULL);
+    SoupSession *session = soup_session_new();
     SoupMessage *msg = soup_message_new("GET", sound_url);
     g_free(sound_url);
 
@@ -866,14 +888,22 @@ static void download_notification_sound(AgoraMainWindow *win)
         return;
     }
 
-    guint status = soup_session_send_message(session, msg);
-    if (status == 200 && msg->response_body->length > 0) {
-        win->notification_sound_path = g_build_filename(
-            g_get_tmp_dir(), "agora-notification.mp3", NULL);
-        g_file_set_contents(win->notification_sound_path,
-                            msg->response_body->data,
-                            (gssize)msg->response_body->length,
-                            NULL);
+    g_signal_connect(msg, "accept-certificate", G_CALLBACK(accept_cert_cb), NULL);
+    GInputStream *stream = soup_session_send(session, msg, NULL, NULL);
+    if (stream) {
+        guint status = soup_message_get_status(msg);
+        if (status == 200) {
+            gsize length = 0;
+            char *data = read_stream_full(stream, &length);
+            if (data && length > 0) {
+                win->notification_sound_path = g_build_filename(
+                    g_get_tmp_dir(), "agora-notification.mp3", NULL);
+                g_file_set_contents(win->notification_sound_path,
+                                    data, (gssize)length, NULL);
+            }
+            g_free(data);
+        }
+        g_object_unref(stream);
     }
 
     g_object_unref(msg);
@@ -1369,25 +1399,37 @@ static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath)
     }
 
     SoupMultipart *multipart = soup_multipart_new("multipart/form-data");
-    SoupBuffer *buffer = soup_buffer_new(SOUP_MEMORY_COPY, contents, length);
-    soup_multipart_append_form_file(multipart, "file", basename_str, content_type, buffer);
-    soup_buffer_free(buffer);
-    g_free(contents);
+    GBytes *file_bytes = g_bytes_new_take(contents, length);
+    soup_multipart_append_form_file(multipart, "file", basename_str, content_type, file_bytes);
+    g_bytes_unref(file_bytes);
 
     char *url = g_strdup_printf("%s/api/channels/%s/upload",
                                  win->api->base_url, win->current_channel_id);
-    SoupMessage *msg = soup_form_request_new_from_multipart(url, multipart);
+    SoupMessage *msg = soup_message_new("POST", url);
     g_free(url);
+
+    /* Convert multipart to request body */
+    SoupMessageHeaders *req_hdrs = soup_message_get_request_headers(msg);
+    GBytes *body_bytes = NULL;
+    soup_multipart_to_message(multipart, req_hdrs, &body_bytes);
     soup_multipart_free(multipart);
+
+    if (body_bytes) {
+        const char *ct = soup_message_headers_get_content_type(req_hdrs, NULL);
+        soup_message_set_request_body_from_bytes(msg, ct, body_bytes);
+        g_bytes_unref(body_bytes);
+    }
 
     if (win->api->token) {
         char *auth = g_strdup_printf("Bearer %s", win->api->token);
-        soup_message_headers_replace(msg->request_headers, "Authorization", auth);
+        soup_message_headers_replace(req_hdrs, "Authorization", auth);
         g_free(auth);
     }
 
-    SoupSession *session = soup_session_new_with_options(SOUP_SESSION_SSL_STRICT, FALSE, NULL);
-    soup_session_send_message(session, msg);
+    g_signal_connect(msg, "accept-certificate", G_CALLBACK(accept_cert_cb), NULL);
+    SoupSession *session = soup_session_new();
+    GInputStream *upload_stream = soup_session_send(session, msg, NULL, NULL);
+    if (upload_stream) g_object_unref(upload_stream);
 
     g_object_unref(msg);
     g_object_unref(session);

@@ -1,7 +1,7 @@
 CC = gcc
 PKG_CONFIG = pkg-config
-CFLAGS = $(shell $(PKG_CONFIG) --cflags gtk+-3.0 json-glib-1.0 libsoup-2.4 libnotify gstreamer-1.0 webkit2gtk-4.1) -Wall -Wextra -O2
-LDFLAGS = $(shell $(PKG_CONFIG) --libs gtk+-3.0 json-glib-1.0 libsoup-2.4 libnotify gstreamer-1.0 webkit2gtk-4.1) -lpthread
+CFLAGS = $(shell $(PKG_CONFIG) --cflags gtk+-3.0 json-glib-1.0 libsoup-3.0 libnotify gstreamer-1.0 webkit2gtk-4.1) -Wall -Wextra -O2
+LDFLAGS = $(shell $(PKG_CONFIG) --libs gtk+-3.0 json-glib-1.0 libsoup-3.0 libnotify gstreamer-1.0 webkit2gtk-4.1) -lpthread
 
 TARGET = agora-linux
 SRCDIR = src
