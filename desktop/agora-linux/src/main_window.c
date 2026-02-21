@@ -1769,7 +1769,7 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     if (win->video_webview)
         webkit_web_view_load_uri(win->video_webview, "about:blank");
     gtk_widget_hide(win->video_overlay);
-    gtk_widget_show(GTK_WIDGET(win->content_stack));
+    gtk_widget_show_all(GTK_WIDGET(win->content_stack));
 }
 
 static void inject_video_user_scripts(AgoraMainWindow *win)
