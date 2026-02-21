@@ -698,7 +698,8 @@
                     </Grid>
 
                     <!-- Fallback: plain TextBox editor -->
-                    <DockPanel x:Name="PlainEditorContainer" Padding="12,8">
+                    <Border x:Name="PlainEditorContainer" Padding="12,8">
+                    <DockPanel>
                         <!-- Send button -->
                         <Button x:Name="SendButton" DockPanel.Dock="Right"
                                 Style="{StaticResource PrimaryButton}"
@@ -726,6 +727,7 @@
                                  KeyDown="MessageInput_KeyDown"
                                  AcceptsReturn="False" />
                     </DockPanel>
+                    </Border>
                 </Grid>
                 </Border>
             </Grid>
