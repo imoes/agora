@@ -88,6 +88,7 @@ static void download_notification_sound(AgoraMainWindow *win);
 static void show_notification(const char *title, const char *body);
 static void set_active_nav(AgoraMainWindow *win, GtkWidget *active_btn);
 static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath);
+static void inject_video_user_scripts(AgoraMainWindow *win);
 static void load_feed(AgoraMainWindow *win);
 static void load_calendar_events(AgoraMainWindow *win);
 static void load_messages(AgoraMainWindow *win, const char *channel_id);

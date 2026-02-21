@@ -375,6 +375,20 @@
                                 <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets"
                                            FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
                             </Button>
+                            <!-- Unread / All toggle -->
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,0,12,0"
+                                        VerticalAlignment="Center">
+                                <RadioButton x:Name="FeedFilterAll" Content="Alle" IsChecked="True"
+                                             GroupName="FeedFilter" Margin="0,0,4,0"
+                                             Click="FeedFilterAll_Click"
+                                             Style="{StaticResource {x:Type ToggleButton}}"
+                                             Padding="12,4" FontSize="12" Cursor="Hand" />
+                                <RadioButton x:Name="FeedFilterUnread" Content="Ungelesen"
+                                             GroupName="FeedFilter" Margin="4,0,0,0"
+                                             Click="FeedFilterUnread_Click"
+                                             Style="{StaticResource {x:Type ToggleButton}}"
+                                             Padding="12,4" FontSize="12" Cursor="Hand" />
+                            </StackPanel>
                             <TextBlock x:Name="FeedTitle" Text="Feed" FontSize="18" FontWeight="SemiBold"
                                        Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
                         </DockPanel>

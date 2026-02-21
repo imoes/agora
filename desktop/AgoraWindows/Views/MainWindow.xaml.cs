@@ -478,11 +478,13 @@ function insertText(text) {
 
     // === Feed ===
 
+    private bool _feedUnreadOnly = false;
+
     private async System.Threading.Tasks.Task LoadFeedAsync()
     {
         try
         {
-            var feed = await _api.GetFeedAsync(limit: 50);
+            var feed = await _api.GetFeedAsync(limit: 50, unreadOnly: _feedUnreadOnly);
             _feedEvents.Clear();
             if (feed.Events != null)
             {
@@ -495,6 +497,18 @@ function insertText(text) {
 
     private void FeedRefresh_Click(object sender, RoutedEventArgs e)
     {
+        _ = LoadFeedAsync();
+    }
+
+    private void FeedFilterAll_Click(object sender, RoutedEventArgs e)
+    {
+        _feedUnreadOnly = false;
+        _ = LoadFeedAsync();
+    }
+
+    private void FeedFilterUnread_Click(object sender, RoutedEventArgs e)
+    {
+        _feedUnreadOnly = true;
         _ = LoadFeedAsync();
     }
 
@@ -1248,7 +1262,7 @@ function insertText(text) {
                 if (_videoInitScriptId != null)
                     VideoWebView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_videoInitScriptId);
                 _videoInitScriptId = await VideoWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(initScript);
-                System.Diagnostics.Debug.WriteLine($"[Video] Injected init script (id={scriptId}), navigating to {url}");
+                System.Diagnostics.Debug.WriteLine($"[Video] Injected init script (id={_videoInitScriptId}), navigating to {url}");
                 VideoWebView.CoreWebView2.Navigate(url);
 
                 VideoCallView.Visibility = Visibility.Visible;
