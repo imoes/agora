@@ -745,7 +745,10 @@ function insertText(text) {
     {
         try
         {
+            System.Diagnostics.Debug.WriteLine($"[Image] Loading image for FileRef={msg.FileReferenceId}, MsgType={msg.MessageType}, Content={msg.Content?.Substring(0, Math.Min(msg.Content?.Length ?? 0, 80))}");
             var bytes = await _api.DownloadFileAsync(msg.FileReferenceId!);
+            System.Diagnostics.Debug.WriteLine($"[Image] Downloaded {bytes.Length} bytes for FileRef={msg.FileReferenceId}");
+            if (bytes.Length == 0) return;
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
@@ -755,34 +758,26 @@ function insertText(text) {
             bitmap.Freeze();
             msg.ImageSource = bitmap;
             var idx = _messages.IndexOf(msg);
-            if (idx >= 0) _messages[idx] = msg;
+            if (idx >= 0)
+            {
+                _messages.RemoveAt(idx);
+                _messages.Insert(idx, msg);
+            }
+            System.Diagnostics.Debug.WriteLine($"[Image] Loaded OK for FileRef={msg.FileReferenceId}, HasImage={msg.HasImage}");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Image] ERROR loading FileRef={msg.FileReferenceId}: {ex.Message}");
+        }
     }
 
     private async System.Threading.Tasks.Task LoadMessageImagesAsync()
     {
-        foreach (var msg in _messages.ToList())
+        var imageMessages = _messages.Where(m => m.IsImageMessage && m.ImageSource == null).ToList();
+        System.Diagnostics.Debug.WriteLine($"[Image] Batch loading {imageMessages.Count} images out of {_messages.Count} messages");
+        foreach (var msg in imageMessages)
         {
-            if (msg.IsImageMessage && msg.ImageSource == null)
-            {
-                try
-                {
-                    var bytes = await _api.DownloadFileAsync(msg.FileReferenceId!);
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = new MemoryStream(bytes);
-                    bitmap.DecodePixelWidth = 300;
-                    bitmap.EndInit();
-                    bitmap.Freeze();
-                    msg.ImageSource = bitmap;
-                    msg.HasReactions = msg.HasReactions; // force update
-                    var idx = _messages.IndexOf(msg);
-                    if (idx >= 0) _messages[idx] = msg; // refresh binding
-                }
-                catch { }
-            }
+            await LoadSingleMessageImageAsync(msg);
         }
     }
 
@@ -1222,7 +1217,7 @@ function insertText(text) {
         {
             await _api.CreateVideoRoomAsync(_currentChannelId);
             var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
-            var url = $"{baseUrl}/video/{_currentChannelId}?token={Uri.EscapeDataString(_api.Token ?? "")}";
+            var url = $"{baseUrl}/video/{_currentChannelId}";
 
             await InitializeVideoWebView();
 
@@ -1230,17 +1225,42 @@ function insertText(text) {
             {
                 VideoCallTitle.Text = $"Video - {ChatTitle.Text}";
                 VideoCallLeaveBtn.Content = Services.Translations.T("reminder.dismiss");
-                VideoWebView.CoreWebView2.Navigate(url);
+
+                // Navigate to base URL first so localStorage is on the correct origin
+                var videoUrl = url;
+                Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventHandler? handler = null;
+                handler = async (s, args) =>
+                {
+                    VideoWebView.CoreWebView2.NavigationCompleted -= handler;
+                    if (args.IsSuccess)
+                    {
+                        // Inject auth token into localStorage so Angular authGuard passes
+                        var token = _api.Token?.Replace("\\", "\\\\").Replace("'", "\\'") ?? "";
+                        var currentUser = JsonSerializer.Serialize(_api.CurrentUser);
+                        var escapedUser = currentUser.Replace("\\", "\\\\").Replace("'", "\\'");
+                        await VideoWebView.CoreWebView2.ExecuteScriptAsync(
+                            $"localStorage.setItem('access_token', '{token}');" +
+                            $"localStorage.setItem('current_user', '{escapedUser}');"
+                        );
+                        System.Diagnostics.Debug.WriteLine($"[Video] Token injected, navigating to {videoUrl}");
+                        VideoWebView.CoreWebView2.Navigate(videoUrl);
+                    }
+                };
+                VideoWebView.CoreWebView2.NavigationCompleted += handler;
+                VideoWebView.CoreWebView2.Navigate(baseUrl);
+
                 VideoCallView.Visibility = Visibility.Visible;
             }
             else
             {
                 // Fallback: open in browser if WebView2 not available
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+                var fallbackUrl = $"{url}?token={Uri.EscapeDataString(_api.Token ?? "")}";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fallbackUrl) { UseShellExecute = true });
             }
         }
         catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[Video] ERROR: {ex.Message}");
             MessageBox.Show($"{Services.Translations.T("common.error")}: {ex.Message}");
         }
     }
