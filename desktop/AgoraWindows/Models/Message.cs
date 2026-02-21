@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Windows;
+using System.Windows.Media;
 
 namespace AgoraWindows.Models;
 
@@ -88,4 +90,20 @@ public class Message
 
     [JsonIgnore]
     public string EditedIndicator => EditedAt != null ? $" {Services.Translations.T("chat.edited")}" : "";
+
+    // UI binding properties
+    [JsonIgnore]
+    public Brush BubbleColor { get; set; } = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+
+    [JsonIgnore]
+    public HorizontalAlignment BubbleAlignment { get; set; } = HorizontalAlignment.Left;
+
+    [JsonIgnore]
+    public List<Views.ReactionGroup>? ReactionGroups { get; set; }
+
+    [JsonIgnore]
+    public bool HasReactions { get; set; }
+
+    [JsonIgnore]
+    public bool IsReadInverted => !true; // placeholder for feed events
 }

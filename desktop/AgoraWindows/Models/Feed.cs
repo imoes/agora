@@ -29,6 +29,9 @@ public class FeedEvent
     [JsonPropertyName("is_read")]
     public bool IsRead { get; set; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsReadInverted => !IsRead;
+
     [JsonPropertyName("created_at")]
     public string CreatedAt { get; set; } = "";
 }

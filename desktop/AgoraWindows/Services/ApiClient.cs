@@ -294,7 +294,7 @@ public class ApiClient : IDisposable
 
     // --- Calendar ---
 
-    public async Task<List<dynamic>> GetCalendarEventsAsync(string? start = null, string? end = null)
+    public async Task<List<System.Text.Json.JsonElement>> GetCalendarEventsAsync(string? start = null, string? end = null)
     {
         var query = "";
         if (start != null || end != null)
@@ -304,8 +304,8 @@ public class ApiClient : IDisposable
             if (end != null) parts.Add($"end={Uri.EscapeDataString(end)}");
             query = "?" + string.Join("&", parts);
         }
-        return await _http.GetFromJsonAsync<List<dynamic>>($"/api/calendar/events{query}")
-               ?? new List<dynamic>();
+        return await _http.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"/api/calendar/events{query}")
+               ?? new List<System.Text.Json.JsonElement>();
     }
 
     // --- Video ---
