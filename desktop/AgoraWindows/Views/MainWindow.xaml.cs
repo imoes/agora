@@ -1287,6 +1287,7 @@ function insertText(text) {
                 System.Diagnostics.Debug.WriteLine($"[Video] Injected init script (id={_videoInitScriptId}), navigating to {url}");
                 VideoWebView.CoreWebView2.Navigate(url);
 
+                MainContentArea.Visibility = Visibility.Collapsed;
                 VideoCallView.Visibility = Visibility.Visible;
             }
             else
@@ -1306,6 +1307,7 @@ function insertText(text) {
     private void VideoCallLeave_Click(object sender, RoutedEventArgs e)
     {
         VideoCallView.Visibility = Visibility.Collapsed;
+        MainContentArea.Visibility = Visibility.Visible;
         if (_webViewInitialized && VideoWebView.CoreWebView2 != null)
         {
             if (_videoInitScriptId != null)
