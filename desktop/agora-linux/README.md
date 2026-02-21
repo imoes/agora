@@ -6,13 +6,13 @@ Native GTK3 desktop client for the Agora collaboration platform, designed for Li
 
 ```bash
 # Debian/Ubuntu
-sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev libnotify-dev libgstreamer1.0-dev
+sudo apt install build-essential libgtk-3-dev libjson-glib-dev libsoup2.4-dev libnotify-dev libgstreamer1.0-dev libwebkit2gtk-4.1-dev
 
 # Fedora
-sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel libnotify-devel gstreamer1-devel
+sudo dnf install gcc make gtk3-devel json-glib-devel libsoup-devel libnotify-devel gstreamer1-devel webkit2gtk4.1-devel
 
 # Arch Linux
-sudo pacman -S base-devel gtk3 json-glib libsoup libnotify gstreamer
+sudo pacman -S base-devel gtk3 json-glib libsoup libnotify gstreamer webkit2gtk-4.1
 ```
 
 ## Build
