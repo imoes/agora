@@ -1245,28 +1245,37 @@ function insertText(text) {
                 var token = _api.Token?.Replace("\\", "\\\\").Replace("'", "\\'") ?? "";
                 var currentUser = JsonSerializer.Serialize(_api.CurrentUser);
                 var escapedUser = currentUser.Replace("\\", "\\\\").Replace("'", "\\'");
-                // Build robust script: CSS injection + MutationObserver to force-hide layout elements
+                // Build robust script: CSS injection via DOMContentLoaded + polling fallback
                 var hideJs = new System.Text.StringBuilder();
                 hideJs.Append("(function(){");
+                // Auth: set token and user
                 hideJs.Append("localStorage.setItem('access_token','").Append(token).Append("');");
                 hideJs.Append("localStorage.setItem('current_user','").Append(escapedUser).Append("');");
+                // CSS to hide layout elements
                 hideJs.Append("var css='nav.sidebar{display:none !important}");
                 hideJs.Append(".chat-sidebar{display:none !important}");
                 hideJs.Append(".top-bar{display:none !important}");
                 hideJs.Append(".main-body>.content{flex:1 !important;width:100% !important}';");
-                hideJs.Append("function addS(){");
-                hideJs.Append("if(document.getElementById(\"_agoraHide\"))return;");
-                hideJs.Append("var s=document.createElement(\"style\");s.id=\"_agoraHide\";s.textContent=css;");
-                hideJs.Append("(document.head||document.documentElement).appendChild(s);}");
-                hideJs.Append("addS();");
-                hideJs.Append("function hideEls(){");
-                hideJs.Append("var sels=['nav.sidebar','.chat-sidebar','.top-bar'];");
-                hideJs.Append("sels.forEach(function(q){");
-                hideJs.Append("var el=document.querySelector(q);");
-                hideJs.Append("if(el)el.style.setProperty('display','none','important');");
-                hideJs.Append("});}");
-                hideJs.Append("new MutationObserver(function(){addS();hideEls();})");
-                hideJs.Append(".observe(document.documentElement,{childList:true,subtree:true});");
+                // Function that injects style + sets inline display:none
+                hideJs.Append("function hide(){");
+                hideJs.Append("if(!document.getElementById(\"_ah\")){");
+                hideJs.Append("var s=document.createElement(\"style\");s.id=\"_ah\";s.textContent=css;");
+                hideJs.Append("var t=document.head||document.documentElement;");
+                hideJs.Append("if(t)t.appendChild(s);}");
+                hideJs.Append("var sels=[\"nav.sidebar\",\".chat-sidebar\",\".top-bar\"];");
+                hideJs.Append("for(var i=0;i<sels.length;i++){");
+                hideJs.Append("var el=document.querySelector(sels[i]);");
+                hideJs.Append("if(el)el.style.setProperty(\"display\",\"none\",\"important\");}}");
+                // Try immediately (may fail if DOM not ready)
+                hideJs.Append("try{hide();}catch(e){}");
+                // DOMContentLoaded: inject + setup MutationObserver
+                hideJs.Append("document.addEventListener(\"DOMContentLoaded\",function(){");
+                hideJs.Append("hide();");
+                hideJs.Append("new MutationObserver(function(){hide();})");
+                hideJs.Append(".observe(document.body||document.documentElement,");
+                hideJs.Append("{childList:true,subtree:true});});");
+                // Polling fallback: every 100ms for 30s
+                hideJs.Append("var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);");
                 hideJs.Append("})();");
                 var initScript = hideJs.ToString();
                 // Remove previous injected scripts, then add new one

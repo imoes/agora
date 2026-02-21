@@ -1361,7 +1361,9 @@ static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
 
     gtk_label_set_text(win->team_channels_header, team_name);
     load_team_channels(win, team_id);
+    gtk_widget_set_no_show_all(win->team_channels_box, FALSE);
     gtk_widget_show_all(win->team_channels_box);
+    gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
 }
 
 static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
@@ -1775,7 +1777,7 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
     AgoraSession *session = agora_app_get_session(app);
 
-    /* Build JS that sets token + hides web app UI via CSS + MutationObserver */
+    /* Build JS that sets token + hides web app UI via CSS + polling + MutationObserver */
     char *js = g_strdup_printf(
         "(function(){"
         "localStorage.setItem('access_token','%s');"
@@ -1784,19 +1786,22 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
             ".chat-sidebar{display:none !important}"
             ".top-bar{display:none !important}"
             ".main-body>.content{flex:1 !important;width:100%% !important}';"
-        "function addS(){"
-            "if(document.getElementById('_agoraHide'))return;"
-            "var s=document.createElement('style');s.id='_agoraHide';s.textContent=css;"
-            "(document.head||document.documentElement).appendChild(s);}"
-        "addS();"
-        "function hideEls(){"
+        "function hide(){"
+            "if(!document.getElementById('_ah')){"
+                "var s=document.createElement('style');s.id='_ah';s.textContent=css;"
+                "var t=document.head||document.documentElement;"
+                "if(t)t.appendChild(s);}"
             "var sels=['nav.sidebar','.chat-sidebar','.top-bar'];"
-            "sels.forEach(function(q){"
-                "var el=document.querySelector(q);"
-                "if(el)el.style.setProperty('display','none','important');"
-            "});}"
-        "new MutationObserver(function(){addS();hideEls();})"
-            ".observe(document.documentElement,{childList:true,subtree:true});"
+            "for(var i=0;i<sels.length;i++){"
+                "var el=document.querySelector(sels[i]);"
+                "if(el)el.style.setProperty('display','none','important');}}"
+        "try{hide();}catch(e){}"
+        "document.addEventListener('DOMContentLoaded',function(){"
+            "hide();"
+            "new MutationObserver(function(){hide();})"
+                ".observe(document.body||document.documentElement,"
+                "{childList:true,subtree:true});});"
+        "var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);"
         "})();",
         session->token,
         session->user_id ? session->user_id : "",
