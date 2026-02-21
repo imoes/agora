@@ -1361,7 +1361,9 @@ static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
 
     gtk_label_set_text(win->team_channels_header, team_name);
     load_team_channels(win, team_id);
+    gtk_widget_set_no_show_all(win->team_channels_box, FALSE);
     gtk_widget_show_all(win->team_channels_box);
+    gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
 }
 
 static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
