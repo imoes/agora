@@ -846,6 +846,9 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   // Active speaker
   activeSpeakerId: string | null = null;
 
+  // Track whether remote participants have ever joined (to auto-close when all leave)
+  private hadRemoteParticipants = false;
+
   // Chat sidebar
   showChatPanel = false;
   chatMessages: any[] = [];
@@ -933,6 +936,15 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.webrtcService.participants$.subscribe((participants) => {
         this.participants = participants;
         this.participantList = Array.from(participants.values());
+
+        if (this.participantList.length > 0) {
+          this.hadRemoteParticipants = true;
+        } else if (this.hadRemoteParticipants) {
+          // All remote participants have left – auto-close the call
+          this.endCall();
+          return;
+        }
+
         this.updateCallableMembers();
         this.rebuildTiles();
         this.pendingStreamAttach = true;
