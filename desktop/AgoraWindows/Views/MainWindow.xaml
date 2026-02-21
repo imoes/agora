@@ -17,15 +17,23 @@
         <Border Grid.Column="0" Background="White"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <DockPanel>
-                <!-- User header -->
+                <!-- User header with settings button -->
                 <Border DockPanel.Dock="Top" Padding="16,12"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                    <StackPanel>
-                        <TextBlock x:Name="UserDisplayName" FontSize="14" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock x:Name="UserStatus" FontSize="11"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
-                    </StackPanel>
+                    <DockPanel>
+                        <Button x:Name="SettingsButton" DockPanel.Dock="Right"
+                                Content="&#x2699;" FontSize="18" Padding="4,0"
+                                Background="Transparent" BorderThickness="0"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                Cursor="Hand" Click="SettingsButton_Click"
+                                VerticalAlignment="Center" />
+                        <StackPanel>
+                            <TextBlock x:Name="UserDisplayName" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock x:Name="UserStatus" FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </DockPanel>
                 </Border>
 
                 <!-- Channel list header -->
@@ -35,28 +43,84 @@
                                Foreground="{StaticResource TextPrimaryBrush}" />
                 </Border>
 
-                <!-- Channel list -->
-                <ListBox x:Name="ChannelList" BorderThickness="0"
-                         SelectionChanged="ChannelList_SelectionChanged"
-                         Background="Transparent">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Margin="4,6">
-                                <DockPanel>
-                                    <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
-                                               Foreground="{StaticResource TextPrimaryBrush}" />
-                                    <TextBlock Text="{Binding UnreadCount}" FontSize="11"
-                                               Foreground="White" Background="{StaticResource PrimaryBrush}"
-                                               Padding="4,1" HorizontalAlignment="Right"
-                                               Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
-                                </DockPanel>
-                                <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
-                                    <Run Text="{Binding MemberCount}" /><Run Text=" members" />
-                                </TextBlock>
+                <!-- Scrollable sidebar content -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <!-- Channel list -->
+                        <ListBox x:Name="ChannelList" BorderThickness="0"
+                                 SelectionChanged="ChannelList_SelectionChanged"
+                                 Background="Transparent">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="4,6">
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="{Binding UnreadCount}" FontSize="11"
+                                                       Foreground="White" Background="{StaticResource PrimaryBrush}"
+                                                       Padding="4,1" HorizontalAlignment="Right"
+                                                       Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
+                                        </DockPanel>
+                                        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                            <Run Text="{Binding MemberCount}" /><Run Text=" members" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- Teams header -->
+                        <Border Padding="16,10"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                            <TextBlock x:Name="TeamsHeader" Text="Teams" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                        </Border>
+
+                        <!-- Teams list -->
+                        <ListBox x:Name="TeamList" BorderThickness="0"
+                                 SelectionChanged="TeamList_SelectionChanged"
+                                 Background="Transparent">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="4,6">
+                                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                            <Run Text="{Binding MemberCount}" /><Run Text=" members" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- Team channels (shown when a team is selected) -->
+                        <Border x:Name="TeamChannelsBorder" Padding="8,4,8,8" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="TeamChannelsHeader" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{StaticResource PrimaryBrush}" Margin="8,4,0,4" />
+                                <ListBox x:Name="TeamChannelList" BorderThickness="0"
+                                         SelectionChanged="TeamChannelList_SelectionChanged"
+                                         Background="Transparent">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="4,4">
+                                                <DockPanel>
+                                                    <TextBlock FontSize="12" Foreground="{StaticResource TextPrimaryBrush}">
+                                                        <Run Text="# " /><Run Text="{Binding Name}" />
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding UnreadCount}" FontSize="10"
+                                                               Foreground="White" Background="{StaticResource PrimaryBrush}"
+                                                               Padding="4,1" HorizontalAlignment="Right"
+                                                               Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
+                                                </DockPanel>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
             </DockPanel>
         </Border>
 
@@ -72,6 +136,63 @@
                            Foreground="{StaticResource TextSecondaryBrush}"
                            HorizontalAlignment="Center" Margin="0,8,0,0" />
             </StackPanel>
+
+            <!-- Settings view -->
+            <Border x:Name="SettingsView" Visibility="Collapsed" Padding="32">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="480">
+                        <TextBlock x:Name="SettingsTitle" Text="Settings" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,24" />
+
+                        <!-- Display Name -->
+                        <TextBlock x:Name="SettingsDisplayNameLabel" Text="Display Name" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <TextBox x:Name="SettingsDisplayName" Padding="8" FontSize="13" Margin="0,0,0,16"
+                                 BorderBrush="{StaticResource BorderBrush}" />
+
+                        <!-- Email -->
+                        <TextBlock x:Name="SettingsEmailLabel" Text="Email" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <TextBox x:Name="SettingsEmail" Padding="8" FontSize="13" Margin="0,0,0,16"
+                                 BorderBrush="{StaticResource BorderBrush}" />
+
+                        <!-- Language -->
+                        <TextBlock x:Name="SettingsLanguageLabel" Text="Language" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <ComboBox x:Name="SettingsLanguage" Padding="8" FontSize="13" Margin="0,0,0,24"
+                                  BorderBrush="{StaticResource BorderBrush}" />
+
+                        <Separator Margin="0,0,0,24" />
+
+                        <!-- Change Password -->
+                        <TextBlock x:Name="SettingsPasswordHeader" Text="Change Password" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16" />
+
+                        <TextBlock x:Name="SettingsCurrentPasswordLabel" Text="Current Password" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <PasswordBox x:Name="SettingsCurrentPassword" Padding="8" FontSize="13" Margin="0,0,0,16"
+                                     BorderBrush="{StaticResource BorderBrush}" />
+
+                        <TextBlock x:Name="SettingsNewPasswordLabel" Text="New Password" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <PasswordBox x:Name="SettingsNewPassword" Padding="8" FontSize="13" Margin="0,0,0,24"
+                                     BorderBrush="{StaticResource BorderBrush}" />
+
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="SettingsSaveBtn" Content="Save" Style="{StaticResource PrimaryButton}"
+                                    Padding="20,8" Click="SettingsSave_Click" Margin="0,0,12,0" />
+                            <Button x:Name="SettingsCancelBtn" Content="Cancel" Padding="20,8"
+                                    Click="SettingsCancel_Click"
+                                    Background="#E0E0E0" Foreground="#333333" BorderThickness="0" />
+                        </StackPanel>
+
+                        <!-- Status message -->
+                        <TextBlock x:Name="SettingsStatus" FontSize="12" Margin="0,12,0,0"
+                                   TextWrapping="Wrap" Visibility="Collapsed" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
 
             <!-- Chat view -->
             <Grid x:Name="ChatView" Visibility="Collapsed">
