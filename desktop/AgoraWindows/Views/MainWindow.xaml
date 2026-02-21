@@ -666,8 +666,8 @@
                 </Border>
 
                 <!-- Message input area with WYSIWYG editor -->
-                <Grid Grid.Row="4" Background="White"
-                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                <Border Grid.Row="4" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                <Grid Background="White">
                     <!-- WebView2 WYSIWYG editor (primary) -->
                     <Grid x:Name="RichEditorContainer" Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
@@ -727,6 +727,7 @@
                                  AcceptsReturn="False" />
                     </DockPanel>
                 </Grid>
+                </Border>
             </Grid>
         </Grid>
 
