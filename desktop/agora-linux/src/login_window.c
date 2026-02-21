@@ -107,7 +107,7 @@ static void agora_login_window_init(AgoraLoginWindow *win)
     /* Title */
     GtkWidget *label_title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(label_title),
-        "<span size='xx-large' weight='bold' color='#1976D2'>Agora</span>");
+        "<span size='xx-large' weight='bold' color='#6264A7'>Agora</span>");
     gtk_box_pack_start(GTK_BOX(box), label_title, FALSE, FALSE, 0);
 
     GtkWidget *subtitle = gtk_label_new("Collaboration Platform");
@@ -154,8 +154,8 @@ static void agora_login_window_init(AgoraLoginWindow *win)
     /* Apply CSS styling */
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_data(css,
-        "button { background: #1976D2; color: white; padding: 8px 16px; border-radius: 4px; }"
-        "button:hover { background: #1565C0; }"
+        "button { background: #6264A7; color: white; padding: 8px 16px; border-radius: 4px; }"
+        "button:hover { background: #515399; }"
         "entry { padding: 6px; border: 1px solid #e0e0e0; border-radius: 4px; }",
         -1, NULL);
     gtk_style_context_add_provider_for_screen(
