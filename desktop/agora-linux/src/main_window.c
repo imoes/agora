@@ -9,7 +9,15 @@ struct _AgoraMainWindow {
     GtkApplicationWindow parent;
     AgoraApiClient *api;
 
-    /* Sidebar */
+    /* Navigation sidebar */
+    GtkWidget *nav_sidebar;
+    GtkWidget *nav_feed_btn;
+    GtkWidget *nav_chat_btn;
+    GtkWidget *nav_teams_btn;
+    GtkWidget *nav_calendar_btn;
+
+    /* Channel sidebar */
+    GtkStack *sidebar_stack;
     GtkListBox *channel_list;
     GtkListBox *team_list;
     GtkListBox *team_channel_list;
@@ -26,6 +34,10 @@ struct _AgoraMainWindow {
     GtkEntry *message_entry;
     GtkWidget *chat_box;
     GtkLabel *typing_label;
+
+    /* Chat header buttons */
+    GtkWidget *video_btn;
+    GtkWidget *attach_header_btn;
 
     /* State */
     char *current_channel_id;
@@ -59,6 +71,55 @@ static void disconnect_channel_ws(AgoraMainWindow *win);
 static void play_notification_sound(AgoraMainWindow *win);
 static void download_notification_sound(AgoraMainWindow *win);
 static void show_notification(const char *title, const char *body);
+static void set_active_nav(AgoraMainWindow *win, GtkWidget *active_btn);
+static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath);
+
+/* Application CSS */
+static const char *app_css =
+    /* Navigation sidebar */
+    ".nav-sidebar { background-color: #292929; }"
+    ".nav-btn { background-image: none; background-color: transparent; border: none; "
+    "  border-left: 3px solid transparent; border-radius: 0; color: #b3b3b3; "
+    "  padding: 10px 2px; box-shadow: none; min-width: 52px; }"
+    ".nav-btn:hover { color: #ffffff; background-color: alpha(white, 0.06); }"
+    ".nav-btn label { color: inherit; }"
+    ".nav-active { color: #ffffff; border-left: 3px solid #6264a7; "
+    "  background-color: alpha(white, 0.10); }"
+    ".nav-active label { color: #ffffff; }"
+    /* Channel sidebar */
+    ".channel-sidebar { background-color: #2d2c2c; }"
+    ".channel-sidebar list { background-color: transparent; }"
+    ".channel-sidebar list row { padding: 2px 0; }"
+    ".channel-sidebar list row:selected { background-color: #6264a7; }"
+    ".channel-sidebar label { color: #e0e0e0; }"
+    ".channel-sidebar list row:selected label { color: #ffffff; }"
+    ".sidebar-header { color: #ffffff; font-weight: bold; }"
+    ".sidebar-section { color: #999999; }"
+    /* Chat header */
+    ".chat-header { background-color: #ffffff; border-bottom: 1px solid #e0e0e0; }"
+    ".chat-header-btn { background-image: none; background-color: transparent; border: none; "
+    "  color: #666666; padding: 4px 8px; border-radius: 4px; box-shadow: none; }"
+    ".chat-header-btn:hover { background-color: #f0f0f0; color: #333333; }"
+    /* Input area */
+    ".input-area { background-color: #ffffff; border-top: 1px solid #e0e0e0; }"
+    ".send-btn { background-image: none; background-color: #6264a7; color: #ffffff; "
+    "  border-radius: 4px; padding: 6px 16px; border: none; box-shadow: none; }"
+    ".send-btn:hover { background-color: #515399; }"
+    ".input-btn { background-image: none; background-color: transparent; color: #666666; "
+    "  border: none; padding: 4px 6px; border-radius: 4px; box-shadow: none; }"
+    ".input-btn:hover { background-color: #f0f0f0; }"
+    "entry.message-entry { border-radius: 20px; padding: 8px 12px; }"
+    /* Reminder bar */
+    ".reminder-bar { background-color: #FFF3E0; border-bottom: 2px solid #E65100; padding: 10px 16px; }"
+    ".reminder-title { font-weight: bold; }"
+    ".reminder-countdown { font-weight: bold; color: #6264a7; }"
+    /* User avatar */
+    ".user-avatar { background-image: none; background-color: #6264a7; border-radius: 18px; "
+    "  color: #ffffff; font-weight: bold; min-width: 36px; min-height: 36px; "
+    "  padding: 0; border: none; box-shadow: none; }"
+    /* Welcome */
+    ".welcome-title { color: #6264a7; }"
+;
 
 /* --- Channel loading --- */
 
@@ -991,6 +1052,162 @@ static gboolean check_event_reminders(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
+/* --- Navigation & action handlers --- */
+
+static GtkWidget *make_nav_btn(const char *emoji_utf8, const char *label_text)
+{
+    GtkWidget *btn = gtk_button_new();
+    GtkWidget *lbl = gtk_label_new(NULL);
+    char *markup = g_strdup_printf(
+        "<span size='16000'>%s</span>\n<span size='7500'>%s</span>",
+        emoji_utf8, label_text);
+    gtk_label_set_markup(GTK_LABEL(lbl), markup);
+    gtk_label_set_justify(GTK_LABEL(lbl), GTK_JUSTIFY_CENTER);
+    g_free(markup);
+    gtk_container_add(GTK_CONTAINER(btn), lbl);
+    GtkStyleContext *ctx = gtk_widget_get_style_context(btn);
+    gtk_style_context_add_class(ctx, "nav-btn");
+    return btn;
+}
+
+static void set_active_nav(AgoraMainWindow *win, GtkWidget *active_btn)
+{
+    gtk_style_context_remove_class(gtk_widget_get_style_context(win->nav_feed_btn), "nav-active");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(win->nav_chat_btn), "nav-active");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(win->nav_teams_btn), "nav-active");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(win->nav_calendar_btn), "nav-active");
+    if (active_btn)
+        gtk_style_context_add_class(gtk_widget_get_style_context(active_btn), "nav-active");
+}
+
+static void on_nav_chat_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    gtk_stack_set_visible_child_name(win->sidebar_stack, "chats");
+    set_active_nav(win, win->nav_chat_btn);
+}
+
+static void on_nav_teams_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    gtk_stack_set_visible_child_name(win->sidebar_stack, "teams");
+    set_active_nav(win, win->nav_teams_btn);
+}
+
+static void on_nav_feed_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    gtk_stack_set_visible_child_name(win->content_stack, "feed");
+    set_active_nav(win, win->nav_feed_btn);
+}
+
+static void on_nav_calendar_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *session = agora_app_get_session(app);
+    char *url = g_strdup_printf("%s/calendar", session->base_url);
+    g_app_info_launch_default_for_uri(url, NULL, NULL);
+    g_free(url);
+    set_active_nav(win, win->nav_calendar_btn);
+}
+
+static void on_video_call_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->current_channel_id) return;
+
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *session = agora_app_get_session(app);
+    char *base = g_strdup(session->base_url);
+    char *api_pos = g_strrstr(base, "/api");
+    if (api_pos) *api_pos = '\0';
+    char *url = g_strdup_printf("%s/video/%s", base, win->current_channel_id);
+    g_free(base);
+    g_app_info_launch_default_for_uri(url, NULL, NULL);
+    g_free(url);
+}
+
+static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath)
+{
+    if (!win->current_channel_id || !win->api) return;
+
+    gchar *contents = NULL;
+    gsize length = 0;
+    GError *err = NULL;
+    if (!g_file_get_contents(filepath, &contents, &length, &err)) {
+        if (err) g_error_free(err);
+        return;
+    }
+
+    char *basename_str = g_path_get_basename(filepath);
+
+    const char *content_type = "application/octet-stream";
+    const char *ext = strrchr(basename_str, '.');
+    if (ext) {
+        if (g_ascii_strcasecmp(ext, ".png") == 0) content_type = "image/png";
+        else if (g_ascii_strcasecmp(ext, ".jpg") == 0 || g_ascii_strcasecmp(ext, ".jpeg") == 0) content_type = "image/jpeg";
+        else if (g_ascii_strcasecmp(ext, ".gif") == 0) content_type = "image/gif";
+        else if (g_ascii_strcasecmp(ext, ".pdf") == 0) content_type = "application/pdf";
+        else if (g_ascii_strcasecmp(ext, ".txt") == 0) content_type = "text/plain";
+    }
+
+    SoupMultipart *multipart = soup_multipart_new("multipart/form-data");
+    SoupBuffer *buffer = soup_buffer_new(SOUP_MEMORY_COPY, contents, length);
+    soup_multipart_append_form_file(multipart, "file", basename_str, content_type, buffer);
+    soup_buffer_free(buffer);
+    g_free(contents);
+
+    char *url = g_strdup_printf("%s/api/channels/%s/upload",
+                                 win->api->base_url, win->current_channel_id);
+    SoupMessage *msg = soup_form_request_new_from_multipart(url, multipart);
+    g_free(url);
+    soup_multipart_free(multipart);
+
+    if (win->api->token) {
+        char *auth = g_strdup_printf("Bearer %s", win->api->token);
+        soup_message_headers_replace(msg->request_headers, "Authorization", auth);
+        g_free(auth);
+    }
+
+    SoupSession *session = soup_session_new_with_options(SOUP_SESSION_SSL_STRICT, FALSE, NULL);
+    soup_session_send_message(session, msg);
+
+    g_object_unref(msg);
+    g_object_unref(session);
+    g_free(basename_str);
+}
+
+static void on_attach_file_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->current_channel_id) return;
+
+    GtkWidget *dialog = gtk_file_chooser_dialog_new(
+        T("chat.attach_file"),
+        GTK_WINDOW(win),
+        GTK_FILE_CHOOSER_ACTION_OPEN,
+        "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Open", GTK_RESPONSE_ACCEPT,
+        NULL);
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        if (filename) {
+            upload_file_to_channel(win, filename);
+            g_free(filename);
+        }
+    }
+
+    gtk_widget_destroy(dialog);
+}
+
 /* --- Widget setup --- */
 
 static void agora_main_window_finalize(GObject *obj)
@@ -1038,40 +1255,92 @@ static void agora_main_window_init(AgoraMainWindow *win)
     win->dismissed_reminders = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     gtk_window_set_title(GTK_WINDOW(win), "Agora");
-    gtk_window_set_default_size(GTK_WINDOW(win), 960, 600);
+    gtk_window_set_default_size(GTK_WINDOW(win), 1100, 650);
     gtk_window_set_position(GTK_WINDOW(win), GTK_WIN_POS_CENTER);
 
-    /* Main horizontal pane */
-    GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_position(GTK_PANED(paned), 260);
-    gtk_container_add(GTK_CONTAINER(win), paned);
+    /* --- Apply comprehensive CSS theme --- */
+    GtkCssProvider *css_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css_provider, app_css, -1, NULL);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+        GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(css_provider);
 
-    /* --- Sidebar --- */
-    GtkWidget *sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    /* ========================================================
+     * 3-column layout: [nav 52px] | [sidebar 260px] | [content]
+     * ======================================================== */
+    GtkWidget *main_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_container_add(GTK_CONTAINER(win), main_hbox);
 
-    /* User header */
+    /* ===================== Column 1: Navigation sidebar ===================== */
+    win->nav_sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(win->nav_sidebar, 52, -1);
+    gtk_style_context_add_class(gtk_widget_get_style_context(win->nav_sidebar), "nav-sidebar");
+
+    /* Nav buttons */
+    win->nav_feed_btn = make_nav_btn("\xF0\x9F\x93\xB0", T("nav.feed"));       /* 📰 */
+    win->nav_chat_btn = make_nav_btn("\xF0\x9F\x92\xAC", T("nav.chat"));       /* 💬 */
+    win->nav_teams_btn = make_nav_btn("\xF0\x9F\x91\xA5", T("nav.teams"));     /* 👥 */
+    win->nav_calendar_btn = make_nav_btn("\xF0\x9F\x93\x85", T("nav.calendar")); /* 📅 */
+
+    g_signal_connect(win->nav_feed_btn, "clicked", G_CALLBACK(on_nav_feed_clicked), win);
+    g_signal_connect(win->nav_chat_btn, "clicked", G_CALLBACK(on_nav_chat_clicked), win);
+    g_signal_connect(win->nav_teams_btn, "clicked", G_CALLBACK(on_nav_teams_clicked), win);
+    g_signal_connect(win->nav_calendar_btn, "clicked", G_CALLBACK(on_nav_calendar_clicked), win);
+
+    gtk_box_pack_start(GTK_BOX(win->nav_sidebar), win->nav_feed_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(win->nav_sidebar), win->nav_chat_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(win->nav_sidebar), win->nav_teams_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(win->nav_sidebar), win->nav_calendar_btn, FALSE, FALSE, 0);
+
+    /* Spacer pushes avatar to bottom */
+    GtkWidget *nav_spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(win->nav_sidebar), nav_spacer, TRUE, TRUE, 0);
+
+    /* User avatar circle at bottom of nav */
+    GtkWidget *avatar_btn = gtk_button_new_with_label("A");
+    gtk_style_context_add_class(gtk_widget_get_style_context(avatar_btn), "user-avatar");
+    gtk_widget_set_halign(avatar_btn, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_bottom(avatar_btn, 12);
+    gtk_box_pack_start(GTK_BOX(win->nav_sidebar), avatar_btn, FALSE, FALSE, 0);
+
+    /* Set Chat as active by default */
+    set_active_nav(win, win->nav_chat_btn);
+
+    gtk_box_pack_start(GTK_BOX(main_hbox), win->nav_sidebar, FALSE, FALSE, 0);
+
+    /* ===================== Column 2: Channel/Team sidebar ===================== */
+    GtkWidget *channel_sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(channel_sidebar, 260, -1);
+    gtk_style_context_add_class(gtk_widget_get_style_context(channel_sidebar), "channel-sidebar");
+
+    /* User header in sidebar */
     win->user_label = GTK_LABEL(gtk_label_new(""));
-    GtkWidget *user_frame = gtk_frame_new(NULL);
-    gtk_container_set_border_width(GTK_CONTAINER(user_frame), 0);
-    gtk_container_add(GTK_CONTAINER(user_frame), GTK_WIDGET(win->user_label));
-    gtk_widget_set_margin_start(GTK_WIDGET(win->user_label), 12);
-    gtk_widget_set_margin_top(GTK_WIDGET(win->user_label), 8);
-    gtk_widget_set_margin_bottom(GTK_WIDGET(win->user_label), 8);
+    gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(win->user_label)), "sidebar-header");
     gtk_widget_set_halign(GTK_WIDGET(win->user_label), GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(sidebar), user_frame, FALSE, FALSE, 0);
+    gtk_widget_set_margin_start(GTK_WIDGET(win->user_label), 16);
+    gtk_widget_set_margin_top(GTK_WIDGET(win->user_label), 14);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(win->user_label), 10);
+    gtk_box_pack_start(GTK_BOX(channel_sidebar), GTK_WIDGET(win->user_label), FALSE, FALSE, 0);
 
-    /* "Chats" header */
+    /* Sidebar stack (switches between Chats and Teams views) */
+    win->sidebar_stack = GTK_STACK(gtk_stack_new());
+    gtk_stack_set_transition_type(win->sidebar_stack, GTK_STACK_TRANSITION_TYPE_CROSSFADE);
+    gtk_stack_set_transition_duration(win->sidebar_stack, 150);
+
+    /* --- Chats page --- */
+    GtkWidget *chats_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
     GtkWidget *chats_label = gtk_label_new(NULL);
     char *chats_markup = g_strdup_printf("<b>%s</b>", T("chat.chats"));
     gtk_label_set_markup(GTK_LABEL(chats_label), chats_markup);
     g_free(chats_markup);
+    gtk_style_context_add_class(gtk_widget_get_style_context(chats_label), "sidebar-section");
     gtk_widget_set_halign(chats_label, GTK_ALIGN_START);
-    gtk_widget_set_margin_start(chats_label, 12);
-    gtk_widget_set_margin_top(chats_label, 8);
+    gtk_widget_set_margin_start(chats_label, 16);
+    gtk_widget_set_margin_top(chats_label, 4);
     gtk_widget_set_margin_bottom(chats_label, 4);
-    gtk_box_pack_start(GTK_BOX(sidebar), chats_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(chats_page), chats_label, FALSE, FALSE, 0);
 
-    /* Channel list */
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -1079,23 +1348,24 @@ static void agora_main_window_init(AgoraMainWindow *win)
     g_signal_connect(win->channel_list, "row-selected",
                      G_CALLBACK(on_channel_selected), win);
     gtk_container_add(GTK_CONTAINER(scroll), GTK_WIDGET(win->channel_list));
-    gtk_box_pack_start(GTK_BOX(sidebar), scroll, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(chats_page), scroll, TRUE, TRUE, 0);
 
-    /* "Teams" header */
-    GtkWidget *teams_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_box_pack_start(GTK_BOX(sidebar), teams_sep, FALSE, FALSE, 0);
+    gtk_stack_add_named(win->sidebar_stack, chats_page, "chats");
+
+    /* --- Teams page --- */
+    GtkWidget *teams_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
     GtkWidget *teams_label = gtk_label_new(NULL);
     char *teams_markup = g_strdup_printf("<b>%s</b>", T("teams.teams"));
     gtk_label_set_markup(GTK_LABEL(teams_label), teams_markup);
     g_free(teams_markup);
+    gtk_style_context_add_class(gtk_widget_get_style_context(teams_label), "sidebar-section");
     gtk_widget_set_halign(teams_label, GTK_ALIGN_START);
-    gtk_widget_set_margin_start(teams_label, 12);
-    gtk_widget_set_margin_top(teams_label, 8);
+    gtk_widget_set_margin_start(teams_label, 16);
+    gtk_widget_set_margin_top(teams_label, 4);
     gtk_widget_set_margin_bottom(teams_label, 4);
-    gtk_box_pack_start(GTK_BOX(sidebar), teams_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(teams_page), teams_label, FALSE, FALSE, 0);
 
-    /* Team list */
     GtkWidget *team_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(team_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -1103,7 +1373,7 @@ static void agora_main_window_init(AgoraMainWindow *win)
     g_signal_connect(win->team_list, "row-selected",
                      G_CALLBACK(on_team_selected), win);
     gtk_container_add(GTK_CONTAINER(team_scroll), GTK_WIDGET(win->team_list));
-    gtk_box_pack_start(GTK_BOX(sidebar), team_scroll, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(teams_page), team_scroll, TRUE, TRUE, 0);
 
     /* Team channels (hidden until a team is selected) */
     win->team_channels_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1115,8 +1385,8 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_label_set_attributes(win->team_channels_header, tch_attrs);
     pango_attr_list_unref(tch_attrs);
     gtk_widget_set_halign(GTK_WIDGET(win->team_channels_header), GTK_ALIGN_START);
-    gtk_widget_set_margin_start(GTK_WIDGET(win->team_channels_header), 12);
-    gtk_widget_set_margin_top(GTK_WIDGET(win->team_channels_header), 4);
+    gtk_widget_set_margin_start(GTK_WIDGET(win->team_channels_header), 16);
+    gtk_widget_set_margin_top(GTK_WIDGET(win->team_channels_header), 8);
     gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channels_header), FALSE, FALSE, 0);
 
     win->team_channel_list = GTK_LIST_BOX(gtk_list_box_new());
@@ -1124,23 +1394,68 @@ static void agora_main_window_init(AgoraMainWindow *win)
                      G_CALLBACK(on_team_channel_selected), win);
     gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channel_list), FALSE, FALSE, 0);
 
-    gtk_box_pack_start(GTK_BOX(sidebar), win->team_channels_box, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(teams_page), win->team_channels_box, FALSE, FALSE, 0);
 
-    gtk_paned_pack1(GTK_PANED(paned), sidebar, FALSE, FALSE);
+    gtk_stack_add_named(win->sidebar_stack, teams_page, "teams");
 
-    /* --- Content area (stack: empty / chat) --- */
+    /* Show chats by default */
+    gtk_stack_set_visible_child_name(win->sidebar_stack, "chats");
+
+    gtk_box_pack_start(GTK_BOX(channel_sidebar), GTK_WIDGET(win->sidebar_stack), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(main_hbox), channel_sidebar, FALSE, FALSE, 0);
+
+    /* ===================== Column 3: Content area ===================== */
+    GtkWidget *right_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* --- Event Reminder Bar (above content stack) --- */
+    win->reminder_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    GtkStyleContext *ctx = gtk_widget_get_style_context(win->reminder_bar);
+    gtk_style_context_add_class(ctx, "reminder-bar");
+    gtk_container_set_border_width(GTK_CONTAINER(win->reminder_bar), 0);
+
+    GtkWidget *bell_label = gtk_label_new("\xF0\x9F\x94\x94");  /* 🔔 */
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), bell_label, FALSE, FALSE, 0);
+
+    GtkWidget *reminder_info = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    win->reminder_title_label = GTK_LABEL(gtk_label_new(""));
+    ctx = gtk_widget_get_style_context(GTK_WIDGET(win->reminder_title_label));
+    gtk_style_context_add_class(ctx, "reminder-title");
+    gtk_widget_set_halign(GTK_WIDGET(win->reminder_title_label), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(reminder_info), GTK_WIDGET(win->reminder_title_label), FALSE, FALSE, 0);
+
+    win->reminder_countdown_label = GTK_LABEL(gtk_label_new(""));
+    ctx = gtk_widget_get_style_context(GTK_WIDGET(win->reminder_countdown_label));
+    gtk_style_context_add_class(ctx, "reminder-countdown");
+    gtk_widget_set_halign(GTK_WIDGET(win->reminder_countdown_label), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(reminder_info), GTK_WIDGET(win->reminder_countdown_label), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), reminder_info, TRUE, TRUE, 0);
+
+    win->reminder_join_btn = gtk_button_new_with_label(T("reminder.join"));
+    g_signal_connect(win->reminder_join_btn, "clicked", G_CALLBACK(on_reminder_join_clicked), win);
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), win->reminder_join_btn, FALSE, FALSE, 0);
+
+    GtkWidget *dismiss_btn = gtk_button_new_with_label(T("reminder.dismiss"));
+    g_signal_connect(dismiss_btn, "clicked", G_CALLBACK(on_reminder_dismiss_clicked), win);
+    gtk_box_pack_start(GTK_BOX(win->reminder_bar), dismiss_btn, FALSE, FALSE, 0);
+
+    gtk_widget_set_no_show_all(win->reminder_bar, TRUE);
+    gtk_box_pack_start(GTK_BOX(right_vbox), win->reminder_bar, FALSE, FALSE, 0);
+
+    /* --- Content stack --- */
     win->content_stack = GTK_STACK(gtk_stack_new());
 
-    /* Empty state */
+    /* Empty / welcome state */
     GtkWidget *empty_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_valign(empty_box, GTK_ALIGN_CENTER);
     gtk_widget_set_halign(empty_box, GTK_ALIGN_CENTER);
 
     GtkWidget *welcome = gtk_label_new(NULL);
     char *welcome_markup = g_strdup_printf(
-        "<span size='x-large' weight='bold'>%s</span>", T("welcome.title"));
+        "<span size='x-large' weight='bold' color='#6264a7'>%s</span>", T("welcome.title"));
     gtk_label_set_markup(GTK_LABEL(welcome), welcome_markup);
     g_free(welcome_markup);
+    gtk_style_context_add_class(gtk_widget_get_style_context(welcome), "welcome-title");
     gtk_box_pack_start(GTK_BOX(empty_box), welcome, FALSE, FALSE, 0);
 
     GtkWidget *hint = gtk_label_new(T("welcome.subtitle"));
@@ -1148,25 +1463,66 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_stack_add_named(win->content_stack, empty_box, "empty");
 
-    /* Chat view */
+    /* Feed placeholder */
+    GtkWidget *feed_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_valign(feed_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(feed_box, GTK_ALIGN_CENTER);
+
+    GtkWidget *feed_icon = gtk_label_new("\xF0\x9F\x93\xB0");  /* 📰 */
+    PangoAttrList *feed_icon_attrs = pango_attr_list_new();
+    pango_attr_list_insert(feed_icon_attrs, pango_attr_size_new(32 * PANGO_SCALE));
+    gtk_label_set_attributes(GTK_LABEL(feed_icon), feed_icon_attrs);
+    pango_attr_list_unref(feed_icon_attrs);
+    gtk_box_pack_start(GTK_BOX(feed_box), feed_icon, FALSE, FALSE, 0);
+
+    GtkWidget *feed_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(feed_title),
+        "<span size='large' weight='bold'>Activity Feed</span>");
+    gtk_box_pack_start(GTK_BOX(feed_box), feed_title, FALSE, FALSE, 0);
+
+    GtkWidget *feed_hint = gtk_label_new(T("welcome.subtitle"));
+    gtk_box_pack_start(GTK_BOX(feed_box), feed_hint, FALSE, FALSE, 0);
+
+    gtk_stack_add_named(win->content_stack, feed_box, "feed");
+
+    /* --- Chat view --- */
     win->chat_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
-    /* Chat header */
+    /* Chat header bar with title + action buttons */
+    GtkWidget *chat_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_style_context_add_class(gtk_widget_get_style_context(chat_header), "chat-header");
+    gtk_container_set_border_width(GTK_CONTAINER(chat_header), 0);
+
     win->chat_title = GTK_LABEL(gtk_label_new(""));
     PangoAttrList *title_attrs = pango_attr_list_new();
     pango_attr_list_insert(title_attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
-    pango_attr_list_insert(title_attrs, pango_attr_size_new(15 * PANGO_SCALE));
+    pango_attr_list_insert(title_attrs, pango_attr_size_new(14 * PANGO_SCALE));
     gtk_label_set_attributes(win->chat_title, title_attrs);
     pango_attr_list_unref(title_attrs);
     gtk_widget_set_halign(GTK_WIDGET(win->chat_title), GTK_ALIGN_START);
     gtk_widget_set_margin_start(GTK_WIDGET(win->chat_title), 16);
-    gtk_widget_set_margin_top(GTK_WIDGET(win->chat_title), 10);
-    gtk_widget_set_margin_bottom(GTK_WIDGET(win->chat_title), 10);
-    gtk_box_pack_start(GTK_BOX(win->chat_box), GTK_WIDGET(win->chat_title),
-                       FALSE, FALSE, 0);
+    gtk_widget_set_margin_top(GTK_WIDGET(win->chat_title), 12);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(win->chat_title), 12);
+    gtk_box_pack_start(GTK_BOX(chat_header), GTK_WIDGET(win->chat_title), TRUE, TRUE, 0);
 
-    gtk_box_pack_start(GTK_BOX(win->chat_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),
-                       FALSE, FALSE, 0);
+    /* Video call button */
+    win->video_btn = gtk_button_new_with_label("\xF0\x9F\x93\xB9");  /* 📹 */
+    gtk_style_context_add_class(gtk_widget_get_style_context(win->video_btn), "chat-header-btn");
+    gtk_widget_set_tooltip_text(win->video_btn, T("chat.video_call"));
+    gtk_widget_set_valign(win->video_btn, GTK_ALIGN_CENTER);
+    g_signal_connect(win->video_btn, "clicked", G_CALLBACK(on_video_call_clicked), win);
+    gtk_box_pack_start(GTK_BOX(chat_header), win->video_btn, FALSE, FALSE, 0);
+
+    /* Attach file button (header) */
+    win->attach_header_btn = gtk_button_new_with_label("\xF0\x9F\x93\x8E");  /* 📎 */
+    gtk_style_context_add_class(gtk_widget_get_style_context(win->attach_header_btn), "chat-header-btn");
+    gtk_widget_set_tooltip_text(win->attach_header_btn, T("chat.attach_file"));
+    gtk_widget_set_valign(win->attach_header_btn, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_end(win->attach_header_btn, 8);
+    g_signal_connect(win->attach_header_btn, "clicked", G_CALLBACK(on_attach_file_clicked), win);
+    gtk_box_pack_start(GTK_BOX(chat_header), win->attach_header_btn, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(win->chat_box), chat_header, FALSE, FALSE, 0);
 
     /* Message view */
     GtkWidget *msg_scroll = gtk_scrolled_window_new(NULL, NULL);
@@ -1177,9 +1533,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_text_view_set_editable(win->message_view, FALSE);
     gtk_text_view_set_cursor_visible(win->message_view, FALSE);
     gtk_text_view_set_wrap_mode(win->message_view, GTK_WRAP_WORD_CHAR);
-    gtk_text_view_set_left_margin(win->message_view, 12);
-    gtk_text_view_set_right_margin(win->message_view, 12);
-    gtk_text_view_set_top_margin(win->message_view, 8);
+    gtk_text_view_set_left_margin(win->message_view, 16);
+    gtk_text_view_set_right_margin(win->message_view, 16);
+    gtk_text_view_set_top_margin(win->message_view, 12);
+    gtk_text_view_set_bottom_margin(win->message_view, 8);
     gtk_container_add(GTK_CONTAINER(msg_scroll), GTK_WIDGET(win->message_view));
     gtk_box_pack_start(GTK_BOX(win->chat_box), msg_scroll, TRUE, TRUE, 0);
 
@@ -1198,89 +1555,49 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_box_pack_start(GTK_BOX(win->chat_box), GTK_WIDGET(win->typing_label),
                        FALSE, FALSE, 0);
 
-    gtk_box_pack_start(GTK_BOX(win->chat_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),
-                       FALSE, FALSE, 0);
+    /* Input area with buttons */
+    GtkWidget *input_area = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_style_context_add_class(gtk_widget_get_style_context(input_area), "input-area");
+    gtk_container_set_border_width(GTK_CONTAINER(input_area), 8);
 
-    /* Message input */
-    GtkWidget *input_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_container_set_border_width(GTK_CONTAINER(input_box), 8);
+    /* Attach file button (input) */
+    GtkWidget *attach_input_btn = gtk_button_new_with_label("\xF0\x9F\x93\x8E");  /* 📎 */
+    gtk_style_context_add_class(gtk_widget_get_style_context(attach_input_btn), "input-btn");
+    gtk_widget_set_tooltip_text(attach_input_btn, T("chat.attach_file"));
+    g_signal_connect(attach_input_btn, "clicked", G_CALLBACK(on_attach_file_clicked), win);
+    gtk_box_pack_start(GTK_BOX(input_area), attach_input_btn, FALSE, FALSE, 0);
 
+    /* Emoji button */
+    GtkWidget *emoji_btn = gtk_button_new_with_label("\xF0\x9F\x98\x8A");  /* 😊 */
+    gtk_style_context_add_class(gtk_widget_get_style_context(emoji_btn), "input-btn");
+    gtk_widget_set_tooltip_text(emoji_btn, "Emoji");
+    gtk_box_pack_start(GTK_BOX(input_area), emoji_btn, FALSE, FALSE, 0);
+
+    /* Message entry */
     win->message_entry = GTK_ENTRY(gtk_entry_new());
+    gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(win->message_entry)), "message-entry");
     gtk_entry_set_placeholder_text(win->message_entry, T("chat.input_placeholder"));
     g_signal_connect(win->message_entry, "activate",
                      G_CALLBACK(on_entry_activate), win);
     g_signal_connect(win->message_entry, "changed",
                      G_CALLBACK(on_entry_changed), win);
-    gtk_box_pack_start(GTK_BOX(input_box), GTK_WIDGET(win->message_entry), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(input_area), GTK_WIDGET(win->message_entry), TRUE, TRUE, 0);
 
+    /* Send button */
     GtkWidget *send_btn = gtk_button_new_with_label(T("chat.send"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(send_btn), "send-btn");
     g_signal_connect(send_btn, "clicked", G_CALLBACK(on_send_clicked), win);
-    gtk_box_pack_start(GTK_BOX(input_box), send_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(input_area), send_btn, FALSE, FALSE, 0);
 
-    gtk_box_pack_start(GTK_BOX(win->chat_box), input_box, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(win->chat_box), input_area, FALSE, FALSE, 0);
 
     gtk_stack_add_named(win->content_stack, win->chat_box, "chat");
     gtk_stack_set_visible_child_name(win->content_stack, "empty");
 
-    /* --- Event Reminder Bar (above content stack) --- */
-    GtkWidget *right_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-
-    win->reminder_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    GtkStyleContext *ctx = gtk_widget_get_style_context(win->reminder_bar);
-    gtk_style_context_add_class(ctx, "suggested-action");
-
-    /* Add a colored background via CSS */
-    GtkCssProvider *css_provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(css_provider,
-        ".reminder-bar { background: #FFF3E0; border-bottom: 2px solid #E65100; padding: 10px 16px; }"
-        ".reminder-title { font-weight: bold; font-size: 14px; }"
-        ".reminder-countdown { font-weight: bold; font-size: 16px; color: #6200EE; }",
-        -1, NULL);
-    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
-        GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(css_provider);
-
-    ctx = gtk_widget_get_style_context(win->reminder_bar);
-    gtk_style_context_add_class(ctx, "reminder-bar");
-    gtk_container_set_border_width(GTK_CONTAINER(win->reminder_bar), 0);
-
-    /* Bell icon */
-    GtkWidget *bell_label = gtk_label_new("\xF0\x9F\x94\x94");  /* bell emoji */
-    gtk_box_pack_start(GTK_BOX(win->reminder_bar), bell_label, FALSE, FALSE, 0);
-
-    /* Title + countdown */
-    GtkWidget *reminder_info = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    win->reminder_title_label = GTK_LABEL(gtk_label_new(""));
-    ctx = gtk_widget_get_style_context(GTK_WIDGET(win->reminder_title_label));
-    gtk_style_context_add_class(ctx, "reminder-title");
-    gtk_widget_set_halign(GTK_WIDGET(win->reminder_title_label), GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(reminder_info), GTK_WIDGET(win->reminder_title_label), FALSE, FALSE, 0);
-
-    win->reminder_countdown_label = GTK_LABEL(gtk_label_new(""));
-    ctx = gtk_widget_get_style_context(GTK_WIDGET(win->reminder_countdown_label));
-    gtk_style_context_add_class(ctx, "reminder-countdown");
-    gtk_widget_set_halign(GTK_WIDGET(win->reminder_countdown_label), GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(reminder_info), GTK_WIDGET(win->reminder_countdown_label), FALSE, FALSE, 0);
-
-    gtk_box_pack_start(GTK_BOX(win->reminder_bar), reminder_info, TRUE, TRUE, 0);
-
-    /* Join button */
-    win->reminder_join_btn = gtk_button_new_with_label(T("reminder.join"));
-    g_signal_connect(win->reminder_join_btn, "clicked", G_CALLBACK(on_reminder_join_clicked), win);
-    gtk_box_pack_start(GTK_BOX(win->reminder_bar), win->reminder_join_btn, FALSE, FALSE, 0);
-
-    /* Dismiss button */
-    GtkWidget *dismiss_btn = gtk_button_new_with_label(T("reminder.dismiss"));
-    g_signal_connect(dismiss_btn, "clicked", G_CALLBACK(on_reminder_dismiss_clicked), win);
-    gtk_box_pack_start(GTK_BOX(win->reminder_bar), dismiss_btn, FALSE, FALSE, 0);
-
-    gtk_widget_set_no_show_all(win->reminder_bar, TRUE);
-    gtk_box_pack_start(GTK_BOX(right_vbox), win->reminder_bar, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(right_vbox), GTK_WIDGET(win->content_stack), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(main_hbox), right_vbox, TRUE, TRUE, 0);
 
-    gtk_paned_pack2(GTK_PANED(paned), right_vbox, TRUE, FALSE);
-
-    gtk_widget_show_all(paned);
+    gtk_widget_show_all(main_hbox);
 }
 
 GtkWidget *agora_main_window_new(AgoraApp *app)

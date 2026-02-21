@@ -63,6 +63,13 @@ static const TransEntry en_entries[] = {
     {"reminder.dismiss", "Dismiss"},
     {"teams.teams", "Teams"},
     {"teams.error_loading", "Error loading teams"},
+    {"nav.feed", "Feed"},
+    {"nav.chat", "Chat"},
+    {"nav.teams", "Teams"},
+    {"nav.calendar", "Calendar"},
+    {"chat.video_call", "Video Call"},
+    {"chat.attach_file", "Attach File"},
+    {"chat.emoji", "Emoji"},
     {NULL, NULL}
 };
 
@@ -103,6 +110,13 @@ static const TransEntry de_entries[] = {
     {"reminder.dismiss", "Schliessen"},
     {"teams.teams", "Teams"},
     {"teams.error_loading", "Fehler beim Laden der Teams"},
+    {"nav.feed", "Feed"},
+    {"nav.chat", "Chat"},
+    {"nav.teams", "Teams"},
+    {"nav.calendar", "Kalender"},
+    {"chat.video_call", "Videoanruf"},
+    {"chat.attach_file", "Datei anh\xc3\xa4ngen"},
+    {"chat.emoji", "Emoji"},
     {NULL, NULL}
 };
 
