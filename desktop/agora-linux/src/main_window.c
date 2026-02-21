@@ -702,6 +702,82 @@ static void load_calendar_events(AgoraMainWindow *win)
     json_node_unref(result);
 }
 
+/* --- Image loading helper --- */
+
+static GdkPixbuf *download_inline_image(AgoraMainWindow *win, const char *ref_id,
+                                          int max_width)
+{
+    if (!ref_id || !win->api || !win->api->token) return NULL;
+
+    char *url = g_strdup_printf("%s/api/files/inline/%s?token=%s",
+                                 win->api->base_url, ref_id, win->api->token);
+    SoupSession *session = soup_session_new();
+    SoupMessage *msg = soup_message_new("GET", url);
+    g_free(url);
+    if (!msg) { g_object_unref(session); return NULL; }
+
+    g_signal_connect(msg, "accept-certificate", G_CALLBACK(accept_cert_cb), NULL);
+    GInputStream *stream = soup_session_send(session, msg, NULL, NULL);
+    if (!stream) {
+        g_object_unref(msg);
+        g_object_unref(session);
+        return NULL;
+    }
+
+    guint status = soup_message_get_status(msg);
+    if (status != 200) {
+        g_object_unref(stream);
+        g_object_unref(msg);
+        g_object_unref(session);
+        return NULL;
+    }
+
+    /* Load pixbuf from stream */
+    GError *err = NULL;
+    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(stream, NULL, &err);
+    g_object_unref(stream);
+    g_object_unref(msg);
+    g_object_unref(session);
+
+    if (!pixbuf) {
+        if (err) g_error_free(err);
+        return NULL;
+    }
+
+    /* Scale if too wide */
+    int w = gdk_pixbuf_get_width(pixbuf);
+    int h = gdk_pixbuf_get_height(pixbuf);
+    if (w > max_width) {
+        int new_h = (int)((double)h * max_width / w);
+        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(pixbuf, max_width, new_h,
+                                                      GDK_INTERP_BILINEAR);
+        g_object_unref(pixbuf);
+        pixbuf = scaled;
+    }
+
+    return pixbuf;
+}
+
+/* Check if content indicates an image file */
+static gboolean is_image_content(const char *content)
+{
+    if (!content) return FALSE;
+    /* Check for "mime:image/" pattern in content */
+    if (g_strstr_len(content, -1, "mime:image/")) return TRUE;
+    /* Check common image extensions in Datei: line */
+    const char *lower = NULL;
+    char *tmp = g_ascii_strdown(content, -1);
+    lower = tmp;
+    gboolean is_img = (g_strstr_len(lower, -1, ".jpg") ||
+                        g_strstr_len(lower, -1, ".jpeg") ||
+                        g_strstr_len(lower, -1, ".png") ||
+                        g_strstr_len(lower, -1, ".gif") ||
+                        g_strstr_len(lower, -1, ".webp") ||
+                        g_strstr_len(lower, -1, ".bmp"));
+    g_free(tmp);
+    return is_img;
+}
+
 /* --- Message loading --- */
 
 static void load_messages(AgoraMainWindow *win, const char *channel_id)
@@ -745,6 +821,11 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
             g_free(reply_line);
         }
 
+        /* File reference for images */
+        const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
+            !json_object_get_null_member(msg, "file_reference_id")
+            ? json_object_get_string_member(msg, "file_reference_id") : NULL;
+
         /* Message content */
         const char *edited_tag = has_edited ? T("chat.edited") : "";
         char sys_prefix[64] = "";
@@ -758,14 +839,45 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
             type_prefix = file_prefix;
         }
 
-        char *line = g_strdup_printf("[%s] %s%s: %s%s\n",
-                                     created ? created : "",
-                                     type_prefix,
-                                     sender ? sender : "?",
-                                     content ? content : "",
-                                     edited_tag);
-        gtk_text_buffer_insert(win->message_buffer, &iter, line, -1);
-        g_free(line);
+        /* Sender header line */
+        char *header_line = g_strdup_printf("[%s] %s%s: %s",
+                                             created ? created : "",
+                                             type_prefix,
+                                             sender ? sender : "?",
+                                             edited_tag);
+        gtk_text_buffer_insert(win->message_buffer, &iter, header_line, -1);
+        g_free(header_line);
+
+        /* Display image inline if this is a file message with an image */
+        if (file_ref_id && msg_type && g_strcmp0(msg_type, "file") == 0 &&
+            is_image_content(content)) {
+            /* Show filename on same line */
+            /* Extract filename from "Datei: filename.ext\n..." */
+            const char *name_start = content;
+            if (g_str_has_prefix(content, "Datei: "))
+                name_start = content + 7;
+            const char *nl = strchr(name_start, '\n');
+            char *filename = nl ? g_strndup(name_start, (gsize)(nl - name_start))
+                                : g_strdup(name_start);
+            char *fn_line = g_strdup_printf(" %s\n", filename);
+            gtk_text_buffer_insert(win->message_buffer, &iter, fn_line, -1);
+            g_free(fn_line);
+            g_free(filename);
+
+            /* Download and insert image */
+            GdkPixbuf *pixbuf = download_inline_image(win, file_ref_id, 400);
+            if (pixbuf) {
+                gtk_text_buffer_insert_pixbuf(win->message_buffer, &iter, pixbuf);
+                gtk_text_buffer_insert(win->message_buffer, &iter, "\n", -1);
+                g_object_unref(pixbuf);
+            }
+        } else {
+            /* Regular text content */
+            char *content_line = g_strdup_printf("%s\n",
+                                                  content ? content : "");
+            gtk_text_buffer_insert(win->message_buffer, &iter, content_line, -1);
+            g_free(content_line);
+        }
 
         /* Reactions (backend sends as array of {emoji, user_id, display_name}) */
         if (json_object_has_member(msg, "reactions") &&
@@ -1530,6 +1642,16 @@ static void on_nav_calendar_clicked(GtkButton *btn, gpointer data)
     set_active_nav(win, win->nav_calendar_btn);
 }
 
+/* Grant camera/microphone permission requests in the video WebView */
+static gboolean on_video_permission_request(WebKitWebView *webview,
+                                             WebKitPermissionRequest *request,
+                                             gpointer user_data)
+{
+    (void)webview; (void)user_data;
+    webkit_permission_request_allow(request);
+    return TRUE;
+}
+
 static void on_video_leave_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
@@ -1835,11 +1957,25 @@ static void agora_main_window_init(AgoraMainWindow *win)
     g_signal_connect(win->team_list, "row-selected",
                      G_CALLBACK(on_team_selected), win);
     gtk_container_add(GTK_CONTAINER(team_scroll), GTK_WIDGET(win->team_list));
+    /* Team list gets half the space; team channels get the other half */
     gtk_box_pack_start(GTK_BOX(teams_page), team_scroll, TRUE, TRUE, 0);
+
+    /* Separator between teams and channels */
+    GtkWidget *team_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_pack_start(GTK_BOX(teams_page), team_sep, FALSE, FALSE, 0);
 
     /* Team channels (hidden until a team is selected) */
     win->team_channels_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
+
+    GtkWidget *tch_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(tch_label), "<b>Channels</b>");
+    gtk_style_context_add_class(gtk_widget_get_style_context(tch_label), "sidebar-section");
+    gtk_widget_set_halign(tch_label, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(tch_label, 16);
+    gtk_widget_set_margin_top(tch_label, 6);
+    gtk_widget_set_margin_bottom(tch_label, 2);
+    gtk_box_pack_start(GTK_BOX(win->team_channels_box), tch_label, FALSE, FALSE, 0);
 
     win->team_channels_header = GTK_LABEL(gtk_label_new(""));
     PangoAttrList *tch_attrs = pango_attr_list_new();
@@ -1848,15 +1984,21 @@ static void agora_main_window_init(AgoraMainWindow *win)
     pango_attr_list_unref(tch_attrs);
     gtk_widget_set_halign(GTK_WIDGET(win->team_channels_header), GTK_ALIGN_START);
     gtk_widget_set_margin_start(GTK_WIDGET(win->team_channels_header), 16);
-    gtk_widget_set_margin_top(GTK_WIDGET(win->team_channels_header), 8);
+    gtk_widget_set_margin_top(GTK_WIDGET(win->team_channels_header), 4);
     gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channels_header), FALSE, FALSE, 0);
 
+    /* Scrolled window for team channels */
+    GtkWidget *tch_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tch_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     win->team_channel_list = GTK_LIST_BOX(gtk_list_box_new());
     g_signal_connect(win->team_channel_list, "row-selected",
                      G_CALLBACK(on_team_channel_selected), win);
-    gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channel_list), FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(tch_scroll), GTK_WIDGET(win->team_channel_list));
+    gtk_box_pack_start(GTK_BOX(win->team_channels_box), tch_scroll, TRUE, TRUE, 0);
 
-    gtk_box_pack_start(GTK_BOX(teams_page), win->team_channels_box, FALSE, FALSE, 0);
+    /* Team channels box also gets expand=TRUE for equal space sharing */
+    gtk_box_pack_start(GTK_BOX(teams_page), win->team_channels_box, TRUE, TRUE, 0);
 
     gtk_stack_add_named(win->sidebar_stack, teams_page, "teams");
 
@@ -2131,6 +2273,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
     webkit_settings_set_enable_mediasource(web_settings, TRUE);
     webkit_settings_set_enable_webaudio(web_settings, TRUE);
     webkit_settings_set_media_playback_requires_user_gesture(web_settings, FALSE);
+
+    /* Grant camera/microphone permissions automatically */
+    g_signal_connect(win->video_webview, "permission-request",
+                     G_CALLBACK(on_video_permission_request), win);
 
     /* Accept self-signed TLS certs */
     WebKitWebContext *wv_ctx = webkit_web_view_get_context(win->video_webview);
