@@ -73,6 +73,8 @@ static const TransEntry en_entries[] = {
     {"feed.title", "Activity Feed"},
     {"feed.empty", "No new activity"},
     {"video.leave", "Leave Call"},
+    {"chat.leave_channel", "Leave Channel"},
+    {"chat.error_loading_messages", "Error loading messages"},
     {NULL, NULL}
 };
 
@@ -123,6 +125,8 @@ static const TransEntry de_entries[] = {
     {"feed.title", "Aktivit\xc3\xa4ten"},
     {"feed.empty", "Keine neuen Aktivit\xc3\xa4ten"},
     {"video.leave", "Anruf verlassen"},
+    {"chat.leave_channel", "Kanal verlassen"},
+    {"chat.error_loading_messages", "Fehler beim Laden der Nachrichten"},
     {NULL, NULL}
 };
 

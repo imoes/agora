@@ -158,6 +158,69 @@ static const char *app_css =
     ".welcome-title { color: #6264a7; }"
 ;
 
+/* --- Leave channel --- */
+
+static void load_channels(AgoraMainWindow *win); /* forward decl */
+
+static void on_leave_channel_activate(GtkMenuItem *item, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *channel_id = g_object_get_data(G_OBJECT(item), "channel-id");
+    if (!channel_id) return;
+
+    char *path = g_strdup_printf("/api/channels/%s/members/me", channel_id);
+    GError *error = NULL;
+    agora_api_client_delete(win->api, path, &error);
+    g_free(path);
+
+    if (error) {
+        g_printerr("[Leave] ERROR leaving channel %s: %s\n", channel_id, error->message);
+        g_error_free(error);
+        return;
+    }
+
+    g_print("[Leave] Left channel %s\n", channel_id);
+
+    /* If we left the currently open channel, clear chat */
+    if (win->current_channel_id && g_strcmp0(win->current_channel_id, channel_id) == 0) {
+        g_free(win->current_channel_id);
+        win->current_channel_id = NULL;
+        gtk_label_set_text(win->chat_title, "");
+        gtk_stack_set_visible_child_name(win->content_stack, "welcome");
+    }
+
+    /* Reload channel list */
+    load_channels(win);
+}
+
+static gboolean on_channel_row_button_press(GtkWidget *widget, GdkEventButton *event,
+                                             gpointer data)
+{
+    if (event->type != GDK_BUTTON_PRESS || event->button != 3)
+        return FALSE; /* Only handle right-click */
+
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    /* Find the GtkListBoxRow ancestor */
+    GtkWidget *row = widget;
+    while (row && !GTK_IS_LIST_BOX_ROW(row))
+        row = gtk_widget_get_parent(row);
+    if (!row) return FALSE;
+
+    const char *channel_id = g_object_get_data(G_OBJECT(row), "channel-id");
+    if (!channel_id) return FALSE;
+
+    GtkWidget *menu = gtk_menu_new();
+    GtkWidget *leave_item = gtk_menu_item_new_with_label(T("chat.leave_channel"));
+    g_object_set_data_full(G_OBJECT(leave_item), "channel-id", g_strdup(channel_id), g_free);
+    g_signal_connect(leave_item, "activate", G_CALLBACK(on_leave_channel_activate), win);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), leave_item);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), (GdkEvent *)event);
+
+    return TRUE;
+}
+
 /* --- Channel loading --- */
 
 static void load_channels(AgoraMainWindow *win)
@@ -234,9 +297,16 @@ static void load_channels(AgoraMainWindow *win)
         g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
         g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(name), g_free);
         gtk_container_add(GTK_CONTAINER(row), row_box);
+
+        /* Right-click context menu for leaving channel */
+        gtk_widget_add_events(row, GDK_BUTTON_PRESS_MASK);
+        g_signal_connect(row, "button-press-event",
+                         G_CALLBACK(on_channel_row_button_press), win);
+
         gtk_list_box_insert(win->channel_list, row, -1);
     }
 
+    g_print("[Channels] Loaded %u channels\n", len);
     gtk_widget_show_all(GTK_WIDGET(win->channel_list));
     json_node_unref(result);
 }
@@ -248,6 +318,7 @@ static void load_teams(AgoraMainWindow *win)
     GError *error = NULL;
     JsonNode *result = agora_api_client_get(win->api, "/api/teams/", &error);
     if (!result) {
+        g_printerr("[Teams] ERROR loading teams: %s\n", error ? error->message : "null response");
         if (error) g_error_free(error);
         return;
     }
@@ -296,14 +367,26 @@ static void load_teams(AgoraMainWindow *win)
         g_object_set_data_full(G_OBJECT(row), "team-name", g_strdup(name), g_free);
         gtk_container_add(GTK_CONTAINER(row), row_box);
         gtk_list_box_insert(win->team_list, row, -1);
+        g_print("[Teams] Added team: %s (%s)\n", name, id);
     }
 
+    g_print("[Teams] Loaded %u teams\n", len);
     gtk_widget_show_all(GTK_WIDGET(win->team_list));
+
+    /* Auto-select first team to show its channels */
+    if (len > 0) {
+        GtkListBoxRow *first_row = gtk_list_box_get_row_at_index(win->team_list, 0);
+        if (first_row) {
+            gtk_list_box_select_row(win->team_list, first_row);
+        }
+    }
+
     json_node_unref(result);
 }
 
 static void load_team_channels(AgoraMainWindow *win, const char *team_id)
 {
+    g_print("[Teams] Loading channels for team_id=%s\n", team_id);
     char *path = g_strdup_printf("/api/channels/?team_id=%s", team_id);
     GError *error = NULL;
     JsonNode *result = agora_api_client_get(win->api, path, &error);
@@ -317,12 +400,14 @@ static void load_team_channels(AgoraMainWindow *win, const char *team_id)
     g_list_free(children);
 
     if (!result) {
+        g_printerr("[Teams] ERROR loading team channels: %s\n", error ? error->message : "null response");
         if (error) g_error_free(error);
         return;
     }
 
     JsonArray *arr = json_node_get_array(result);
     guint len = json_array_get_length(arr);
+    g_print("[Teams] Found %u channels for team %s\n", len, team_id);
 
     for (guint i = 0; i < len; i++) {
         JsonObject *ch = json_array_get_object_element(arr, i);
@@ -1478,18 +1563,25 @@ static void on_reminder_join_clicked(GtkButton *btn, gpointer data)
         char *base = g_strdup(session->base_url);
         char *api_pos = g_strrstr(base, "/api");
         if (api_pos) *api_pos = '\0';
-        char *url = g_strdup_printf("%s/video/%s?token=%s", base, win->reminder_channel_id, session->token);
-        g_free(base);
+        char *video_url = g_strdup_printf("%s/video/%s", base, win->reminder_channel_id);
 
         if (win->video_webview) {
-            webkit_web_view_load_uri(win->video_webview, url);
+            /* Inject token via base-page-first approach */
+            g_object_set_data_full(G_OBJECT(win->video_webview), "pending-video-url",
+                                   video_url, g_free);
+            video_url = NULL;
+            g_print("[Video] Reminder join: loading base URL %s\n", base);
+            webkit_web_view_load_uri(win->video_webview, base);
             gtk_widget_show_all(win->video_overlay);
         } else {
+            char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
             GError *err = NULL;
-            g_app_info_launch_default_for_uri(url, NULL, &err);
+            g_app_info_launch_default_for_uri(url_with_token, NULL, &err);
             if (err) g_error_free(err);
+            g_free(url_with_token);
         }
-        g_free(url);
+        g_free(base);
+        g_free(video_url);
     }
     hide_reminder(win);
 }
@@ -1661,11 +1753,50 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     gtk_widget_hide(win->video_overlay);
 }
 
+static void on_video_page_loaded(WebKitWebView *webview, WebKitLoadEvent event, gpointer data)
+{
+    if (event != WEBKIT_LOAD_FINISHED) return;
+
+    const char *uri = webkit_web_view_get_uri(webview);
+    const char *video_url = (const char *)g_object_get_data(G_OBJECT(webview), "pending-video-url");
+
+    /* After the base page loads, inject token into localStorage and navigate to video */
+    if (video_url && uri && !g_str_has_prefix(uri, "about:")) {
+        /* Check if we're on the base page (not the video page yet) */
+        if (!strstr(uri, "/video/")) {
+            AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+            AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+            AgoraSession *session = agora_app_get_session(app);
+
+            char *js = g_strdup_printf(
+                "localStorage.setItem('access_token', '%s');"
+                "localStorage.setItem('current_user', JSON.stringify({id:'%s',display_name:'%s'}));"
+                "window.location.href = '%s';",
+                session->token,
+                session->user_id ? session->user_id : "",
+                session->display_name ? session->display_name : "",
+                video_url
+            );
+            g_print("[Video] Injecting auth token and navigating to %s\n", video_url);
+            webkit_web_view_run_javascript(webview, js, NULL, NULL, NULL);
+            g_free(js);
+
+            /* Clear pending URL so we don't redirect again */
+            g_object_set_data(G_OBJECT(webview), "pending-video-url", NULL);
+        }
+    }
+}
+
 static void on_video_call_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
-    if (!win->current_channel_id) return;
+    if (!win->current_channel_id) {
+        g_printerr("[Video] No channel selected\n");
+        return;
+    }
+
+    g_print("[Video] Starting video call for channel %s\n", win->current_channel_id);
 
     /* Create video room via API */
     char *room_path = g_strdup_printf("/api/video/rooms?channel_id=%s",
@@ -1674,7 +1805,11 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
     JsonNode *room_result = agora_api_client_post(win->api, room_path, NULL, &error);
     g_free(room_path);
     if (room_result) json_node_unref(room_result);
-    if (error) { g_error_free(error); error = NULL; }
+    if (error) {
+        g_printerr("[Video] Create room error (may already exist): %s\n", error->message);
+        g_error_free(error);
+        error = NULL;
+    }
 
     /* Join video room via API */
     char *join_path = g_strdup_printf("/api/video/rooms/%s/join",
@@ -1682,7 +1817,11 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
     JsonNode *join_result = agora_api_client_post(win->api, join_path, NULL, &error);
     g_free(join_path);
     if (join_result) json_node_unref(join_result);
-    if (error) { g_error_free(error); error = NULL; }
+    if (error) {
+        g_printerr("[Video] Join room error: %s\n", error->message);
+        g_error_free(error);
+        error = NULL;
+    }
 
     /* Build video URL */
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
@@ -1690,19 +1829,31 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data)
     char *base = g_strdup(session->base_url);
     char *api_pos = g_strrstr(base, "/api");
     if (api_pos) *api_pos = '\0';
-    char *url = g_strdup_printf("%s/video/%s?token=%s", base, win->current_channel_id, session->token);
-    g_free(base);
+    char *video_url = g_strdup_printf("%s/video/%s", base, win->current_channel_id);
 
     if (win->video_webview) {
-        webkit_web_view_load_uri(win->video_webview, url);
+        /* Store the video URL, navigate to base first to set localStorage */
+        g_object_set_data_full(G_OBJECT(win->video_webview), "pending-video-url",
+                               video_url, g_free);
+        video_url = NULL; /* ownership transferred */
+
+        g_print("[Video] Loading base URL %s to inject token\n", base);
+        webkit_web_view_load_uri(win->video_webview, base);
         gtk_widget_show_all(win->video_overlay);
     } else {
-        /* Fallback to browser */
+        /* Fallback to browser with token in URL */
+        char *url_with_token = g_strdup_printf("%s?token=%s", video_url, session->token);
+        g_print("[Video] Opening in browser: %s\n", url_with_token);
         GError *launch_err = NULL;
-        g_app_info_launch_default_for_uri(url, NULL, &launch_err);
-        if (launch_err) g_error_free(launch_err);
+        g_app_info_launch_default_for_uri(url_with_token, NULL, &launch_err);
+        if (launch_err) {
+            g_printerr("[Video] Launch error: %s\n", launch_err->message);
+            g_error_free(launch_err);
+        }
+        g_free(url_with_token);
     }
-    g_free(url);
+    g_free(base);
+    g_free(video_url);
 }
 
 static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath)
@@ -2277,6 +2428,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
     /* Grant camera/microphone permissions automatically */
     g_signal_connect(win->video_webview, "permission-request",
                      G_CALLBACK(on_video_permission_request), win);
+
+    /* Inject auth token when page loads */
+    g_signal_connect(win->video_webview, "load-changed",
+                     G_CALLBACK(on_video_page_loaded), win);
 
     /* Accept self-signed TLS certs */
     WebKitWebContext *wv_ctx = webkit_web_view_get_context(win->video_webview);
