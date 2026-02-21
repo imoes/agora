@@ -1792,24 +1792,15 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     close_video_overlay(AGORA_MAIN_WINDOW(data));
 }
 
-/* Auto-close video overlay when WebView navigates away from /video/ (e.g. hang-up) */
-static void on_video_load_changed(WebKitWebView *webview,
-                                  WebKitLoadEvent load_event,
-                                  gpointer data)
+/* Called when Angular sends window.webkit.messageHandlers.leaveCall.postMessage() */
+static void on_script_leave_call(WebKitUserContentManager *manager,
+                                 WebKitJavascriptResult *result,
+                                 gpointer data)
 {
-    if (load_event != WEBKIT_LOAD_COMMITTED)
-        return;
+    (void)manager; (void)result;
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
-    if (!gtk_widget_get_visible(win->video_overlay))
-        return;
-    const gchar *uri = webkit_web_view_get_uri(webview);
-    if (!uri)
-        return;
-    /* If the WebView navigated away from the /video/ page, close the overlay */
-    if (!strstr(uri, "/video/")) {
-        g_print("[Video] WebView navigated away from /video/ (%s) – auto-closing overlay\n", uri);
-        close_video_overlay(win);
-    }
+    g_print("[Video] Received leaveCall message from WebView\n");
+    close_video_overlay(win);
 }
 
 static void inject_video_user_scripts(AgoraMainWindow *win)
@@ -2534,9 +2525,14 @@ static void agora_main_window_init(AgoraMainWindow *win)
     g_signal_connect(win->video_webview, "permission-request",
                      G_CALLBACK(on_video_permission_request), win);
 
-    /* Auto-close overlay when Angular navigates away from /video/ (hang-up) */
-    g_signal_connect(win->video_webview, "load-changed",
-                     G_CALLBACK(on_video_load_changed), win);
+    /* Listen for leaveCall message from Angular's endCall() */
+    {
+        WebKitUserContentManager *ucm =
+            webkit_web_view_get_user_content_manager(win->video_webview);
+        webkit_user_content_manager_register_script_message_handler(ucm, "leaveCall");
+        g_signal_connect(ucm, "script-message-received::leaveCall",
+                         G_CALLBACK(on_script_leave_call), win);
+    }
 
     /* Accept self-signed TLS certs */
     WebKitWebContext *wv_ctx = webkit_web_view_get_context(win->video_webview);
