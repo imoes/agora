@@ -17,13 +17,13 @@ public class FeedEvent
     [JsonPropertyName("channel_name")]
     public string? ChannelName { get; set; }
 
-    [JsonPropertyName("actor_id")]
+    [JsonPropertyName("sender_id")]
     public string? ActorId { get; set; }
 
-    [JsonPropertyName("actor_name")]
+    [JsonPropertyName("sender_name")]
     public string? ActorName { get; set; }
 
-    [JsonPropertyName("message")]
+    [JsonPropertyName("preview_text")]
     public string? Message { get; set; }
 
     [JsonPropertyName("is_read")]

@@ -50,6 +50,11 @@
                              BorderBrush="{StaticResource BorderBrush}"
                              KeyDown="PasswordBox_KeyDown" />
 
+                <!-- Remember credentials -->
+                <CheckBox x:Name="RememberCheckBox" Content="Anmeldedaten speichern"
+                          FontSize="12" Margin="0,0,0,16"
+                          Foreground="{StaticResource TextSecondaryBrush}" />
+
                 <!-- Error message -->
                 <TextBlock x:Name="ErrorText" Text="" FontSize="12"
                            Foreground="Red" Margin="0,0,0,8"
