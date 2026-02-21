@@ -481,7 +481,7 @@
                                         <DockPanel>
                                             <TextBlock FontSize="12" Foreground="{StaticResource PrimaryBrush}">
                                                 <Run Text="{Binding SenderName}" FontWeight="SemiBold" />
-                                                <Run Text="{Binding EditedIndicator}" FontStyle="Italic"
+                                                <Run Text="{Binding EditedIndicator, Mode=OneWay}" FontStyle="Italic"
                                                      Foreground="{StaticResource TextSecondaryBrush}" FontSize="10" />
                                             </TextBlock>
                                             <TextBlock Text="{Binding CreatedAt}" FontSize="10"

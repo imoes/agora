@@ -717,7 +717,7 @@ public partial class MainWindow : Window
         MessageInput.Focus();
     }
 
-    private async void CtxEdit_Click(object sender, RoutedEventArgs e)
+    private void CtxEdit_Click(object sender, RoutedEventArgs e)
     {
         MessageContextMenu.IsOpen = false;
         var message = _messages.FirstOrDefault(m => m.Id == _contextMessageId);
