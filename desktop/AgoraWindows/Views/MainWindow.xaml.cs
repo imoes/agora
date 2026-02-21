@@ -11,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AgoraWindows.Models;
 using AgoraWindows.Services;
@@ -26,6 +27,7 @@ public static class Converters
     public static readonly IValueConverter BoolToVisibility = new BoolToVisibilityConverter();
     public static readonly IValueConverter FileTypeToVisibility = new FileTypeToVisibilityConverter();
     public static readonly IValueConverter FirstChar = new FirstCharConverter();
+    public static readonly IValueConverter NullToVisibility = new NullToVisibilityConverter();
 
     private class IntToVisibilityConverter : IValueConverter
     {
@@ -71,6 +73,16 @@ public static class Converters
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
             => throw new NotImplementedException();
     }
+
+    private class NullToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+            => value != null ? Visibility.Visible : Visibility.Collapsed;
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => throw new NotImplementedException();
+    }
+
 }
 
 public partial class MainWindow : Window
@@ -440,6 +452,7 @@ public partial class MainWindow : Window
                 _messages.Add(msg);
             }
             ScrollToBottom();
+            _ = LoadMessageImagesAsync();
         }
         catch (Exception ex)
         {
@@ -486,6 +499,51 @@ public partial class MainWindow : Window
         }
     }
 
+    private async System.Threading.Tasks.Task LoadSingleMessageImageAsync(Message msg)
+    {
+        try
+        {
+            var bytes = await _api.DownloadFileAsync(msg.FileReferenceId!);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = new MemoryStream(bytes);
+            bitmap.DecodePixelWidth = 300;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            msg.ImageSource = bitmap;
+            var idx = _messages.IndexOf(msg);
+            if (idx >= 0) _messages[idx] = msg;
+        }
+        catch { }
+    }
+
+    private async System.Threading.Tasks.Task LoadMessageImagesAsync()
+    {
+        foreach (var msg in _messages.ToList())
+        {
+            if (msg.IsImageMessage && msg.ImageSource == null)
+            {
+                try
+                {
+                    var bytes = await _api.DownloadFileAsync(msg.FileReferenceId!);
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = new MemoryStream(bytes);
+                    bitmap.DecodePixelWidth = 300;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    msg.ImageSource = bitmap;
+                    msg.HasReactions = msg.HasReactions; // force update
+                    var idx = _messages.IndexOf(msg);
+                    if (idx >= 0) _messages[idx] = msg; // refresh binding
+                }
+                catch { }
+            }
+        }
+    }
+
     // === WebSocket message handlers ===
 
     private void OnChatMessage(JsonElement msg)
@@ -528,6 +586,10 @@ public partial class MainWindow : Window
         SetMessageBubbleProperties(message);
         _messages.Add(message);
         ScrollToBottom();
+
+        // Load image if applicable
+        if (message.IsImageMessage)
+            _ = LoadSingleMessageImageAsync(message);
 
         // Remove from typing
         if (!string.IsNullOrEmpty(message.SenderName))
@@ -772,30 +834,35 @@ public partial class MainWindow : Window
         var emoji = fe.Tag?.ToString();
         if (emoji == null) return;
 
-        // Find the message by walking up the visual tree
-        var parent = VisualTreeHelper.GetParent(fe);
+        // Find the message by walking up DataContext chain
+        string? messageId = null;
+        DependencyObject? parent = fe;
         while (parent != null)
         {
-            if (parent is FrameworkElement pe && pe.Tag is string messageId)
+            if (parent is FrameworkElement pe && pe.DataContext is Message msg)
             {
-                try
-                {
-                    var msg = _messages.FirstOrDefault(m => m.Id == messageId);
-                    if (msg?.Reactions != null &&
-                        msg.Reactions.Any(r => r.Emoji == emoji && r.UserId == _api.CurrentUser?.Id))
-                    {
-                        await _api.RemoveReactionAsync(_currentChannelId, messageId, emoji);
-                    }
-                    else
-                    {
-                        await _api.AddReactionAsync(_currentChannelId, messageId, emoji);
-                    }
-                }
-                catch { }
-                return;
+                messageId = msg.Id;
+                break;
             }
             parent = VisualTreeHelper.GetParent(parent);
         }
+
+        if (messageId == null) return;
+
+        try
+        {
+            var msg = _messages.FirstOrDefault(m => m.Id == messageId);
+            if (msg?.Reactions != null &&
+                msg.Reactions.Any(r => r.Emoji == emoji && r.UserId == _api.CurrentUser?.Id))
+            {
+                await _api.RemoveReactionAsync(_currentChannelId, messageId, emoji);
+            }
+            else
+            {
+                await _api.AddReactionAsync(_currentChannelId, messageId, emoji);
+            }
+        }
+        catch { }
     }
 
     private void ReplyCancel_Click(object sender, RoutedEventArgs e)

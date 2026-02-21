@@ -5,7 +5,9 @@
         Title="Agora" Width="1100" Height="700"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BackgroundBrush}"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        TextOptions.TextFormattingMode="Ideal"
+        UseLayoutRounding="True">
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -495,10 +497,23 @@
                                                    TextWrapping="Wrap" Margin="0,3,0,0"
                                                    Foreground="{StaticResource TextPrimaryBrush}" />
 
-                                        <!-- File attachment -->
+                                        <!-- Inline image -->
+                                        <Border Margin="0,4,0,0" CornerRadius="6"
+                                                Visibility="{Binding HasImage, Converter={x:Static local:Converters.BoolToVisibility}}"
+                                                Cursor="Hand" MouseLeftButtonUp="FileAttachment_Click"
+                                                Tag="{Binding FileReferenceId}">
+                                            <Border.Clip>
+                                                <RectangleGeometry RadiusX="6" RadiusY="6"
+                                                                   Rect="0,0,300,300" />
+                                            </Border.Clip>
+                                            <Image Source="{Binding ImageSource}" MaxWidth="300" MaxHeight="300"
+                                                   Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                                        </Border>
+
+                                        <!-- File attachment (non-image files) -->
                                         <Border Margin="0,4,0,0" Padding="6,4"
                                                 Background="#E0E0E0" CornerRadius="4"
-                                                Visibility="{Binding MessageType, Converter={x:Static local:Converters.FileTypeToVisibility}}"
+                                                Visibility="{Binding IsNonImageFile, Converter={x:Static local:Converters.BoolToVisibility}}"
                                                 Cursor="Hand" MouseLeftButtonUp="FileAttachment_Click"
                                                 Tag="{Binding FileReferenceId}">
                                             <DockPanel>

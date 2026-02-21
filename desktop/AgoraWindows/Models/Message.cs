@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace AgoraWindows.Models;
 
@@ -105,5 +106,22 @@ public class Message
     public bool HasReactions { get; set; }
 
     [JsonIgnore]
-    public bool IsReadInverted => !true; // placeholder for feed events
+    public BitmapImage? ImageSource { get; set; }
+
+    [JsonIgnore]
+    public bool HasImage => ImageSource != null;
+
+    [JsonIgnore]
+    public bool IsImageMessage
+    {
+        get
+        {
+            if (MessageType != "file" || string.IsNullOrEmpty(FileReferenceId)) return false;
+            var ext = System.IO.Path.GetExtension(Content)?.ToLower();
+            return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp" or ".svg";
+        }
+    }
+
+    [JsonIgnore]
+    public bool IsNonImageFile => MessageType == "file" && !IsImageMessage;
 }
