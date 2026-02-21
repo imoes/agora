@@ -1228,7 +1228,7 @@ function insertText(text) {
 
                 // Navigate to base URL first so localStorage is on the correct origin
                 var videoUrl = url;
-                Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventHandler? handler = null;
+                EventHandler<Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs>? handler = null;
                 handler = async (s, args) =>
                 {
                     VideoWebView.CoreWebView2.NavigationCompleted -= handler;
