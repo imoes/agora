@@ -1768,11 +1768,11 @@ static gboolean on_video_permission_request(WebKitWebView *webview,
     return TRUE;
 }
 
-static void on_video_leave_clicked(GtkButton *btn, gpointer data)
+static void close_video_overlay(AgoraMainWindow *win)
 {
-    (void)btn;
-    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
-    g_print("[Video] Leave clicked. overlay visible=%d, mapped=%d\n",
+    if (!gtk_widget_get_visible(win->video_overlay))
+        return;
+    g_print("[Video] Closing overlay. overlay visible=%d, mapped=%d\n",
             gtk_widget_get_visible(win->video_overlay),
             gtk_widget_get_mapped(win->video_overlay));
     if (win->video_webview)
@@ -1780,10 +1780,36 @@ static void on_video_leave_clicked(GtkButton *btn, gpointer data)
     gtk_widget_hide(win->video_overlay);
     /* Restore the content_stack */
     gtk_widget_show_all(GTK_WIDGET(win->content_stack));
-    g_print("[Video] After leave: overlay visible=%d, content_stack visible=%d, page=%s\n",
+    g_print("[Video] After close: overlay visible=%d, content_stack visible=%d, page=%s\n",
             gtk_widget_get_visible(win->video_overlay),
             gtk_widget_get_visible(GTK_WIDGET(win->content_stack)),
             gtk_stack_get_visible_child_name(win->content_stack));
+}
+
+static void on_video_leave_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    close_video_overlay(AGORA_MAIN_WINDOW(data));
+}
+
+/* Auto-close video overlay when WebView navigates away from /video/ (e.g. hang-up) */
+static void on_video_load_changed(WebKitWebView *webview,
+                                  WebKitLoadEvent load_event,
+                                  gpointer data)
+{
+    if (load_event != WEBKIT_LOAD_COMMITTED)
+        return;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!gtk_widget_get_visible(win->video_overlay))
+        return;
+    const gchar *uri = webkit_web_view_get_uri(webview);
+    if (!uri)
+        return;
+    /* If the WebView navigated away from the /video/ page, close the overlay */
+    if (!strstr(uri, "/video/")) {
+        g_print("[Video] WebView navigated away from /video/ (%s) – auto-closing overlay\n", uri);
+        close_video_overlay(win);
+    }
 }
 
 static void inject_video_user_scripts(AgoraMainWindow *win)
@@ -2507,6 +2533,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
     /* Grant camera/microphone permissions automatically */
     g_signal_connect(win->video_webview, "permission-request",
                      G_CALLBACK(on_video_permission_request), win);
+
+    /* Auto-close overlay when Angular navigates away from /video/ (hang-up) */
+    g_signal_connect(win->video_webview, "load-changed",
+                     G_CALLBACK(on_video_load_changed), win);
 
     /* Accept self-signed TLS certs */
     WebKitWebContext *wv_ctx = webkit_web_view_get_context(win->video_webview);
