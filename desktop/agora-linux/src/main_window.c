@@ -182,6 +182,14 @@ static const char *app_css =
     "  border-radius: 12px; padding: 2px 6px; border: none; box-shadow: none; "
     "  font-size: 12px; min-height: 0; min-width: 0; }"
     ".reaction-badge:hover { background-color: #D0D0D0; }"
+    /* Feed filter toggle buttons */
+    ".feed-filter-btn { background-image: none; background-color: #f0f0f0; "
+    "  border: 1px solid #cccccc; color: #666666; padding: 4px 14px; "
+    "  box-shadow: none; font-weight: normal; }"
+    ".feed-filter-btn:hover { background-color: #e0e0e0; }"
+    ".feed-filter-btn:checked { background-image: none; background-color: #6264a7; "
+    "  color: #ffffff; border-color: #6264a7; font-weight: bold; }"
+    ".feed-filter-btn:checked label { color: #ffffff; }"
 ;
 
 /* --- Leave channel --- */
@@ -1065,6 +1073,28 @@ static void on_calendar_new_event_clicked(GtkButton *btn, gpointer data)
 
 /* --- Calendar integration config dialog --- */
 
+typedef struct {
+    GtkWidget *caldav_box;
+    GtkWidget *google_box;
+    GtkWidget *outlook_box;
+    GtkWidget *internal_box;
+} CalConfigWidgets;
+
+static void on_cal_provider_changed(GtkComboBox *combo, gpointer user_data)
+{
+    CalConfigWidgets *w = (CalConfigWidgets *)user_data;
+    const char *id = gtk_combo_box_get_active_id(combo);
+    gboolean is_webdav = (g_strcmp0(id, "webdav") == 0);
+    gboolean is_google = (g_strcmp0(id, "google") == 0);
+    gboolean is_outlook = (g_strcmp0(id, "outlook") == 0);
+    gboolean is_internal = (g_strcmp0(id, "internal") == 0);
+
+    gtk_widget_set_visible(w->caldav_box, is_webdav);
+    gtk_widget_set_visible(w->google_box, is_google);
+    gtk_widget_set_visible(w->outlook_box, is_outlook);
+    gtk_widget_set_visible(w->internal_box, is_internal);
+}
+
 static void on_calendar_config_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
@@ -1094,26 +1124,70 @@ static void on_calendar_config_clicked(GtkButton *btn, gpointer data)
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(prov_combo), "internal");
     gtk_box_pack_start(GTK_BOX(content), prov_combo, FALSE, FALSE, 4);
 
-    /* CalDAV fields */
+    /* --- Internal info box --- */
+    GtkWidget *internal_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_top(internal_box, 8);
+    GtkWidget *internal_info = gtk_label_new("Interner Kalender wird verwendet.\nKeine weitere Konfiguration nötig.");
+    gtk_widget_set_halign(internal_info, GTK_ALIGN_START);
+    gtk_label_set_line_wrap(GTK_LABEL(internal_info), TRUE);
+    gtk_box_pack_start(GTK_BOX(internal_box), internal_info, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), internal_box, FALSE, FALSE, 0);
+
+    /* --- CalDAV fields box --- */
+    GtkWidget *caldav_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_margin_top(caldav_box, 8);
+
     GtkWidget *url_lbl = gtk_label_new("CalDAV URL:");
     gtk_widget_set_halign(url_lbl, GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(content), url_lbl, FALSE, FALSE, 2);
+    gtk_box_pack_start(GTK_BOX(caldav_box), url_lbl, FALSE, FALSE, 2);
     GtkWidget *url_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(url_entry), "https://calendar.example.com/dav/");
-    gtk_box_pack_start(GTK_BOX(content), url_entry, FALSE, FALSE, 4);
+    gtk_box_pack_start(GTK_BOX(caldav_box), url_entry, FALSE, FALSE, 4);
 
     GtkWidget *user_lbl = gtk_label_new("Benutzername:");
     gtk_widget_set_halign(user_lbl, GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(content), user_lbl, FALSE, FALSE, 2);
+    gtk_box_pack_start(GTK_BOX(caldav_box), user_lbl, FALSE, FALSE, 2);
     GtkWidget *user_entry = gtk_entry_new();
-    gtk_box_pack_start(GTK_BOX(content), user_entry, FALSE, FALSE, 4);
+    gtk_box_pack_start(GTK_BOX(caldav_box), user_entry, FALSE, FALSE, 4);
 
     GtkWidget *pass_lbl = gtk_label_new("Passwort:");
     gtk_widget_set_halign(pass_lbl, GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(content), pass_lbl, FALSE, FALSE, 2);
+    gtk_box_pack_start(GTK_BOX(caldav_box), pass_lbl, FALSE, FALSE, 2);
     GtkWidget *pass_entry = gtk_entry_new();
     gtk_entry_set_visibility(GTK_ENTRY(pass_entry), FALSE);
-    gtk_box_pack_start(GTK_BOX(content), pass_entry, FALSE, FALSE, 4);
+    gtk_box_pack_start(GTK_BOX(caldav_box), pass_entry, FALSE, FALSE, 4);
+
+    gtk_box_pack_start(GTK_BOX(content), caldav_box, FALSE, FALSE, 0);
+
+    /* --- Google info box --- */
+    GtkWidget *google_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_top(google_box, 8);
+    GtkWidget *google_info = gtk_label_new(
+        "Google Calendar wird über OAuth verbunden.\n"
+        "Bitte im Web-Frontend unter Einstellungen verbinden.");
+    gtk_widget_set_halign(google_info, GTK_ALIGN_START);
+    gtk_label_set_line_wrap(GTK_LABEL(google_info), TRUE);
+    gtk_box_pack_start(GTK_BOX(google_box), google_info, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), google_box, FALSE, FALSE, 0);
+
+    /* --- Outlook info box --- */
+    GtkWidget *outlook_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_top(outlook_box, 8);
+    GtkWidget *outlook_info = gtk_label_new(
+        "Outlook / Exchange wird über Microsoft 365 verbunden.\n"
+        "Bitte im Web-Frontend unter Einstellungen verbinden.");
+    gtk_widget_set_halign(outlook_info, GTK_ALIGN_START);
+    gtk_label_set_line_wrap(GTK_LABEL(outlook_info), TRUE);
+    gtk_box_pack_start(GTK_BOX(outlook_box), outlook_info, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), outlook_box, FALSE, FALSE, 0);
+
+    /* Wire up provider change to show/hide sections */
+    CalConfigWidgets *ccw = g_new0(CalConfigWidgets, 1);
+    ccw->caldav_box = caldav_box;
+    ccw->google_box = google_box;
+    ccw->outlook_box = outlook_box;
+    ccw->internal_box = internal_box;
+    g_signal_connect(prov_combo, "changed", G_CALLBACK(on_cal_provider_changed), ccw);
 
     /* Load current config */
     GError *load_err = NULL;
@@ -1136,7 +1210,9 @@ static void on_calendar_config_clicked(GtkButton *btn, gpointer data)
     if (cfg) json_node_unref(cfg);
     if (load_err) g_error_free(load_err);
 
+    /* Show all widgets first, then trigger provider change to hide irrelevant sections */
     gtk_widget_show_all(content);
+    on_cal_provider_changed(GTK_COMBO_BOX(prov_combo), ccw);
 
     int response = gtk_dialog_run(GTK_DIALOG(dialog));
     if (response == GTK_RESPONSE_ACCEPT) {
@@ -1149,17 +1225,19 @@ static void on_calendar_config_clicked(GtkButton *btn, gpointer data)
         json_builder_begin_object(builder);
         json_builder_set_member_name(builder, "provider");
         json_builder_add_string_value(builder, provider ? provider : "internal");
-        if (url_val && strlen(url_val) > 0) {
-            json_builder_set_member_name(builder, "webdav_url");
-            json_builder_add_string_value(builder, url_val);
-        }
-        if (user_val && strlen(user_val) > 0) {
-            json_builder_set_member_name(builder, "webdav_username");
-            json_builder_add_string_value(builder, user_val);
-        }
-        if (pass_val && strlen(pass_val) > 0) {
-            json_builder_set_member_name(builder, "webdav_password");
-            json_builder_add_string_value(builder, pass_val);
+        if (g_strcmp0(provider, "webdav") == 0) {
+            if (url_val && strlen(url_val) > 0) {
+                json_builder_set_member_name(builder, "webdav_url");
+                json_builder_add_string_value(builder, url_val);
+            }
+            if (user_val && strlen(user_val) > 0) {
+                json_builder_set_member_name(builder, "webdav_username");
+                json_builder_add_string_value(builder, user_val);
+            }
+            if (pass_val && strlen(pass_val) > 0) {
+                json_builder_set_member_name(builder, "webdav_password");
+                json_builder_add_string_value(builder, pass_val);
+            }
         }
         json_builder_end_object(builder);
 
@@ -1184,6 +1262,7 @@ static void on_calendar_config_clicked(GtkButton *btn, gpointer data)
         }
     }
 
+    g_free(ccw);
     gtk_widget_destroy(dialog);
 }
 
@@ -2900,12 +2979,15 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_end(feed_filter_box, 12);
 
     win->feed_all_btn = gtk_toggle_button_new_with_label(T("feed.show_all"));
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(win->feed_all_btn), TRUE);
+    gtk_style_context_add_class(gtk_widget_get_style_context(win->feed_all_btn), "feed-filter-btn");
     g_signal_connect(win->feed_all_btn, "toggled",
                      G_CALLBACK(on_feed_show_all_toggled), win);
     gtk_box_pack_start(GTK_BOX(feed_filter_box), win->feed_all_btn, FALSE, FALSE, 0);
 
     win->feed_unread_btn = gtk_toggle_button_new_with_label(T("feed.unread_only"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(win->feed_unread_btn), "feed-filter-btn");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(win->feed_unread_btn), TRUE);
+    win->feed_unread_only = TRUE;
     g_signal_connect(win->feed_unread_btn, "toggled",
                      G_CALLBACK(on_feed_show_unread_toggled), win);
     gtk_box_pack_start(GTK_BOX(feed_filter_box), win->feed_unread_btn, FALSE, FALSE, 0);
