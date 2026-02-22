@@ -497,9 +497,9 @@ static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpoi
     const char *event_id = g_object_get_data(G_OBJECT(row), "event-id");
     if (!channel_id) return;
 
-    /* Mark as read */
-    if (event_id) {
-        char *body = g_strdup_printf("{\"event_ids\":[\"%s\"]}", event_id);
+    /* Mark feed events for this channel as read */
+    {
+        char *body = g_strdup_printf("{\"channel_id\":\"%s\"}", channel_id);
         GError *err = NULL;
         JsonNode *res = agora_api_client_post(win->api, "/api/feed/read", body, &err);
         g_free(body);
@@ -511,7 +511,7 @@ static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpoi
     gtk_stack_set_visible_child_name(win->sidebar_stack, "chats");
     set_active_nav(win, win->nav_chat_btn);
 
-    /* Open channel */
+    /* Open channel (this also marks read position + reloads channels) */
     g_free(win->current_channel_id);
     win->current_channel_id = g_strdup(channel_id);
     g_free(win->current_channel_name);
@@ -519,8 +519,34 @@ static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpoi
 
     gtk_label_set_text(win->chat_title, win->current_channel_name);
     gtk_stack_set_visible_child_name(win->content_stack, "chat");
+    gtk_label_set_text(win->typing_label, "");
+    gtk_widget_hide(GTK_WIDGET(win->typing_label));
     load_messages(win, channel_id);
     connect_channel_ws(win, channel_id);
+
+    /* Mark channel read position */
+    {
+        GList *msg_children = gtk_container_get_children(GTK_CONTAINER(win->message_list));
+        const char *last_msg_id = NULL;
+        for (GList *l = g_list_last(msg_children); l; l = l->prev) {
+            const char *mid = g_object_get_data(G_OBJECT(l->data), "message-id");
+            if (mid) { last_msg_id = mid; break; }
+        }
+        g_list_free(msg_children);
+
+        if (last_msg_id) {
+            char *read_path = g_strdup_printf("/api/channels/%s/read-position", channel_id);
+            char *read_body = g_strdup_printf("{\"last_read_message_id\":\"%s\"}", last_msg_id);
+            GError *err = NULL;
+            JsonNode *res = agora_api_client_put(win->api, read_path, read_body, &err);
+            g_free(read_path);
+            g_free(read_body);
+            if (res) json_node_unref(res);
+            if (err) g_error_free(err);
+        }
+        load_channels(win);
+    }
+
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
 }
 
@@ -2010,16 +2036,45 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
     /* Connect WebSocket for real-time updates */
     connect_channel_ws(win, channel_id);
 
-    /* Mark channel as read (send via WebSocket + update local unread count) */
+    /* Mark channel as read via REST API */
     {
-        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
-        AgoraSession *session = agora_app_get_session(app);
-        if (session->user_id) {
-            char *read_json = g_strdup_printf(
-                "{\"type\":\"read\",\"user_id\":\"%s\"}", session->user_id);
-            ws_send_json(win, read_json);
-            g_free(read_json);
+        /* Find last message ID from the loaded messages */
+        GList *msg_children = gtk_container_get_children(GTK_CONTAINER(win->message_list));
+        const char *last_msg_id = NULL;
+        for (GList *l = g_list_last(msg_children); l; l = l->prev) {
+            GtkWidget *child = GTK_WIDGET(l->data);
+            /* The event box wrapping the bubble stores message-id */
+            const char *mid = g_object_get_data(G_OBJECT(child), "message-id");
+            if (mid) { last_msg_id = mid; break; }
         }
+        g_list_free(msg_children);
+
+        if (last_msg_id) {
+            char *read_path = g_strdup_printf("/api/channels/%s/read-position", channel_id);
+            char *read_body = g_strdup_printf("{\"last_read_message_id\":\"%s\"}", last_msg_id);
+            GError *read_err = NULL;
+            JsonNode *read_res = agora_api_client_put(win->api, read_path, read_body, &read_err);
+            g_free(read_path);
+            g_free(read_body);
+            if (read_res) json_node_unref(read_res);
+            if (read_err) {
+                g_print("[Read] Error marking channel read: %s\n", read_err->message);
+                g_error_free(read_err);
+            }
+        }
+
+        /* Also mark feed events for this channel as read */
+        {
+            char *feed_body = g_strdup_printf("{\"channel_id\":\"%s\"}", channel_id);
+            GError *feed_err = NULL;
+            JsonNode *feed_res = agora_api_client_post(win->api, "/api/feed/read", feed_body, &feed_err);
+            g_free(feed_body);
+            if (feed_res) json_node_unref(feed_res);
+            if (feed_err) g_error_free(feed_err);
+        }
+
+        /* Reload channel list to update unread badges */
+        load_channels(win);
     }
 
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
