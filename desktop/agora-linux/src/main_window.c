@@ -1770,11 +1770,14 @@ static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
     return TRUE;
 }
 
-static void scroll_message_list_to_bottom(AgoraMainWindow *win)
+static gboolean scroll_message_list_to_bottom(gpointer data)
 {
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!GTK_IS_WIDGET(win->message_scroll)) return G_SOURCE_REMOVE;
     GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(
         GTK_SCROLLED_WINDOW(win->message_scroll));
     gtk_adjustment_set_value(adj, gtk_adjustment_get_upper(adj));
+    return G_SOURCE_REMOVE;
 }
 
 static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
@@ -1938,11 +1941,8 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
                           GINT_TO_POINTER(is_own ? 1 : 0));
         g_object_set_data_full(G_OBJECT(evbox), "msg-type",
                                g_strdup(msg_type ? msg_type : "text"), g_free);
-        const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
-                                  !json_object_get_null_member(msg, "file_reference_id")
-                                  ? json_object_get_string_member(msg, "file_reference_id") : "";
         g_object_set_data_full(G_OBJECT(evbox), "file-ref",
-                               g_strdup(file_ref_id), g_free);
+                               g_strdup(file_ref_id ? file_ref_id : ""), g_free);
         g_signal_connect(evbox, "button-press-event",
                          G_CALLBACK(on_message_right_click), win);
     }
@@ -1997,7 +1997,7 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
     gtk_widget_show_all(GTK_WIDGET(win->message_list));
 
     /* Scroll to bottom after layout */
-    g_idle_add((GSourceFunc)scroll_message_list_to_bottom, win);
+    g_idle_add(scroll_message_list_to_bottom, win);
 
     json_node_unref(result);
 }
@@ -2047,7 +2047,7 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
         gtk_widget_show_all(row);
 
         /* Scroll to bottom */
-        g_idle_add((GSourceFunc)scroll_message_list_to_bottom, win);
+        g_idle_add(scroll_message_list_to_bottom, win);
 
         /* Clear typing indicator */
         gtk_label_set_text(win->typing_label, "");

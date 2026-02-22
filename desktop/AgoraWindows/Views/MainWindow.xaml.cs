@@ -2530,12 +2530,9 @@ function insertText(text) {
 
     private void UpdateSidebarAvatar(User? user)
     {
-        if (user?.AvatarPath != null)
+        if (user != null)
         {
-            var initials = !string.IsNullOrEmpty(user.DisplayName)
-                ? user.DisplayName[..1].ToUpper()
-                : "U";
-            AvatarText.Text = initials;
+            UserDisplayName.Text = user.DisplayName ?? user.Username;
         }
     }
 
