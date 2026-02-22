@@ -129,6 +129,14 @@ static void clear_list_box(GtkListBox *list)
     gtk_list_box_set_selection_mode(list, mode);
 }
 
+/* Idle callback: reload channel list outside of signal handlers so that
+   GTK's internal click processing has finished and no row pointers dangle. */
+static gboolean reload_channels_idle(gpointer data)
+{
+    load_channels(AGORA_MAIN_WINDOW(data));
+    return G_SOURCE_REMOVE;
+}
+
 /* Accept self-signed certificates callback */
 static gboolean accept_cert_cb(SoupMessage *msg, GTlsCertificate *cert,
                                 GTlsCertificateFlags errors, gpointer data)
@@ -555,7 +563,7 @@ static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpoi
             if (res) json_node_unref(res);
             if (err) g_error_free(err);
         }
-        load_channels(win);
+        g_idle_add(reload_channels_idle, win);
     }
 
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
@@ -2357,8 +2365,11 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
             if (feed_err) g_error_free(feed_err);
         }
 
-        /* Reload channel list to update unread badges */
-        load_channels(win);
+        /* Reload channel list to update unread badges.
+           Deferred to idle so GTK finishes click processing first;
+           calling load_channels here would destroy the clicked row
+           while GTK still holds a pointer to it. */
+        g_idle_add(reload_channels_idle, win);
     }
 
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
