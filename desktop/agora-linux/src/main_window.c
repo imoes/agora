@@ -2370,6 +2370,58 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
 }
 
+static void on_new_team_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        T("teams.new_team"), GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        T("chat.create"), GTK_RESPONSE_OK,
+        T("chat.cancel"), GTK_RESPONSE_CANCEL,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 360, 200);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 6);
+
+    GtkWidget *name_label = gtk_label_new(T("teams.team_name"));
+    gtk_widget_set_halign(name_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), name_label, FALSE, FALSE, 0);
+    GtkWidget *name_entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(content), name_entry, FALSE, FALSE, 0);
+
+    GtkWidget *desc_label = gtk_label_new(T("teams.description"));
+    gtk_widget_set_halign(desc_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), desc_label, FALSE, FALSE, 0);
+    GtkWidget *desc_entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(content), desc_entry, FALSE, FALSE, 0);
+
+    gtk_widget_show_all(dialog);
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+
+    if (response == GTK_RESPONSE_OK) {
+        const char *name = gtk_entry_get_text(GTK_ENTRY(name_entry));
+        const char *desc = gtk_entry_get_text(GTK_ENTRY(desc_entry));
+        if (name && *name) {
+            char *body;
+            if (desc && *desc)
+                body = g_strdup_printf("{\"name\":\"%s\",\"description\":\"%s\"}", name, desc);
+            else
+                body = g_strdup_printf("{\"name\":\"%s\"}", name);
+            GError *err = NULL;
+            JsonNode *res = agora_api_client_post(win->api, "/api/teams/", body, &err);
+            g_free(body);
+            if (res) json_node_unref(res);
+            if (err) g_error_free(err);
+            load_teams(win);
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+
 static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
                               gpointer user_data)
 {
@@ -3822,11 +3874,13 @@ static void agora_main_window_init(AgoraMainWindow *win)
     GtkWidget *nav_spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_box_pack_start(GTK_BOX(win->nav_sidebar), nav_spacer, TRUE, TRUE, 0);
 
-    /* User avatar circle at bottom of nav */
+    /* User avatar circle at bottom of nav – opens Settings */
     GtkWidget *avatar_btn = gtk_button_new_with_label("A");
     gtk_style_context_add_class(gtk_widget_get_style_context(avatar_btn), "user-avatar");
     gtk_widget_set_halign(avatar_btn, GTK_ALIGN_CENTER);
     gtk_widget_set_margin_bottom(avatar_btn, 12);
+    gtk_widget_set_tooltip_text(avatar_btn, T("settings.title"));
+    g_signal_connect(avatar_btn, "clicked", G_CALLBACK(on_settings_clicked), win);
     gtk_box_pack_start(GTK_BOX(win->nav_sidebar), avatar_btn, FALSE, FALSE, 0);
 
     /* Set Chat as active by default */
@@ -3876,14 +3930,6 @@ static void agora_main_window_init(AgoraMainWindow *win)
     g_signal_connect(new_chat_btn, "clicked", G_CALLBACK(on_new_chat_clicked), win);
     gtk_box_pack_end(GTK_BOX(chats_header), new_chat_btn, FALSE, FALSE, 0);
 
-    /* Settings button (gear icon) */
-    GtkWidget *settings_btn = gtk_button_new_with_label("\xe2\x9a\x99");  /* ⚙ */
-    gtk_widget_set_tooltip_text(settings_btn, T("settings.title"));
-    gtk_style_context_add_class(gtk_widget_get_style_context(settings_btn), "input-btn");
-    gtk_widget_set_margin_end(settings_btn, 4);
-    g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), win);
-    gtk_box_pack_end(GTK_BOX(chats_header), settings_btn, FALSE, FALSE, 0);
-
     gtk_box_pack_start(GTK_BOX(chats_page), chats_header, FALSE, FALSE, 0);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
@@ -3909,7 +3955,16 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_start(teams_label, 16);
     gtk_widget_set_margin_top(teams_label, 4);
     gtk_widget_set_margin_bottom(teams_label, 4);
-    gtk_box_pack_start(GTK_BOX(teams_page), teams_label, FALSE, FALSE, 0);
+
+    GtkWidget *teams_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(teams_header), teams_label, TRUE, TRUE, 0);
+    GtkWidget *new_team_btn = gtk_button_new_with_label("+");
+    gtk_widget_set_tooltip_text(new_team_btn, T("teams.new_team"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(new_team_btn), "input-btn");
+    gtk_widget_set_margin_end(new_team_btn, 8);
+    g_signal_connect(new_team_btn, "clicked", G_CALLBACK(on_new_team_clicked), win);
+    gtk_box_pack_end(GTK_BOX(teams_header), new_team_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(teams_page), teams_header, FALSE, FALSE, 0);
 
     GtkWidget *team_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(team_scroll),

@@ -177,6 +177,19 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
 
+                        <!-- Teams header with create button -->
+                        <DockPanel x:Name="TeamsHeader" Margin="14,6,8,2" Visibility="Collapsed">
+                            <TextBlock Text="Teams" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Button DockPanel.Dock="Right" Content="+" FontSize="16"
+                                    Click="NewTeamButton_Click" Cursor="Hand"
+                                    ToolTip="New Team" HorizontalAlignment="Right"
+                                    Width="28" Height="28" Padding="0"
+                                    Background="Transparent" BorderThickness="0"
+                                    Foreground="{StaticResource TextSecondaryBrush}" />
+                        </DockPanel>
+
                         <!-- Teams list (visible when Teams nav selected) -->
                         <ListBox x:Name="TeamList" BorderThickness="0"
                                  SelectionChanged="TeamList_SelectionChanged"
