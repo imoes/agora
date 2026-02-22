@@ -274,40 +274,19 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Feed items in sidebar (visible when Feed nav selected) -->
-                        <ItemsControl x:Name="FeedList" Visibility="Collapsed" Margin="4">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Margin="4,2" Padding="12,8" Background="White"
-                                            CornerRadius="4" BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1" Cursor="Hand">
-                                        <StackPanel>
-                                            <DockPanel>
-                                                <Ellipse Width="6" Height="6" Margin="0,0,6,0"
-                                                         VerticalAlignment="Center"
-                                                         Fill="{StaticResource PrimaryBrush}"
-                                                         Visibility="{Binding IsReadInverted, Converter={x:Static local:Converters.BoolToVisibility}}" />
-                                                <TextBlock Text="{Binding ActorName}" FontSize="12"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{StaticResource TextPrimaryBrush}" />
-                                                <TextBlock Text="{Binding FormattedTime}" FontSize="10"
-                                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                                           HorizontalAlignment="Right"
-                                                           VerticalAlignment="Center" />
-                                            </DockPanel>
-                                            <TextBlock Text="{Binding Message}" FontSize="12"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Margin="0,2,0,0" />
-                                            <TextBlock FontSize="11" Foreground="{StaticResource PrimaryBrush}"
-                                                       Margin="0,2,0,0">
-                                                <Run Text="in " /><Run Text="{Binding ChannelName}" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <!-- Feed sidebar info (visible when Feed nav selected) -->
+                        <StackPanel x:Name="FeedSidebarInfo" Visibility="Collapsed" Margin="14,8">
+                            <TextBlock Text="&#xE71D;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="28" Foreground="{StaticResource PrimaryBrush}"
+                                       HorizontalAlignment="Center" Margin="0,16,0,8" />
+                            <TextBlock Text="Aktivitaeten" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       HorizontalAlignment="Center" Margin="0,0,0,8" />
+                            <TextBlock x:Name="FeedSidebarCount" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Center" TextWrapping="Wrap"
+                                       TextAlignment="Center" />
+                        </StackPanel>
 
                         <!-- Calendar events list (visible when Calendar nav selected) -->
                         <ItemsControl x:Name="CalendarList" Visibility="Collapsed" Margin="4">
@@ -405,7 +384,9 @@
                                 <DataTemplate>
                                     <Border Margin="6" Padding="14,12" Background="White"
                                             CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1" Cursor="Hand">
+                                            BorderThickness="1" Cursor="Hand"
+                                            MouseLeftButtonUp="FeedItem_Click"
+                                            Tag="{Binding ChannelId}">
                                         <Border.Effect>
                                             <DropShadowEffect BlurRadius="4" Opacity="0.08" ShadowDepth="1" />
                                         </Border.Effect>
@@ -428,7 +409,7 @@
                                                 <TextBlock FontSize="11" Foreground="{StaticResource PrimaryBrush}">
                                                     <Run Text="in " /><Run Text="{Binding ChannelName}" />
                                                 </TextBlock>
-                                                <TextBlock Text="{Binding CreatedAt}" FontSize="10"
+                                                <TextBlock Text="{Binding FormattedTime}" FontSize="10"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            HorizontalAlignment="Right" />
                                             </DockPanel>
@@ -460,6 +441,12 @@
                                                FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0" />
                                     <TextBlock x:Name="CalendarNewEventBtn" Text="Neuer Termin" FontSize="12" />
                                 </StackPanel>
+                            </Button>
+                            <Button DockPanel.Dock="Right" Click="CalendarConfig_Click"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Padding="8,4" ToolTip="Kalender Konfiguration" Margin="4,0,0,0">
+                                <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
                             </Button>
                             <Button DockPanel.Dock="Right" Click="CalendarRefresh_Click"
                                     Background="Transparent" BorderThickness="0" Cursor="Hand"

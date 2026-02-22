@@ -151,7 +151,6 @@ public partial class MainWindow : Window
         TeamList.ItemsSource = _teams;
         TeamChannelList.ItemsSource = _teamChannels;
         MessageList.ItemsSource = _messages;
-        FeedList.ItemsSource = _feedEvents;
         FeedMainList.ItemsSource = _feedEvents;
         CalendarList.ItemsSource = _calendarEvents;
 
@@ -413,7 +412,7 @@ function insertText(text) {
         ChannelList.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
-        FeedList.Visibility = Visibility.Visible;
+        FeedSidebarInfo.Visibility = Visibility.Visible;
         CalendarList.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
@@ -432,7 +431,7 @@ function insertText(text) {
         ChannelList.Visibility = Visibility.Visible;
         TeamList.Visibility = Visibility.Collapsed;
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
-        FeedList.Visibility = Visibility.Collapsed;
+        FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
         CalendarView.Visibility = Visibility.Collapsed;
@@ -444,6 +443,10 @@ function insertText(text) {
             EmptyStateTitle.Text = Translations.T("welcome.title");
             EmptyStateSubtitle.Text = Translations.T("welcome.subtitle");
         }
+        else
+        {
+            ChatView.Visibility = Visibility.Visible;
+        }
     }
 
     private void NavTeams_Click(object sender, RoutedEventArgs e)
@@ -452,8 +455,7 @@ function insertText(text) {
         SidebarHeader.Text = Translations.T("teams.teams");
         ChannelList.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Visible;
-        TeamChannelsBorder.Visibility = Visibility.Collapsed;
-        FeedList.Visibility = Visibility.Collapsed;
+        FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
@@ -472,7 +474,7 @@ function insertText(text) {
         ChannelList.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
-        FeedList.Visibility = Visibility.Collapsed;
+        FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Visible;
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
@@ -496,11 +498,15 @@ function insertText(text) {
             _feedEvents.Clear();
             if (feed.Events != null)
             {
-                // Sort by created_at descending (newest first), like Angular frontend
                 var sorted = feed.Events.OrderByDescending(e => e.CreatedAtDateTime);
                 foreach (var ev in sorted)
                     _feedEvents.Add(ev);
             }
+
+            // Update sidebar info
+            var unread = feed.UnreadCount;
+            var total = _feedEvents.Count;
+            FeedSidebarCount.Text = $"{total} Eintraege" + (unread > 0 ? $"\n{unread} ungelesen" : "");
         }
         catch { }
     }
@@ -520,6 +526,39 @@ function insertText(text) {
     {
         _feedUnreadOnly = true;
         _ = LoadFeedAsync();
+    }
+
+    private async void FeedItem_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe) return;
+        var channelId = fe.Tag?.ToString();
+        if (string.IsNullOrEmpty(channelId)) return;
+
+        // Find the channel in existing list, or fetch it
+        var channel = _channels.FirstOrDefault(c => c.Id == channelId);
+        if (channel == null)
+        {
+            try
+            {
+                var channels = await _api.GetChannelsAsync();
+                channel = channels.FirstOrDefault(c => c.Id == channelId);
+            }
+            catch { }
+        }
+
+        if (channel != null)
+        {
+            NavChat.IsChecked = true;
+            _activeNav = "chat";
+            SidebarHeader.Text = Translations.T("chat.chats");
+            ChannelList.Visibility = Visibility.Visible;
+            TeamList.Visibility = Visibility.Collapsed;
+            TeamChannelsBorder.Visibility = Visibility.Collapsed;
+            FeedSidebarInfo.Visibility = Visibility.Collapsed;
+            CalendarList.Visibility = Visibility.Collapsed;
+            FeedView.Visibility = Visibility.Collapsed;
+            await OpenChannelAsync(channel);
+        }
     }
 
     // === Calendar ===
@@ -610,6 +649,12 @@ function insertText(text) {
     private void CalendarRefresh_Click(object sender, RoutedEventArgs e)
     {
         _ = LoadCalendarAsync();
+    }
+
+    private void CalendarConfig_Click(object sender, RoutedEventArgs e)
+    {
+        // Navigate to settings view and scroll to calendar integration
+        SettingsButton_Click(sender, e);
     }
 
     private async void CalendarEventJoin_Click(object sender, RoutedEventArgs e)
@@ -898,6 +943,7 @@ function insertText(text) {
         EmptyState.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Visible;
 
