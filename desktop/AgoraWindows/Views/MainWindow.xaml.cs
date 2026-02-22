@@ -410,6 +410,7 @@ function insertText(text) {
         _activeNav = "feed";
         SidebarHeader.Text = Translations.T("nav.feed");
         ChannelList.Visibility = Visibility.Collapsed;
+        TeamsHeader.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
         FeedSidebarInfo.Visibility = Visibility.Visible;
@@ -429,6 +430,7 @@ function insertText(text) {
         _activeNav = "chat";
         SidebarHeader.Text = Translations.T("chat.chats");
         ChannelList.Visibility = Visibility.Visible;
+        TeamsHeader.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
         FeedSidebarInfo.Visibility = Visibility.Collapsed;
@@ -454,6 +456,7 @@ function insertText(text) {
         _activeNav = "teams";
         SidebarHeader.Text = Translations.T("teams.teams");
         ChannelList.Visibility = Visibility.Collapsed;
+        TeamsHeader.Visibility = Visibility.Visible;
         TeamList.Visibility = Visibility.Visible;
         FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
@@ -472,6 +475,7 @@ function insertText(text) {
         _activeNav = "calendar";
         SidebarHeader.Text = Translations.T("nav.calendar");
         ChannelList.Visibility = Visibility.Collapsed;
+        TeamsHeader.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
         TeamChannelsBorder.Visibility = Visibility.Collapsed;
         FeedSidebarInfo.Visibility = Visibility.Collapsed;
@@ -894,6 +898,59 @@ function insertText(text) {
         if (TeamChannelList.SelectedItem is not Channel channel) return;
         ChannelList.SelectedIndex = -1;
         await OpenChannelAsync(channel);
+    }
+
+    private async void NewTeamButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new System.Windows.Window
+        {
+            Title = Translations.T("teams.new_team"),
+            Width = 360,
+            Height = 220,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize
+        };
+
+        var stack = new StackPanel { Margin = new Thickness(16) };
+
+        stack.Children.Add(new TextBlock { Text = Translations.T("teams.team_name"), Margin = new Thickness(0, 0, 0, 4) });
+        var nameBox = new TextBox { Padding = new Thickness(8, 6, 8, 6) };
+        stack.Children.Add(nameBox);
+
+        stack.Children.Add(new TextBlock { Text = Translations.T("teams.description"), Margin = new Thickness(0, 12, 0, 4) });
+        var descBox = new TextBox { Padding = new Thickness(8, 6, 8, 6) };
+        stack.Children.Add(descBox);
+
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var createBtn = new Button { Content = Translations.T("chat.create"), Padding = new Thickness(16, 6, 16, 6), IsDefault = true };
+        var cancelBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        btnPanel.Children.Add(createBtn);
+        btnPanel.Children.Add(cancelBtn);
+        stack.Children.Add(btnPanel);
+
+        createBtn.Click += (_, _) => { dialog.DialogResult = true; };
+        cancelBtn.Click += (_, _) => { dialog.DialogResult = false; };
+
+        dialog.Content = stack;
+
+        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(nameBox.Text))
+        {
+            try
+            {
+                var desc = string.IsNullOrWhiteSpace(descBox.Text) ? null : descBox.Text.Trim();
+                await _api.CreateTeamAsync(nameBox.Text.Trim(), desc);
+                // Reload teams list
+                var teams = await _api.GetTeamsAsync();
+                _teams.Clear();
+                foreach (var t in teams) _teams.Add(t);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"{Translations.T("teams.error_loading")}: {ex.Message}",
+                    Translations.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
     }
 
     private async System.Threading.Tasks.Task ConnectNotificationWsAsync()
@@ -1418,8 +1475,14 @@ function insertText(text) {
                 .ToList();
             existing.HasReactions = existing.ReactionGroups.Count > 0;
 
+            // Force UI refresh: remove+insert because same-reference replacement
+            // does not trigger WPF re-render
             var idx = _messages.IndexOf(existing);
-            _messages[idx] = existing;
+            if (idx >= 0)
+            {
+                _messages.RemoveAt(idx);
+                _messages.Insert(idx, existing);
+            }
 
             if (userId != _api.CurrentUser?.Id && action == "add")
             {
@@ -1691,8 +1754,13 @@ function insertText(text) {
                 .ToList();
             existing.HasReactions = existing.ReactionGroups.Count > 0;
 
+            // Force UI refresh with remove+insert
             var idx = _messages.IndexOf(existing);
-            if (idx >= 0) _messages[idx] = existing;
+            if (idx >= 0)
+            {
+                _messages.RemoveAt(idx);
+                _messages.Insert(idx, existing);
+            }
         }
         catch { }
     }
