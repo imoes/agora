@@ -81,6 +81,9 @@ struct _AgoraMainWindow {
     /* Notification sound */
     char *notification_sound_path;
 
+    /* Currently selected team */
+    char *current_team_id;
+
     /* Reply / Edit state */
     char *reply_to_id;
     char *reply_to_sender;
@@ -2437,11 +2440,71 @@ static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
     const char *team_id = g_object_get_data(G_OBJECT(row), "team-id");
     const char *team_name = g_object_get_data(G_OBJECT(row), "team-name");
 
+    g_free(win->current_team_id);
+    win->current_team_id = g_strdup(team_id);
+
     gtk_label_set_text(win->team_channels_header, team_name);
     load_team_channels(win, team_id);
     gtk_widget_set_no_show_all(win->team_channels_box, FALSE);
     gtk_widget_show_all(win->team_channels_box);
     gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
+}
+
+static void on_new_team_channel_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->current_team_id) return;
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        T("teams.new_channel"), GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        T("chat.create"), GTK_RESPONSE_OK,
+        T("chat.cancel"), GTK_RESPONSE_CANCEL,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 360, 160);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+
+    GtkWidget *name_label = gtk_label_new(T("teams.channel_name"));
+    gtk_widget_set_halign(name_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), name_label, FALSE, FALSE, 4);
+    GtkWidget *name_entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(content), name_entry, FALSE, FALSE, 4);
+
+    gtk_widget_show_all(dialog);
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+
+    if (response == GTK_RESPONSE_OK) {
+        const char *channel_name = gtk_entry_get_text(GTK_ENTRY(name_entry));
+        if (channel_name && channel_name[0]) {
+            JsonBuilder *builder = json_builder_new();
+            json_builder_begin_object(builder);
+            json_builder_set_member_name(builder, "name");
+            json_builder_add_string_value(builder, channel_name);
+            json_builder_set_member_name(builder, "channel_type");
+            json_builder_add_string_value(builder, "team");
+            json_builder_set_member_name(builder, "team_id");
+            json_builder_add_string_value(builder, win->current_team_id);
+            json_builder_end_object(builder);
+            JsonGenerator *gen = json_generator_new();
+            json_generator_set_root(gen, json_builder_get_root(builder));
+            char *body = json_generator_to_data(gen, NULL);
+
+            GError *err = NULL;
+            JsonNode *res = agora_api_client_post(win->api, "/api/channels/", body, &err);
+            g_free(body);
+            g_object_unref(gen);
+            g_object_unref(builder);
+            if (res) json_node_unref(res);
+            if (err) g_error_free(err);
+
+            load_team_channels(win, win->current_team_id);
+        }
+    }
+
+    gtk_widget_destroy(dialog);
 }
 
 static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
@@ -3797,6 +3860,7 @@ static void agora_main_window_finalize(GObject *obj)
     agora_api_client_free(win->api);
     g_free(win->current_channel_id);
     g_free(win->current_channel_name);
+    g_free(win->current_team_id);
     if (win->reminder_poll_timer) g_source_remove(win->reminder_poll_timer);
     if (win->reminder_tick_timer) g_source_remove(win->reminder_tick_timer);
     g_free(win->reminder_event_id);
@@ -3993,7 +4057,17 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_start(tch_label, 16);
     gtk_widget_set_margin_top(tch_label, 6);
     gtk_widget_set_margin_bottom(tch_label, 2);
-    gtk_box_pack_start(GTK_BOX(win->team_channels_box), tch_label, FALSE, FALSE, 0);
+
+    GtkWidget *tch_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(tch_header), tch_label, TRUE, TRUE, 0);
+    GtkWidget *new_tch_btn = gtk_button_new_with_label("+");
+    gtk_widget_set_tooltip_text(new_tch_btn, T("teams.new_channel"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(new_tch_btn), "input-btn");
+    gtk_widget_set_margin_end(new_tch_btn, 8);
+    g_signal_connect(new_tch_btn, "clicked", G_CALLBACK(on_new_team_channel_clicked), win);
+    gtk_box_pack_end(GTK_BOX(tch_header), new_tch_btn, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(win->team_channels_box), tch_header, FALSE, FALSE, 0);
 
     win->team_channels_header = GTK_LABEL(gtk_label_new(""));
     PangoAttrList *tch_attrs = pango_attr_list_new();
