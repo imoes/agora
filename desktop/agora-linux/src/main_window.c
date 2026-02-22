@@ -114,6 +114,21 @@ static void on_calendar_new_event_clicked(GtkButton *btn, gpointer data);
 static void on_video_call_clicked(GtkButton *btn, gpointer data);
 static void ws_send_json(AgoraMainWindow *win, const char *json_str);
 
+/* Safely clear all children from a GtkListBox, avoiding dangling
+   cursor/selection pointers that cause GTK_IS_WIDGET assertions. */
+static void clear_list_box(GtkListBox *list)
+{
+    GtkSelectionMode mode = gtk_list_box_get_selection_mode(list);
+    /* Temporarily switch to NONE so GTK clears its internal row pointers */
+    gtk_list_box_set_selection_mode(list, GTK_SELECTION_NONE);
+    GList *children = gtk_container_get_children(GTK_CONTAINER(list));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+    /* Restore original selection mode */
+    gtk_list_box_set_selection_mode(list, mode);
+}
+
 /* Accept self-signed certificates callback */
 static gboolean accept_cert_cb(SoupMessage *msg, GTlsCertificate *cert,
                                 GTlsCertificateFlags errors, gpointer data)
@@ -275,11 +290,7 @@ static void load_channels(AgoraMainWindow *win)
     }
 
     /* Clear existing list */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->channel_list));
-    for (GList *l = children; l; l = l->next) {
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    }
-    g_list_free(children);
+    clear_list_box(win->channel_list);
 
     JsonArray *arr = json_node_get_array(result);
     guint len = json_array_get_length(arr);
@@ -366,11 +377,7 @@ static void load_teams(AgoraMainWindow *win)
     }
 
     /* Clear existing list */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->team_list));
-    for (GList *l = children; l; l = l->next) {
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    }
-    g_list_free(children);
+    clear_list_box(win->team_list);
 
     JsonArray *arr = json_node_get_array(result);
     guint len = json_array_get_length(arr);
@@ -435,11 +442,7 @@ static void load_team_channels(AgoraMainWindow *win, const char *team_id)
     g_free(path);
 
     /* Clear existing list */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->team_channel_list));
-    for (GList *l = children; l; l = l->next) {
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    }
-    g_list_free(children);
+    clear_list_box(win->team_channel_list);
 
     if (!result) {
         g_printerr("[Teams] ERROR loading team channels: %s\n", error ? error->message : "null response");
@@ -573,10 +576,7 @@ static void load_feed(AgoraMainWindow *win)
     }
 
     /* Clear existing list */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->feed_list));
-    for (GList *l = children; l; l = l->next)
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    g_list_free(children);
+    clear_list_box(win->feed_list);
 
     JsonObject *root = json_node_get_object(result);
     if (!json_object_has_member(root, "events")) {
@@ -773,10 +773,7 @@ static void load_calendar_events(AgoraMainWindow *win)
 static void populate_calendar_day_events(AgoraMainWindow *win)
 {
     /* Clear existing list */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->calendar_list));
-    for (GList *l = children; l; l = l->next)
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    g_list_free(children);
+    clear_list_box(win->calendar_list);
 
     guint sel_year, sel_month, sel_day;
     gtk_calendar_get_date(GTK_CALENDAR(win->gtk_calendar),
@@ -1964,10 +1961,7 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
     g_free(path);
 
     /* Clear existing message rows */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->message_list));
-    for (GList *l = children; l; l = l->next)
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    g_list_free(children);
+    clear_list_box(win->message_list);
 
     if (!result) {
         if (error) g_error_free(error);
@@ -2498,10 +2492,7 @@ static void do_user_search(GtkEntry *entry, gpointer data)
     const char *query = gtk_entry_get_text(entry);
 
     /* Clear old results */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(results));
-    for (GList *l = children; l; l = l->next)
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    g_list_free(children);
+    clear_list_box(results);
 
     if (!query || strlen(query) < 2) return;
 
