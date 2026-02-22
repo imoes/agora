@@ -1281,6 +1281,15 @@ function insertText(text) {
                 hideJs.Append("{childList:true,subtree:true});});");
                 // Polling fallback: every 100ms for 30s
                 hideJs.Append("var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);");
+                // Detect SPA navigation away from /video/ by patching pushState/replaceState
+                hideJs.Append("var _ps=history.pushState,_rs=history.replaceState;");
+                hideJs.Append("function _chk(url){");
+                hideJs.Append("var s=(url&&url.toString())||location.href;");
+                hideJs.Append("if(s.indexOf('/video/')===-1){");
+                hideJs.Append("try{window.chrome.webview.postMessage('leaveCall');}catch(e){}}}");
+                hideJs.Append("history.pushState=function(){_ps.apply(this,arguments);_chk(arguments[2]);};");
+                hideJs.Append("history.replaceState=function(){_rs.apply(this,arguments);_chk(arguments[2]);};");
+                hideJs.Append("window.addEventListener('popstate',function(){_chk();});");
                 hideJs.Append("})();");
                 var initScript = hideJs.ToString();
                 // Remove previous injected scripts, then add new one
@@ -1295,6 +1304,10 @@ function insertText(text) {
                 // Detect if user navigates away from video page (e.g. leaves call in Angular UI)
                 VideoWebView.CoreWebView2.NavigationStarting -= OnVideoNavigationStarting;
                 VideoWebView.CoreWebView2.NavigationStarting += OnVideoNavigationStarting;
+
+                // Listen for postMessage from injected pushState hook
+                VideoWebView.CoreWebView2.WebMessageReceived -= OnVideoWebMessageReceived;
+                VideoWebView.CoreWebView2.WebMessageReceived += OnVideoWebMessageReceived;
 
                 // Hide all content views, show video overlay
                 ChatView.Visibility = Visibility.Collapsed;
@@ -1331,8 +1344,9 @@ function insertText(text) {
         ChatView.Visibility = Visibility.Visible;
         if (_webViewInitialized && VideoWebView.CoreWebView2 != null)
         {
-            // Unhook navigation handler
+            // Unhook navigation and message handlers
             VideoWebView.CoreWebView2.NavigationStarting -= OnVideoNavigationStarting;
+            VideoWebView.CoreWebView2.WebMessageReceived -= OnVideoWebMessageReceived;
 
             if (_videoInitScriptId != null)
             {
@@ -1365,6 +1379,16 @@ function insertText(text) {
         {
             System.Diagnostics.Debug.WriteLine("[Video] Detected navigation away from video page, leaving call");
             e.Cancel = true;
+            Dispatcher.InvokeAsync(() => LeaveVideoCall());
+        }
+    }
+
+    private void OnVideoWebMessageReceived(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        var message = e.TryGetWebMessageAsString();
+        System.Diagnostics.Debug.WriteLine($"[Video] WebMessage received: {message}");
+        if (message == "leaveCall")
+        {
             Dispatcher.InvokeAsync(() => LeaveVideoCall());
         }
     }
