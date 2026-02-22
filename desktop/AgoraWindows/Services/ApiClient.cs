@@ -82,6 +82,21 @@ public class ApiClient : IDisposable
         return user;
     }
 
+    public async Task<User> UploadAvatarAsync(string filePath)
+    {
+        using var stream = System.IO.File.OpenRead(filePath);
+        var fileName = System.IO.Path.GetFileName(filePath);
+        var content = new MultipartFormDataContent();
+        content.Add(new StreamContent(stream), "file", fileName);
+
+        var response = await _http.PostAsync("/api/auth/me/avatar", content);
+        response.EnsureSuccessStatusCode();
+        var user = await response.Content.ReadFromJsonAsync<User>()
+                   ?? throw new Exception("Failed to upload avatar");
+        _currentUser = user;
+        return user;
+    }
+
     // --- Channels ---
 
     public async Task<List<Channel>> GetChannelsAsync()

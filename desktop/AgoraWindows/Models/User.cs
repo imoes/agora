@@ -16,6 +16,9 @@ public class User
     [JsonPropertyName("display_name")]
     public string DisplayName { get; set; } = "";
 
+    [JsonPropertyName("avatar_path")]
+    public string? AvatarPath { get; set; }
+
     [JsonPropertyName("status")]
     public string Status { get; set; } = "offline";
 

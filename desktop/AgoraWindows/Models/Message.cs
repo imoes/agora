@@ -101,6 +101,12 @@ public class Message
     public HorizontalAlignment BubbleAlignment { get; set; } = HorizontalAlignment.Left;
 
     [JsonIgnore]
+    public CornerRadius BubbleCornerRadius { get; set; } = new CornerRadius(12, 12, 12, 2);
+
+    [JsonIgnore]
+    public Thickness BubbleMargin { get; set; } = new Thickness(0, 3, 60, 3);
+
+    [JsonIgnore]
     public List<Views.ReactionGroup>? ReactionGroups { get; set; }
 
     [JsonIgnore]

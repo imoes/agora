@@ -934,6 +934,194 @@ function insertText(text) {
         await OpenChannelAsync(channel);
     }
 
+    // === New Chat / User Search / Add Member / Leave Channel ===
+
+    private async void NewChat_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Window
+        {
+            Title = Translations.T("chat.new_channel"),
+            Width = 420, Height = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this, ResizeMode = ResizeMode.NoResize
+        };
+        var stack = new StackPanel { Margin = new Thickness(16) };
+
+        // Channel name
+        stack.Children.Add(new TextBlock { Text = Translations.T("chat.channel_name"), Margin = new Thickness(0, 0, 0, 4) });
+        var nameBox = new TextBox { Margin = new Thickness(0, 0, 0, 12) };
+        stack.Children.Add(nameBox);
+
+        stack.Children.Add(new Separator { Margin = new Thickness(0, 0, 0, 12) });
+
+        // User search
+        stack.Children.Add(new TextBlock { Text = Translations.T("chat.search_users"), Margin = new Thickness(0, 0, 0, 4) });
+        var searchBox = new TextBox { Margin = new Thickness(0, 0, 0, 8) };
+        stack.Children.Add(searchBox);
+
+        var resultsList = new ListBox { Height = 150, Margin = new Thickness(0, 0, 0, 12) };
+        stack.Children.Add(resultsList);
+
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var cancelBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0) };
+        var createBtn = new Button { Content = Translations.T("chat.create"), Padding = new Thickness(16, 6, 16, 6),
+            Background = (Brush)FindResource("PrimaryBrush"), Foreground = Brushes.White };
+        btnPanel.Children.Add(cancelBtn);
+        btnPanel.Children.Add(createBtn);
+        stack.Children.Add(btnPanel);
+
+        dlg.Content = stack;
+
+        // Search users on text change
+        searchBox.TextChanged += async (s, ev) =>
+        {
+            var query = searchBox.Text;
+            if (query.Length < 2) { resultsList.Items.Clear(); return; }
+            try
+            {
+                var users = await _api.SearchUsersAsync(query);
+                resultsList.Items.Clear();
+                resultsList.DisplayMemberPath = "DisplayLabel";
+                foreach (var u in users)
+                {
+                    resultsList.Items.Add(new { u.Id, DisplayLabel = $"{u.DisplayName ?? u.Username} (@{u.Username})" });
+                }
+            }
+            catch { }
+        };
+
+        cancelBtn.Click += (s, ev) => dlg.Close();
+        createBtn.Click += async (s, ev) =>
+        {
+            // If user selected -> create direct chat
+            if (resultsList.SelectedItem != null)
+            {
+                dynamic selected = resultsList.SelectedItem;
+                try
+                {
+                    var ch = await _api.CreateDirectChatAsync(selected.Id);
+                    await LoadChannelsAsync();
+                    // Select the new channel
+                    foreach (var c in _channels)
+                    {
+                        if (c.Id == ch.Id) { ChannelList.SelectedItem = c; break; }
+                    }
+                }
+                catch (Exception ex) { MessageBox.Show(ex.Message); }
+                dlg.Close();
+                return;
+            }
+
+            // Create group channel
+            var name = nameBox.Text.Trim();
+            if (!string.IsNullOrEmpty(name))
+            {
+                try
+                {
+                    var ch = await _api.CreateChannelAsync(name, "group");
+                    await LoadChannelsAsync();
+                    foreach (var c in _channels)
+                    {
+                        if (c.Id == ch.Id) { ChannelList.SelectedItem = c; break; }
+                    }
+                }
+                catch (Exception ex) { MessageBox.Show(ex.Message); }
+            }
+            dlg.Close();
+        };
+
+        dlg.ShowDialog();
+    }
+
+    private async void AddMember_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentChannelId == null) return;
+
+        var dlg = new Window
+        {
+            Title = Translations.T("chat.add_member"),
+            Width = 380, Height = 350,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this, ResizeMode = ResizeMode.NoResize
+        };
+        var stack = new StackPanel { Margin = new Thickness(16) };
+
+        var searchBox = new TextBox { Margin = new Thickness(0, 0, 0, 8) };
+        searchBox.SetValue(TextBox.TagProperty, Translations.T("chat.search_users"));
+        stack.Children.Add(new TextBlock { Text = Translations.T("chat.search_users"), Margin = new Thickness(0, 0, 0, 4) });
+        stack.Children.Add(searchBox);
+
+        var resultsList = new ListBox { Height = 200, Margin = new Thickness(0, 0, 0, 8) };
+        stack.Children.Add(resultsList);
+
+        var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6),
+            HorizontalAlignment = HorizontalAlignment.Right };
+        stack.Children.Add(closeBtn);
+
+        dlg.Content = stack;
+
+        searchBox.TextChanged += async (s, ev) =>
+        {
+            var query = searchBox.Text;
+            if (query.Length < 2) { resultsList.Items.Clear(); return; }
+            try
+            {
+                var users = await _api.SearchUsersAsync(query);
+                resultsList.Items.Clear();
+                resultsList.DisplayMemberPath = "DisplayLabel";
+                foreach (var u in users)
+                    resultsList.Items.Add(new { u.Id, DisplayLabel = $"{u.DisplayName ?? u.Username} (@{u.Username})" });
+            }
+            catch { }
+        };
+
+        // Double-click to add member
+        resultsList.MouseDoubleClick += async (s, ev) =>
+        {
+            if (resultsList.SelectedItem == null) return;
+            dynamic selected = resultsList.SelectedItem;
+            try
+            {
+                await _api.AddChannelMemberAsync(_currentChannelId, selected.Id);
+                if (resultsList.SelectedItem is System.Windows.Controls.ListBoxItem item)
+                    item.IsEnabled = false;
+                ShowToast(Translations.T("chat.add_member"), $"{selected.DisplayLabel}");
+            }
+            catch { }
+        };
+
+        closeBtn.Click += (s, ev) => { dlg.Close(); };
+        dlg.ShowDialog();
+        await LoadChannelsAsync();
+    }
+
+    private async void LeaveChannel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentChannelId == null) return;
+
+        var result = MessageBox.Show(
+            Translations.T("chat.leave_confirm"),
+            Translations.T("chat.leave_channel"),
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                await _api.LeaveChannelAsync(_currentChannelId);
+                _currentChannelId = null;
+                _currentChannelName = null;
+                ChatView.Visibility = Visibility.Collapsed;
+                EmptyState.Visibility = Visibility.Visible;
+                await LoadChannelsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, Translations.T("common.error"));
+            }
+        }
+    }
+
     private async System.Threading.Tasks.Task OpenChannelAsync(Channel channel)
     {
         _currentChannelId = channel.Id;
@@ -1036,6 +1224,17 @@ function insertText(text) {
             ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8E5FC"))
             : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F0F0F0"));
         msg.BubbleAlignment = isOwn ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+
+        // Asymmetric corner radius for chat bubble "tail" effect
+        // Own messages: tail bottom-right, Others: tail bottom-left
+        msg.BubbleCornerRadius = isOwn
+            ? new CornerRadius(12, 12, 2, 12)
+            : new CornerRadius(12, 12, 12, 2);
+
+        // Margin: own messages get space on left, others get space on right
+        msg.BubbleMargin = isOwn
+            ? new Thickness(60, 3, 12, 3)
+            : new Thickness(12, 3, 60, 3);
 
         // Reaction groups
         if (msg.Reactions != null && msg.Reactions.Count > 0)
@@ -1371,6 +1570,57 @@ function insertText(text) {
         {
             MessageBox.Show($"{Translations.T("common.error")}: {ex.Message}");
         }
+    }
+
+    private async void CtxForward_Click(object sender, RoutedEventArgs e)
+    {
+        MessageContextMenu.IsOpen = false;
+        var message = _messages.FirstOrDefault(m => m.Id == _contextMessageId);
+        if (message == null || _currentChannelId == null) return;
+
+        var channels = await _api.GetChannelsAsync();
+        var otherChannels = channels.Where(c => c.Id != _currentChannelId).ToList();
+
+        var win = new Window
+        {
+            Title = Translations.T("chat.forward_to"),
+            Width = 340, Height = 420,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this
+        };
+        var sp = new StackPanel { Margin = new Thickness(12) };
+        var lb = new ListBox { Height = 320 };
+        foreach (var ch in otherChannels)
+        {
+            var item = new ListBoxItem { Content = ch.Name ?? ch.Id, Tag = ch };
+            lb.Items.Add(item);
+        }
+        sp.Children.Add(lb);
+
+        lb.MouseDoubleClick += async (s, ev) =>
+        {
+            if (lb.SelectedItem is ListBoxItem sel && sel.Tag is Channel target)
+            {
+                var senderName = message.SenderName ?? Translations.T("chat.unknown");
+                var content = $"[{Translations.T("chat.forwarded_from")} {senderName}]\n{message.Content}";
+                var msgType = message.MessageType == "file" ? "file" : "text";
+                try
+                {
+                    await _api.SendMessageAsync(target.Id, content, msgType,
+                        fileReferenceId: message.FileReferenceId);
+                    MessageBox.Show($"{Translations.T("chat.forwarded_to")} \"{target.Name}\"",
+                        "OK", MessageBoxButton.OK, MessageBoxImage.Information);
+                    win.Close();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"{Translations.T("common.error")}: {ex.Message}");
+                }
+            }
+        };
+
+        win.Content = sp;
+        win.ShowDialog();
     }
 
     private async void CtxReaction_Click(object sender, RoutedEventArgs e)
@@ -2134,6 +2384,7 @@ function insertText(text) {
         SettingsCurrentPassword.Password = "";
         SettingsNewPassword.Password = "";
         SettingsStatus.Visibility = Visibility.Collapsed;
+        LoadSettingsAvatar(user);
 
         var userLang = user?.Language ?? Translations.CurrentLang;
         for (int i = 0; i < SettingsLanguage.Items.Count; i++)
@@ -2212,6 +2463,80 @@ function insertText(text) {
     {
         SettingsView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
+    }
+
+    private async void AvatarUpload_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Upload Avatar",
+            Filter = "Images|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|All files|*.*"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            AvatarUploadBtn.IsEnabled = false;
+            AvatarUploadBtn.Content = "Uploading...";
+            var user = await _api.UploadAvatarAsync(dialog.FileName);
+            LoadSettingsAvatar(user);
+            UpdateSidebarAvatar(user);
+            ShowSettingsStatus(Translations.T("settings.saved"), false);
+        }
+        catch (Exception ex)
+        {
+            ShowSettingsStatus($"{Translations.T("settings.error")}: {ex.Message}", true);
+        }
+        finally
+        {
+            AvatarUploadBtn.IsEnabled = true;
+            AvatarUploadBtn.Content = "Upload Avatar";
+        }
+    }
+
+    private void LoadSettingsAvatar(User? user)
+    {
+        if (user?.AvatarPath != null && !string.IsNullOrEmpty(user.AvatarPath))
+        {
+            try
+            {
+                var baseUrl = _api.BaseUrl?.TrimEnd('/') ?? "";
+                var uri = new Uri($"{baseUrl}{user.AvatarPath}");
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.UriSource = uri;
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                SettingsAvatarImage.Source = bmp;
+                SettingsAvatarImage.Visibility = Visibility.Visible;
+                SettingsAvatarInitials.Visibility = Visibility.Collapsed;
+            }
+            catch
+            {
+                SettingsAvatarImage.Visibility = Visibility.Collapsed;
+                SettingsAvatarInitials.Visibility = Visibility.Visible;
+            }
+        }
+        else
+        {
+            SettingsAvatarImage.Visibility = Visibility.Collapsed;
+            SettingsAvatarInitials.Visibility = Visibility.Visible;
+            var initials = !string.IsNullOrEmpty(user?.DisplayName)
+                ? user.DisplayName[..1].ToUpper()
+                : "U";
+            SettingsAvatarInitials.Text = initials;
+        }
+    }
+
+    private void UpdateSidebarAvatar(User? user)
+    {
+        if (user?.AvatarPath != null)
+        {
+            var initials = !string.IsNullOrEmpty(user.DisplayName)
+                ? user.DisplayName[..1].ToUpper()
+                : "U";
+            AvatarText.Text = initials;
+        }
     }
 
     private void ShowSettingsStatus(string message, bool isError)
