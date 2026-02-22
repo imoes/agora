@@ -750,11 +750,11 @@
                     <ItemsControl x:Name="MessageList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Margin="0,2" Padding="10,6"
-                                        CornerRadius="6" Cursor="Hand"
+                                <Border Margin="{Binding BubbleMargin}" Padding="10,8"
+                                        CornerRadius="{Binding BubbleCornerRadius}" Cursor="Hand"
                                         Background="{Binding BubbleColor}"
                                         HorizontalAlignment="{Binding BubbleAlignment}"
-                                        MaxWidth="600"
+                                        MaxWidth="520"
                                         MouseRightButtonUp="Message_RightClick"
                                         Tag="{Binding Id}">
                                     <StackPanel>

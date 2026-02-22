@@ -1037,6 +1037,17 @@ function insertText(text) {
             : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F0F0F0"));
         msg.BubbleAlignment = isOwn ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
+        // Asymmetric corner radius for chat bubble "tail" effect
+        // Own messages: tail bottom-right, Others: tail bottom-left
+        msg.BubbleCornerRadius = isOwn
+            ? new CornerRadius(12, 12, 2, 12)
+            : new CornerRadius(12, 12, 12, 2);
+
+        // Margin: own messages get space on left, others get space on right
+        msg.BubbleMargin = isOwn
+            ? new Thickness(60, 3, 12, 3)
+            : new Thickness(12, 3, 60, 3);
+
         // Reaction groups
         if (msg.Reactions != null && msg.Reactions.Count > 0)
         {
