@@ -1000,6 +1000,24 @@ function insertText(text) {
             // WebSocket is optional - chat still works via REST
         }
 
+        // Mark channel as read
+        try
+        {
+            if (_messages.Count > 0)
+            {
+                var lastMsg = _messages.Last();
+                await _api.UpdateReadPositionAsync(channel.Id, lastMsg.Id);
+            }
+            await _api.MarkFeedReadAsync(channelId: channel.Id);
+
+            // Update channel unread count locally
+            channel.UnreadCount = 0;
+
+            // Reload channels to update unread badges
+            await LoadChannelsAsync();
+        }
+        catch { }
+
         // Focus editor
         if (_editorInitialized)
         {
