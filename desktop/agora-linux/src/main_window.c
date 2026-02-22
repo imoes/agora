@@ -1491,7 +1491,7 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
     char *time_str = format_relative_time(created);
     GtkWidget *time_lbl = gtk_label_new(NULL);
     char *time_markup = g_strdup_printf(
-        "<small color='#999999'>%s</small>", time_str);
+        "<span size='small' foreground='#999999'>%s</span>", time_str);
     gtk_label_set_markup(GTK_LABEL(time_lbl), time_markup);
     g_free(time_markup);
     g_free(time_str);
