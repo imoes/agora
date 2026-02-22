@@ -93,6 +93,11 @@ public static class Translations
             ["chat.leave_channel"] = "Leave Channel",
             ["chat.leave_confirm"] = "Leave this channel?",
             ["chat.direct_chat"] = "Direct Chat",
+            ["chat.forward"] = "Forward",
+            ["chat.forward_to"] = "Forward to...",
+            ["chat.forwarded_from"] = "Forwarded from",
+            ["chat.forwarded_to"] = "Forwarded to",
+            ["chat.unknown"] = "Unknown",
         },
         ["de"] = new()
         {
@@ -167,6 +172,11 @@ public static class Translations
             ["chat.leave_channel"] = "Kanal verlassen",
             ["chat.leave_confirm"] = "Diesen Kanal verlassen?",
             ["chat.direct_chat"] = "Direktnachricht",
+            ["chat.forward"] = "Weiterleiten",
+            ["chat.forward_to"] = "Weiterleiten an...",
+            ["chat.forwarded_from"] = "Weitergeleitet von",
+            ["chat.forwarded_to"] = "Weitergeleitet an",
+            ["chat.unknown"] = "Unbekannt",
         },
         ["fr"] = new()
         {

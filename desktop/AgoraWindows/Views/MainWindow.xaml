@@ -600,6 +600,25 @@
                         <TextBlock x:Name="SettingsTitle" Text="Settings" FontSize="22" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,24" />
 
+                        <!-- Avatar Upload -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                            <Border Width="64" Height="64" CornerRadius="32"
+                                    Background="{StaticResource PrimaryBrush}" Margin="0,0,16,0">
+                                <Grid>
+                                    <TextBlock x:Name="SettingsAvatarInitials" Text="U" FontSize="24" FontWeight="Bold"
+                                               Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <Image x:Name="SettingsAvatarImage" Stretch="UniformToFill" Visibility="Collapsed">
+                                        <Image.Clip>
+                                            <EllipseGeometry Center="32,32" RadiusX="32" RadiusY="32" />
+                                        </Image.Clip>
+                                    </Image>
+                                </Grid>
+                            </Border>
+                            <Button x:Name="AvatarUploadBtn" Content="Upload Avatar" Padding="16,8"
+                                    Click="AvatarUpload_Click" VerticalAlignment="Center"
+                                    Background="#E0E0E0" Foreground="#333333" BorderThickness="0" Cursor="Hand" />
+                        </StackPanel>
+
                         <!-- Display Name -->
                         <TextBlock x:Name="SettingsDisplayNameLabel" Text="Display Name" FontSize="12"
                                    Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
@@ -1056,6 +1075,9 @@
                 </Border.Effect>
                 <StackPanel MinWidth="160">
                     <Button x:Name="CtxReply" Content="Reply" Click="CtxReply_Click"
+                            Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Left" Padding="12,6" Cursor="Hand" />
+                    <Button x:Name="CtxForward" Content="Forward" Click="CtxForward_Click"
                             Background="Transparent" BorderThickness="0"
                             HorizontalContentAlignment="Left" Padding="12,6" Cursor="Hand" />
                     <Button x:Name="CtxEdit" Content="Edit" Click="CtxEdit_Click"

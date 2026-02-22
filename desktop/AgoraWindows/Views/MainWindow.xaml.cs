@@ -1572,6 +1572,57 @@ function insertText(text) {
         }
     }
 
+    private async void CtxForward_Click(object sender, RoutedEventArgs e)
+    {
+        MessageContextMenu.IsOpen = false;
+        var message = _messages.FirstOrDefault(m => m.Id == _contextMessageId);
+        if (message == null || _currentChannelId == null) return;
+
+        var channels = await _api.GetChannelsAsync();
+        var otherChannels = channels.Where(c => c.Id != _currentChannelId).ToList();
+
+        var win = new Window
+        {
+            Title = Translations.T("chat.forward_to"),
+            Width = 340, Height = 420,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this
+        };
+        var sp = new StackPanel { Margin = new Thickness(12) };
+        var lb = new ListBox { Height = 320 };
+        foreach (var ch in otherChannels)
+        {
+            var item = new ListBoxItem { Content = ch.Name ?? ch.Id, Tag = ch };
+            lb.Items.Add(item);
+        }
+        sp.Children.Add(lb);
+
+        lb.MouseDoubleClick += async (s, ev) =>
+        {
+            if (lb.SelectedItem is ListBoxItem sel && sel.Tag is Channel target)
+            {
+                var senderName = message.SenderName ?? Translations.T("chat.unknown");
+                var content = $"[{Translations.T("chat.forwarded_from")} {senderName}]\n{message.Content}";
+                var msgType = message.MessageType == "file" ? "file" : "text";
+                try
+                {
+                    await _api.SendMessageAsync(target.Id, content, msgType,
+                        fileReferenceId: message.FileReferenceId);
+                    MessageBox.Show($"{Translations.T("chat.forwarded_to")} \"{target.Name}\"",
+                        "OK", MessageBoxButton.OK, MessageBoxImage.Information);
+                    win.Close();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"{Translations.T("common.error")}: {ex.Message}");
+                }
+            }
+        };
+
+        win.Content = sp;
+        win.ShowDialog();
+    }
+
     private async void CtxReaction_Click(object sender, RoutedEventArgs e)
     {
         MessageContextMenu.IsOpen = false;
@@ -2333,6 +2384,7 @@ function insertText(text) {
         SettingsCurrentPassword.Password = "";
         SettingsNewPassword.Password = "";
         SettingsStatus.Visibility = Visibility.Collapsed;
+        LoadSettingsAvatar(user);
 
         var userLang = user?.Language ?? Translations.CurrentLang;
         for (int i = 0; i < SettingsLanguage.Items.Count; i++)
@@ -2411,6 +2463,80 @@ function insertText(text) {
     {
         SettingsView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
+    }
+
+    private async void AvatarUpload_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Upload Avatar",
+            Filter = "Images|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|All files|*.*"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            AvatarUploadBtn.IsEnabled = false;
+            AvatarUploadBtn.Content = "Uploading...";
+            var user = await _api.UploadAvatarAsync(dialog.FileName);
+            LoadSettingsAvatar(user);
+            UpdateSidebarAvatar(user);
+            ShowSettingsStatus(Translations.T("settings.saved"), false);
+        }
+        catch (Exception ex)
+        {
+            ShowSettingsStatus($"{Translations.T("settings.error")}: {ex.Message}", true);
+        }
+        finally
+        {
+            AvatarUploadBtn.IsEnabled = true;
+            AvatarUploadBtn.Content = "Upload Avatar";
+        }
+    }
+
+    private void LoadSettingsAvatar(User? user)
+    {
+        if (user?.AvatarPath != null && !string.IsNullOrEmpty(user.AvatarPath))
+        {
+            try
+            {
+                var baseUrl = _api.BaseUrl?.TrimEnd('/') ?? "";
+                var uri = new Uri($"{baseUrl}{user.AvatarPath}");
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.UriSource = uri;
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                SettingsAvatarImage.Source = bmp;
+                SettingsAvatarImage.Visibility = Visibility.Visible;
+                SettingsAvatarInitials.Visibility = Visibility.Collapsed;
+            }
+            catch
+            {
+                SettingsAvatarImage.Visibility = Visibility.Collapsed;
+                SettingsAvatarInitials.Visibility = Visibility.Visible;
+            }
+        }
+        else
+        {
+            SettingsAvatarImage.Visibility = Visibility.Collapsed;
+            SettingsAvatarInitials.Visibility = Visibility.Visible;
+            var initials = !string.IsNullOrEmpty(user?.DisplayName)
+                ? user.DisplayName[..1].ToUpper()
+                : "U";
+            SettingsAvatarInitials.Text = initials;
+        }
+    }
+
+    private void UpdateSidebarAvatar(User? user)
+    {
+        if (user?.AvatarPath != null)
+        {
+            var initials = !string.IsNullOrEmpty(user.DisplayName)
+                ? user.DisplayName[..1].ToUpper()
+                : "U";
+            AvatarText.Text = initials;
+        }
     }
 
     private void ShowSettingsStatus(string message, bool isError)

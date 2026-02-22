@@ -1571,6 +1571,131 @@ static void on_menu_delete_activate(GtkMenuItem *item, gpointer data)
     }
 }
 
+static void on_forward_channel_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data)
+{
+    (void)box;
+    GtkWidget *dialog = GTK_WIDGET(data);
+    const char *ch_id = g_object_get_data(G_OBJECT(row), "channel-id");
+    if (ch_id) {
+        g_object_set_data_full(G_OBJECT(dialog), "selected-channel",
+                               g_strdup(ch_id), g_free);
+        const char *ch_name = g_object_get_data(G_OBJECT(row), "channel-name");
+        if (ch_name) {
+            g_object_set_data_full(G_OBJECT(dialog), "selected-name",
+                                   g_strdup(ch_name), g_free);
+        }
+        gtk_dialog_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+    }
+}
+
+static void on_menu_forward_activate(GtkMenuItem *item, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *sender_name = g_object_get_data(G_OBJECT(item), "sender-name");
+    const char *msg_content = g_object_get_data(G_OBJECT(item), "msg-content");
+    const char *msg_type = g_object_get_data(G_OBJECT(item), "msg-type");
+    const char *file_ref = g_object_get_data(G_OBJECT(item), "file-ref");
+    if (!msg_content) return;
+
+    /* Show channel picker dialog */
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        T("chat.forward_to"),
+        GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        T("chat.cancel"), GTK_RESPONSE_CANCEL,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 320, 400);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 8);
+
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    GtkWidget *list = gtk_list_box_new();
+    gtk_container_add(GTK_CONTAINER(scroll), list);
+    gtk_box_pack_start(GTK_BOX(content), scroll, TRUE, TRUE, 0);
+
+    /* Load channels */
+    GError *err = NULL;
+    JsonNode *channels_node = agora_api_client_get(win->api, "/api/channels/", &err);
+    if (channels_node && JSON_NODE_HOLDS_ARRAY(channels_node)) {
+        JsonArray *arr = json_node_get_array(channels_node);
+        guint len = json_array_get_length(arr);
+        for (guint i = 0; i < len; i++) {
+            JsonObject *ch = json_array_get_object_element(arr, i);
+            const char *ch_id = json_object_get_string_member(ch, "id");
+            const char *ch_name = json_object_get_string_member(ch, "name");
+            /* Skip current channel */
+            if (win->current_channel_id && g_strcmp0(ch_id, win->current_channel_id) == 0)
+                continue;
+            GtkWidget *row = gtk_list_box_row_new();
+            GtkWidget *lbl = gtk_label_new(ch_name ? ch_name : ch_id);
+            gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+            gtk_widget_set_margin_start(lbl, 12);
+            gtk_widget_set_margin_top(lbl, 8);
+            gtk_widget_set_margin_bottom(lbl, 8);
+            gtk_container_add(GTK_CONTAINER(row), lbl);
+            g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(ch_id), g_free);
+            g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(ch_name ? ch_name : ""), g_free);
+            gtk_list_box_insert(GTK_LIST_BOX(list), row, -1);
+        }
+    }
+    if (channels_node) json_node_unref(channels_node);
+    if (err) { g_error_free(err); err = NULL; }
+
+    g_signal_connect(list, "row-activated",
+                     G_CALLBACK(on_forward_channel_row_activated), dialog);
+
+    gtk_widget_show_all(dialog);
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+
+    if (response == GTK_RESPONSE_OK) {
+        const char *target_id = g_object_get_data(G_OBJECT(dialog), "selected-channel");
+        const char *target_name = g_object_get_data(G_OBJECT(dialog), "selected-name");
+        if (target_id) {
+            /* Build forwarded message content */
+            char *fwd_content = g_strdup_printf("[%s %s]\n%s",
+                T("chat.forwarded_from"),
+                sender_name ? sender_name : "",
+                msg_content);
+
+            /* Use actual message type for file forwarding */
+            const char *fwd_type = (msg_type && g_strcmp0(msg_type, "file") == 0) ? "file" : "text";
+
+            JsonBuilder *b = json_builder_new();
+            json_builder_begin_object(b);
+            json_builder_set_member_name(b, "content");
+            json_builder_add_string_value(b, fwd_content);
+            json_builder_set_member_name(b, "message_type");
+            json_builder_add_string_value(b, fwd_type);
+            if (file_ref && file_ref[0]) {
+                json_builder_set_member_name(b, "file_reference_id");
+                json_builder_add_string_value(b, file_ref);
+            }
+            json_builder_end_object(b);
+
+            JsonGenerator *gen = json_generator_new();
+            json_generator_set_root(gen, json_builder_get_root(b));
+            char *body = json_generator_to_data(gen, NULL);
+            g_object_unref(gen);
+            g_object_unref(b);
+
+            char *path = g_strdup_printf("/api/channels/%s/messages/", target_id);
+            GError *send_err = NULL;
+            JsonNode *res = agora_api_client_post(win->api, path, body, &send_err);
+            if (res) json_node_unref(res);
+            if (send_err) g_error_free(send_err);
+            g_free(path);
+            g_free(body);
+            g_free(fwd_content);
+
+            g_print("[Forward] Message forwarded to %s\n", target_name ? target_name : target_id);
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+
 static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
                                         gpointer data)
 {
@@ -1591,6 +1716,17 @@ static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
     g_object_set_data_full(G_OBJECT(reply_item), "msg-content", g_strdup(msg_content ? msg_content : ""), g_free);
     g_signal_connect(reply_item, "activate", G_CALLBACK(on_menu_reply_activate), win);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reply_item);
+
+    /* Forward */
+    const char *msg_type = g_object_get_data(G_OBJECT(widget), "msg-type");
+    const char *file_ref = g_object_get_data(G_OBJECT(widget), "file-ref");
+    GtkWidget *forward_item = gtk_menu_item_new_with_label(T("chat.forward"));
+    g_object_set_data_full(G_OBJECT(forward_item), "sender-name", g_strdup(sender_name ? sender_name : ""), g_free);
+    g_object_set_data_full(G_OBJECT(forward_item), "msg-content", g_strdup(msg_content ? msg_content : ""), g_free);
+    g_object_set_data_full(G_OBJECT(forward_item), "msg-type", g_strdup(msg_type ? msg_type : "text"), g_free);
+    g_object_set_data_full(G_OBJECT(forward_item), "file-ref", g_strdup(file_ref ? file_ref : ""), g_free);
+    g_signal_connect(forward_item, "activate", G_CALLBACK(on_menu_forward_activate), win);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), forward_item);
 
     /* Edit + Delete (only own messages) */
     if (is_own) {
@@ -1800,6 +1936,13 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
                                g_strdup(content ? content : ""), g_free);
         g_object_set_data(G_OBJECT(evbox), "is-own",
                           GINT_TO_POINTER(is_own ? 1 : 0));
+        g_object_set_data_full(G_OBJECT(evbox), "msg-type",
+                               g_strdup(msg_type ? msg_type : "text"), g_free);
+        const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
+                                  !json_object_get_null_member(msg, "file_reference_id")
+                                  ? json_object_get_string_member(msg, "file_reference_id") : "";
+        g_object_set_data_full(G_OBJECT(evbox), "file-ref",
+                               g_strdup(file_ref_id), g_free);
         g_signal_connect(evbox, "button-press-event",
                          G_CALLBACK(on_message_right_click), win);
     }
@@ -2528,6 +2671,376 @@ static void on_new_chat_clicked(GtkButton *btn, gpointer data)
     }
 
     gtk_widget_destroy(dialog);
+}
+
+/* --- Settings Dialog --- */
+
+static void on_settings_save_profile(GtkButton *btn, gpointer data)
+{
+    (void)data;
+    GtkEntry *dn_entry = GTK_ENTRY(g_object_get_data(G_OBJECT(btn), "dn-entry"));
+    GtkEntry *em_entry = GTK_ENTRY(g_object_get_data(G_OBJECT(btn), "em-entry"));
+    GtkLabel *status_lbl = GTK_LABEL(g_object_get_data(G_OBJECT(btn), "status-lbl"));
+    AgoraMainWindow *win = g_object_get_data(G_OBJECT(btn), "win");
+
+    const char *dn = gtk_entry_get_text(dn_entry);
+    const char *em = gtk_entry_get_text(em_entry);
+
+    JsonBuilder *b = json_builder_new();
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "display_name");
+    json_builder_add_string_value(b, dn);
+    json_builder_set_member_name(b, "email");
+    json_builder_add_string_value(b, em);
+    json_builder_end_object(b);
+
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_root(gen, json_builder_get_root(b));
+    char *body = json_generator_to_data(gen, NULL);
+    g_object_unref(gen);
+    g_object_unref(b);
+
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_patch(win->api, "/api/auth/me", body, &err);
+    g_free(body);
+
+    if (res) {
+        gtk_label_set_text(status_lbl, T("settings.saved"));
+        /* Update sidebar display name */
+        gtk_label_set_text(win->user_label, dn);
+        json_node_unref(res);
+    } else {
+        gtk_label_set_text(status_lbl, T("settings.error"));
+        if (err) g_error_free(err);
+    }
+}
+
+static void on_settings_change_password(GtkButton *btn, gpointer data)
+{
+    (void)data;
+    GtkEntry *cur_pw = GTK_ENTRY(g_object_get_data(G_OBJECT(btn), "cur-pw"));
+    GtkEntry *new_pw = GTK_ENTRY(g_object_get_data(G_OBJECT(btn), "new-pw"));
+    GtkEntry *confirm_pw = GTK_ENTRY(g_object_get_data(G_OBJECT(btn), "confirm-pw"));
+    GtkLabel *pw_status = GTK_LABEL(g_object_get_data(G_OBJECT(btn), "pw-status"));
+    AgoraMainWindow *win = g_object_get_data(G_OBJECT(btn), "win");
+
+    const char *cur = gtk_entry_get_text(cur_pw);
+    const char *newp = gtk_entry_get_text(new_pw);
+    const char *conf = gtk_entry_get_text(confirm_pw);
+
+    if (g_strcmp0(newp, conf) != 0) {
+        gtk_label_set_text(pw_status, T("settings.password_mismatch"));
+        return;
+    }
+
+    JsonBuilder *b = json_builder_new();
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "password");
+    json_builder_add_string_value(b, newp);
+    json_builder_set_member_name(b, "current_password");
+    json_builder_add_string_value(b, cur);
+    json_builder_end_object(b);
+
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_root(gen, json_builder_get_root(b));
+    char *body = json_generator_to_data(gen, NULL);
+    g_object_unref(gen);
+    g_object_unref(b);
+
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_patch(win->api, "/api/auth/me", body, &err);
+    g_free(body);
+
+    if (res) {
+        gtk_label_set_text(pw_status, T("settings.password_changed"));
+        gtk_entry_set_text(cur_pw, "");
+        gtk_entry_set_text(new_pw, "");
+        gtk_entry_set_text(confirm_pw, "");
+        json_node_unref(res);
+    } else {
+        gtk_label_set_text(pw_status, T("settings.password_wrong"));
+        if (err) g_error_free(err);
+    }
+}
+
+static void on_settings_lang_selected(GtkFlowBox *flow, GtkFlowBoxChild *child, gpointer data)
+{
+    (void)flow;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    GtkWidget *lbl = gtk_bin_get_child(GTK_BIN(child));
+    const char *code = g_object_get_data(G_OBJECT(lbl), "lang-code");
+    if (!code) return;
+
+    /* Update local translations */
+    agora_translations_set_lang(code);
+
+    /* Persist to backend */
+    JsonBuilder *b = json_builder_new();
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "language");
+    json_builder_add_string_value(b, code);
+    json_builder_end_object(b);
+
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_root(gen, json_builder_get_root(b));
+    char *body = json_generator_to_data(gen, NULL);
+    g_object_unref(gen);
+    g_object_unref(b);
+
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_patch(win->api, "/api/auth/me", body, &err);
+    g_free(body);
+    if (res) json_node_unref(res);
+    if (err) g_error_free(err);
+}
+
+static void on_settings_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        T("settings.title"),
+        GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "_OK", GTK_RESPONSE_OK,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 540);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 8);
+
+    /* Wrap content in scrolled window */
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(vbox), 4);
+    gtk_container_add(GTK_CONTAINER(scroll), vbox);
+    gtk_box_pack_start(GTK_BOX(content), scroll, TRUE, TRUE, 0);
+
+    /* Fetch current user info */
+    GError *err = NULL;
+    JsonNode *me_node = agora_api_client_get(win->api, "/api/auth/me", &err);
+    const char *cur_display = "";
+    const char *cur_email = "";
+    const char *cur_lang = agora_translations_get_lang();
+    if (me_node) {
+        JsonObject *me = json_node_get_object(me_node);
+        if (json_object_has_member(me, "display_name"))
+            cur_display = json_object_get_string_member(me, "display_name");
+        if (json_object_has_member(me, "email"))
+            cur_email = json_object_get_string_member(me, "email");
+        if (json_object_has_member(me, "language"))
+            cur_lang = json_object_get_string_member(me, "language");
+    }
+    if (err) { g_error_free(err); err = NULL; }
+
+    /* --- Profile Section --- */
+    GtkWidget *profile_label = gtk_label_new(NULL);
+    char *pm = g_strdup_printf("<b>%s</b>", T("settings.profile"));
+    gtk_label_set_markup(GTK_LABEL(profile_label), pm);
+    g_free(pm);
+    gtk_widget_set_halign(profile_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), profile_label, FALSE, FALSE, 0);
+
+    /* Display Name */
+    GtkWidget *dn_label = gtk_label_new(T("settings.display_name"));
+    gtk_widget_set_halign(dn_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), dn_label, FALSE, FALSE, 0);
+    GtkWidget *dn_entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(dn_entry), cur_display ? cur_display : "");
+    gtk_box_pack_start(GTK_BOX(vbox), dn_entry, FALSE, FALSE, 0);
+
+    /* Email */
+    GtkWidget *em_label = gtk_label_new(T("settings.email"));
+    gtk_widget_set_halign(em_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), em_label, FALSE, FALSE, 0);
+    GtkWidget *em_entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(em_entry), cur_email ? cur_email : "");
+    gtk_box_pack_start(GTK_BOX(vbox), em_entry, FALSE, FALSE, 0);
+
+    /* Save Profile Button + status label */
+    GtkWidget *save_btn = gtk_button_new_with_label(T("settings.save"));
+    gtk_widget_set_halign(save_btn, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), save_btn, FALSE, FALSE, 0);
+
+    GtkWidget *status_lbl = gtk_label_new("");
+    gtk_widget_set_halign(status_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), status_lbl, FALSE, FALSE, 0);
+
+    g_object_set_data(G_OBJECT(save_btn), "dn-entry", dn_entry);
+    g_object_set_data(G_OBJECT(save_btn), "em-entry", em_entry);
+    g_object_set_data(G_OBJECT(save_btn), "status-lbl", status_lbl);
+    g_object_set_data(G_OBJECT(save_btn), "win", win);
+    g_signal_connect(save_btn, "clicked", G_CALLBACK(on_settings_save_profile), NULL);
+
+    /* --- Separator --- */
+    gtk_box_pack_start(GTK_BOX(vbox), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 4);
+
+    /* --- Password Section --- */
+    GtkWidget *pw_header = gtk_label_new(NULL);
+    char *pwm = g_strdup_printf("<b>%s</b>", T("settings.password"));
+    gtk_label_set_markup(GTK_LABEL(pw_header), pwm);
+    g_free(pwm);
+    gtk_widget_set_halign(pw_header, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), pw_header, FALSE, FALSE, 0);
+
+    GtkWidget *cur_pw = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(cur_pw), T("settings.current_password"));
+    gtk_entry_set_visibility(GTK_ENTRY(cur_pw), FALSE);
+    gtk_box_pack_start(GTK_BOX(vbox), cur_pw, FALSE, FALSE, 0);
+
+    GtkWidget *new_pw = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(new_pw), T("settings.new_password"));
+    gtk_entry_set_visibility(GTK_ENTRY(new_pw), FALSE);
+    gtk_box_pack_start(GTK_BOX(vbox), new_pw, FALSE, FALSE, 0);
+
+    GtkWidget *confirm_pw = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(confirm_pw), T("settings.confirm_password"));
+    gtk_entry_set_visibility(GTK_ENTRY(confirm_pw), FALSE);
+    gtk_box_pack_start(GTK_BOX(vbox), confirm_pw, FALSE, FALSE, 0);
+
+    GtkWidget *pw_btn = gtk_button_new_with_label(T("settings.change_password"));
+    gtk_widget_set_halign(pw_btn, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), pw_btn, FALSE, FALSE, 0);
+
+    GtkWidget *pw_status = gtk_label_new("");
+    gtk_widget_set_halign(pw_status, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), pw_status, FALSE, FALSE, 0);
+
+    g_object_set_data(G_OBJECT(pw_btn), "cur-pw", cur_pw);
+    g_object_set_data(G_OBJECT(pw_btn), "new-pw", new_pw);
+    g_object_set_data(G_OBJECT(pw_btn), "confirm-pw", confirm_pw);
+    g_object_set_data(G_OBJECT(pw_btn), "pw-status", pw_status);
+    g_object_set_data(G_OBJECT(pw_btn), "win", win);
+    g_signal_connect(pw_btn, "clicked", G_CALLBACK(on_settings_change_password), NULL);
+
+    /* --- Separator --- */
+    gtk_box_pack_start(GTK_BOX(vbox), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 4);
+
+    /* --- Language Section --- */
+    GtkWidget *lang_header = gtk_label_new(NULL);
+    char *lm = g_strdup_printf("<b>%s</b>", T("settings.language"));
+    gtk_label_set_markup(GTK_LABEL(lang_header), lm);
+    g_free(lm);
+    gtk_widget_set_halign(lang_header, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), lang_header, FALSE, FALSE, 0);
+
+    static const char *lang_codes[] = {
+        "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr",
+        "ga", "hr", "hu", "it", "lt", "lv", "mt", "nl", "pl", "pt",
+        "ro", "sk", "sl", "sv", NULL
+    };
+    static const char *lang_names[] = {
+        "\xd0\x91\xd1\x8a\xd0\xbb\xd0\xb3\xd0\xb0\xd1\x80\xd1\x81\xd0\xba\xd0\xb8",
+        "\xc4\x8c""e\xc5\xa1tina",
+        "Dansk", "Deutsch",
+        "\xce\x95\xce\xbb\xce\xbb\xce\xb7\xce\xbd\xce\xb9\xce\xba\xce\xac",
+        "English", "Espa\xc3\xb1ol", "Eesti", "Suomi", "Fran\xc3\xa7""ais",
+        "Gaeilge", "Hrvatski", "Magyar", "Italiano",
+        "Lietuvi\xc5\xb3", "Latvie\xc5\xa1u", "Malti",
+        "Nederlands", "Polski", "Portugu\xc3\xaas",
+        "Rom\xc3\xa2n\xc4\x83", "Sloven\xc4\x8dina", "Sloven\xc5\xa1\xc4\x8dina", "Svenska",
+        NULL
+    };
+
+    GtkWidget *lang_flow = gtk_flow_box_new();
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(lang_flow), 6);
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(lang_flow), GTK_SELECTION_SINGLE);
+    gtk_container_set_border_width(GTK_CONTAINER(lang_flow), 4);
+
+    for (int i = 0; lang_codes[i]; i++) {
+        GtkWidget *lbl = gtk_label_new(lang_names[i]);
+        gtk_widget_set_margin_start(lbl, 6);
+        gtk_widget_set_margin_end(lbl, 6);
+        gtk_widget_set_margin_top(lbl, 4);
+        gtk_widget_set_margin_bottom(lbl, 4);
+        g_object_set_data(G_OBJECT(lbl), "lang-code", (gpointer)lang_codes[i]);
+        gtk_container_add(GTK_CONTAINER(lang_flow), lbl);
+    }
+    gtk_box_pack_start(GTK_BOX(vbox), lang_flow, FALSE, FALSE, 0);
+
+    /* Pre-select current language */
+    int idx = 0;
+    for (int i = 0; lang_codes[i]; i++) {
+        if (g_strcmp0(lang_codes[i], cur_lang) == 0) { idx = i; break; }
+    }
+    GtkFlowBoxChild *sel_child = gtk_flow_box_get_child_at_index(GTK_FLOW_BOX(lang_flow), idx);
+    if (sel_child) gtk_flow_box_select_child(GTK_FLOW_BOX(lang_flow), sel_child);
+
+    g_signal_connect(lang_flow, "child-activated", G_CALLBACK(on_settings_lang_selected), win);
+
+    if (me_node) json_node_unref(me_node);
+
+    gtk_widget_show_all(dialog);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+}
+
+/* --- Emoji Picker --- */
+
+static void on_emoji_picked(GtkFlowBoxChild *child, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    GtkWidget *label = gtk_bin_get_child(GTK_BIN(child));
+    const char *emoji = gtk_label_get_text(GTK_LABEL(label));
+    if (!emoji) return;
+
+    /* Insert emoji at cursor position in message entry */
+    gint pos = gtk_editable_get_position(GTK_EDITABLE(win->message_entry));
+    gtk_editable_insert_text(GTK_EDITABLE(win->message_entry), emoji, -1, &pos);
+    gtk_editable_set_position(GTK_EDITABLE(win->message_entry), pos);
+}
+
+static void on_emoji_btn_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    static const char *emojis[] = {
+        "\xF0\x9F\x91\x8D", "\xF0\x9F\x91\x8E",   /* 👍 👎 */
+        "\xE2\x9D\xA4\xEF\xB8\x8F",                 /* ❤️ */
+        "\xF0\x9F\x98\x82", "\xF0\x9F\x98\x8A",     /* 😂 😊 */
+        "\xF0\x9F\x98\xAE", "\xF0\x9F\xA4\x94",     /* 😮 🤔 */
+        "\xF0\x9F\x8E\x89", "\xF0\x9F\x91\x8F",     /* 🎉 👏 */
+        "\xF0\x9F\x94\xA5", "\xE2\x9C\x85",         /* 🔥 ✅ */
+        "\xE2\x9D\x8C", "\xF0\x9F\x92\xAF",         /* ❌ 💯 */
+        "\xF0\x9F\x91\x80", "\xF0\x9F\x99\x8F",     /* 👀 🙏 */
+        "\xF0\x9F\x9A\x80", "\xE2\xAD\x90",         /* 🚀 ⭐ */
+        "\xF0\x9F\x98\x8D", "\xF0\x9F\x98\xA2",     /* 😍 😢 */
+        "\xF0\x9F\x98\xA1", "\xF0\x9F\xA5\xB3",     /* 😡 🥳 */
+        "\xF0\x9F\x92\xAA", "\xF0\x9F\x92\x9C",     /* 💪 💜 */
+        "\xF0\x9F\x91\x8B", "\xF0\x9F\xA4\x9D",     /* 👋 🤝 */
+        NULL
+    };
+
+    GtkWidget *popover = gtk_popover_new(GTK_WIDGET(btn));
+    gtk_popover_set_position(GTK_POPOVER(popover), GTK_POS_TOP);
+
+    GtkWidget *flow = gtk_flow_box_new();
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(flow), 6);
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(flow), GTK_SELECTION_NONE);
+    gtk_container_set_border_width(GTK_CONTAINER(flow), 8);
+
+    for (int i = 0; emojis[i]; i++) {
+        GtkWidget *label = gtk_label_new(emojis[i]);
+        PangoAttrList *attrs = pango_attr_list_new();
+        pango_attr_list_insert(attrs, pango_attr_size_new(18 * PANGO_SCALE));
+        gtk_label_set_attributes(GTK_LABEL(label), attrs);
+        pango_attr_list_unref(attrs);
+        gtk_widget_set_margin_start(label, 4);
+        gtk_widget_set_margin_end(label, 4);
+        gtk_widget_set_margin_top(label, 2);
+        gtk_widget_set_margin_bottom(label, 2);
+        gtk_container_add(GTK_CONTAINER(flow), label);
+    }
+
+    g_signal_connect(flow, "child-activated", G_CALLBACK(on_emoji_picked), win);
+    gtk_container_add(GTK_CONTAINER(popover), flow);
+    gtk_widget_show_all(popover);
+    gtk_popover_popup(GTK_POPOVER(popover));
 }
 
 static void send_message(AgoraMainWindow *win)
@@ -3362,6 +3875,15 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_end(new_chat_btn, 8);
     g_signal_connect(new_chat_btn, "clicked", G_CALLBACK(on_new_chat_clicked), win);
     gtk_box_pack_end(GTK_BOX(chats_header), new_chat_btn, FALSE, FALSE, 0);
+
+    /* Settings button (gear icon) */
+    GtkWidget *settings_btn = gtk_button_new_with_label("\xe2\x9a\x99");  /* ⚙ */
+    gtk_widget_set_tooltip_text(settings_btn, T("settings.title"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(settings_btn), "input-btn");
+    gtk_widget_set_margin_end(settings_btn, 4);
+    g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), win);
+    gtk_box_pack_end(GTK_BOX(chats_header), settings_btn, FALSE, FALSE, 0);
+
     gtk_box_pack_start(GTK_BOX(chats_page), chats_header, FALSE, FALSE, 0);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
@@ -3730,6 +4252,7 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_style_context_add_class(gtk_widget_get_style_context(emoji_btn), "input-btn");
     gtk_widget_set_tooltip_text(emoji_btn, "Emoji");
     gtk_box_pack_start(GTK_BOX(input_area), emoji_btn, FALSE, FALSE, 0);
+    g_signal_connect(emoji_btn, "clicked", G_CALLBACK(on_emoji_btn_clicked), win);
 
     /* Message entry */
     win->message_entry = GTK_ENTRY(gtk_entry_new());
