@@ -1248,11 +1248,6 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   endCall(): void {
     this.webrtcService.endCall();
     this.apiService.leaveVideoRoom(this.channelId).subscribe({ error: () => {} });
-    // Signal native desktop app to close the video overlay
-    const wk = (window as any).webkit;
-    if (wk?.messageHandlers?.leaveCall) {
-      wk.messageHandlers.leaveCall.postMessage('leave');
-    }
     this.router.navigate(['/chat', this.channelId]);
   }
 }

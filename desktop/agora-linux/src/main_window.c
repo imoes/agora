@@ -1833,6 +1833,16 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
                 ".observe(document.body||document.documentElement,"
                 "{childList:true,subtree:true});});"
         "var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);"
+        /* Detect SPA navigation away from /video/ by patching pushState/replaceState */
+        "var _ps=history.pushState,_rs=history.replaceState;"
+        "function _chk(url){"
+            "var s=(url&&url.toString())||location.href;"
+            "if(s.indexOf('/video/')===-1){"
+                "try{window.webkit.messageHandlers.leaveCall.postMessage('leave');}catch(e){}}"
+        "}"
+        "history.pushState=function(){_ps.apply(this,arguments);_chk(arguments[2]);};"
+        "history.replaceState=function(){_rs.apply(this,arguments);_chk(arguments[2]);};"
+        "window.addEventListener('popstate',function(){_chk();});"
         "})();",
         session->token,
         session->user_id ? session->user_id : "",
