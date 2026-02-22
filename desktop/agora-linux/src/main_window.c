@@ -48,8 +48,10 @@ struct _AgoraMainWindow {
     gboolean feed_unread_only;
 
     /* Calendar */
+    GtkWidget *gtk_calendar;
     GtkListBox *calendar_list;
     GtkWidget *calendar_scroll;
+    JsonArray *calendar_events_cache;
 
     /* Video call overlay */
     GtkWidget *video_overlay;
@@ -93,6 +95,9 @@ static void upload_file_to_channel(AgoraMainWindow *win, const char *filepath);
 static void inject_video_user_scripts(AgoraMainWindow *win);
 static void load_feed(AgoraMainWindow *win);
 static void load_calendar_events(AgoraMainWindow *win);
+static void populate_calendar_day_events(AgoraMainWindow *win);
+static void on_calendar_day_selected(GtkCalendar *calendar, gpointer data);
+static void on_calendar_month_changed(GtkCalendar *calendar, gpointer data);
 static void load_messages(AgoraMainWindow *win, const char *channel_id);
 static void on_feed_show_all_toggled(GtkToggleButton *btn, gpointer data);
 static void on_feed_show_unread_toggled(GtkToggleButton *btn, gpointer data);
@@ -639,22 +644,22 @@ static void load_feed(AgoraMainWindow *win)
 
 static void load_calendar_events(AgoraMainWindow *win)
 {
-    /* Fetch events for current month range */
-    GDateTime *now = g_date_time_new_now_utc();
-    int year = g_date_time_get_year(now);
-    int month = g_date_time_get_month(now);
+    /* Get displayed month from GtkCalendar */
+    guint cal_year, cal_month, cal_day;
+    gtk_calendar_get_date(GTK_CALENDAR(win->gtk_calendar),
+                          &cal_year, &cal_month, &cal_day);
+    /* GtkCalendar months are 0-based */
+    int year = (int)cal_year;
+    int month = (int)cal_month + 1;
 
     GDateTime *start = g_date_time_new_utc(year, month, 1, 0, 0, 0);
-    /* End of next month */
-    int end_month = month + 2;
+    int end_month = month + 1;
     int end_year = year;
     if (end_month > 12) { end_month -= 12; end_year++; }
     GDateTime *end = g_date_time_new_utc(end_year, end_month, 1, 0, 0, 0);
 
-    /* Use explicit UTC format to avoid +00:00 URL encoding issues */
     char *start_str = g_date_time_format(start, "%Y-%m-%dT%H:%M:%SZ");
     char *end_str = g_date_time_format(end, "%Y-%m-%dT%H:%M:%SZ");
-    g_date_time_unref(now);
     g_date_time_unref(start);
     g_date_time_unref(end);
 
@@ -667,28 +672,26 @@ static void load_calendar_events(AgoraMainWindow *win)
     JsonNode *result = agora_api_client_get(win->api, path, &error);
     g_free(path);
 
-    /* Clear existing list */
-    GList *children = gtk_container_get_children(GTK_CONTAINER(win->calendar_list));
-    for (GList *l = children; l; l = l->next)
-        gtk_widget_destroy(GTK_WIDGET(l->data));
-    g_list_free(children);
+    /* Free old cache */
+    if (win->calendar_events_cache) {
+        json_array_unref(win->calendar_events_cache);
+        win->calendar_events_cache = NULL;
+    }
+
+    /* Clear day marks */
+    gtk_calendar_clear_marks(GTK_CALENDAR(win->gtk_calendar));
 
     if (!result) {
         g_print("[calendar] API error: %s\n", error ? error->message : "unknown");
-        /* Show empty state on error */
-        GtkWidget *err_lbl = gtk_label_new(T("calendar.empty"));
-        gtk_widget_set_margin_top(err_lbl, 40);
-        GtkWidget *err_row = gtk_list_box_row_new();
-        gtk_container_add(GTK_CONTAINER(err_row), err_lbl);
-        gtk_list_box_insert(win->calendar_list, err_row, -1);
-        gtk_widget_show_all(GTK_WIDGET(win->calendar_list));
         if (error) g_error_free(error);
+        populate_calendar_day_events(win);
         return;
     }
 
     if (!JSON_NODE_HOLDS_ARRAY(result)) {
         g_print("[calendar] Response is not a JSON array\n");
         json_node_unref(result);
+        populate_calendar_day_events(win);
         return;
     }
 
@@ -696,26 +699,85 @@ static void load_calendar_events(AgoraMainWindow *win)
     guint len = json_array_get_length(arr);
     g_print("[calendar] Got %u events\n", len);
 
-    if (len == 0) {
-        GtkWidget *empty_lbl = gtk_label_new(T("calendar.empty"));
-        gtk_widget_set_margin_top(empty_lbl, 40);
-        GtkWidget *empty_row = gtk_list_box_row_new();
-        gtk_container_add(GTK_CONTAINER(empty_row), empty_lbl);
-        gtk_list_box_insert(win->calendar_list, empty_row, -1);
+    /* Cache the events array */
+    win->calendar_events_cache = json_array_ref(arr);
+
+    /* Mark days that have events */
+    for (guint i = 0; i < len; i++) {
+        JsonObject *ev = json_array_get_object_element(arr, i);
+        const char *st = json_object_has_member(ev, "start_time")
+            ? json_object_get_string_member(ev, "start_time") : NULL;
+        if (!st) continue;
+        GDateTime *dt = g_date_time_new_from_iso8601(st, NULL);
+        if (dt) {
+            GDateTime *local = g_date_time_to_local(dt);
+            int d = g_date_time_get_day_of_month(local);
+            int m = g_date_time_get_month(local);
+            int y = g_date_time_get_year(local);
+            /* Only mark if same month as displayed */
+            if (y == year && m == month)
+                gtk_calendar_mark_day(GTK_CALENDAR(win->gtk_calendar), (guint)d);
+            g_date_time_unref(local);
+            g_date_time_unref(dt);
+        }
+    }
+
+    json_node_unref(result);
+    populate_calendar_day_events(win);
+}
+
+/* Populate the event list for the currently selected day in GtkCalendar */
+static void populate_calendar_day_events(AgoraMainWindow *win)
+{
+    /* Clear existing list */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->calendar_list));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+
+    guint sel_year, sel_month, sel_day;
+    gtk_calendar_get_date(GTK_CALENDAR(win->gtk_calendar),
+                          &sel_year, &sel_month, &sel_day);
+    int year = (int)sel_year;
+    int month = (int)sel_month + 1; /* 0-based → 1-based */
+    int day = (int)sel_day;
+
+    if (!win->calendar_events_cache) {
+        GtkWidget *lbl = gtk_label_new(T("calendar.empty"));
+        gtk_widget_set_margin_top(lbl, 40);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(row), lbl);
+        gtk_list_box_insert(win->calendar_list, row, -1);
         gtk_widget_show_all(GTK_WIDGET(win->calendar_list));
-        json_node_unref(result);
         return;
     }
 
+    guint len = json_array_get_length(win->calendar_events_cache);
+    int shown = 0;
+
     for (guint i = 0; i < len; i++) {
-        JsonObject *ev = json_array_get_object_element(arr, i);
+        JsonObject *ev = json_array_get_object_element(win->calendar_events_cache, i);
+        const char *start_time = json_object_has_member(ev, "start_time")
+            ? json_object_get_string_member(ev, "start_time") : NULL;
+        if (!start_time) continue;
+
+        /* Check if event falls on the selected day */
+        GDateTime *dt = g_date_time_new_from_iso8601(start_time, NULL);
+        if (!dt) continue;
+        GDateTime *local = g_date_time_to_local(dt);
+        gboolean match = (g_date_time_get_year(local) == year &&
+                          g_date_time_get_month(local) == month &&
+                          g_date_time_get_day_of_month(local) == day);
+        g_date_time_unref(local);
+        g_date_time_unref(dt);
+        if (!match) continue;
+
+        /* Build event row */
         const char *title = json_object_has_member(ev, "title")
             ? json_object_get_string_member(ev, "title") : "";
         const char *description = json_object_has_member(ev, "description") &&
             !json_object_get_null_member(ev, "description")
             ? json_object_get_string_member(ev, "description") : NULL;
-        const char *start_time = json_object_has_member(ev, "start_time")
-            ? json_object_get_string_member(ev, "start_time") : "";
         const char *end_time = json_object_has_member(ev, "end_time")
             ? json_object_get_string_member(ev, "end_time") : "";
         gboolean all_day = json_object_has_member(ev, "all_day") &&
@@ -743,27 +805,19 @@ static void load_calendar_events(AgoraMainWindow *win)
         gtk_label_set_ellipsize(GTK_LABEL(title_lbl), PANGO_ELLIPSIZE_END);
         gtk_widget_set_halign(title_lbl, GTK_ALIGN_START);
         gtk_box_pack_start(GTK_BOX(title_hbox), title_lbl, TRUE, TRUE, 0);
-
         gtk_box_pack_start(GTK_BOX(row_box), title_hbox, FALSE, FALSE, 0);
 
         /* Time info */
         char *time_text;
         if (all_day) {
-            /* Parse just the date from start_time */
-            GDateTime *dt = g_date_time_new_from_iso8601(start_time, NULL);
-            if (dt) {
-                time_text = g_date_time_format(dt, "%A, %B %d, %Y (All day)");
-                g_date_time_unref(dt);
-            } else {
-                time_text = g_strdup("All day");
-            }
+            time_text = g_strdup("All day");
         } else {
             GDateTime *dt_start = g_date_time_new_from_iso8601(start_time, NULL);
             GDateTime *dt_end = g_date_time_new_from_iso8601(end_time, NULL);
             if (dt_start && dt_end) {
                 GDateTime *local_start = g_date_time_to_local(dt_start);
                 GDateTime *local_end = g_date_time_to_local(dt_end);
-                char *s = g_date_time_format(local_start, "%a %b %d, %H:%M");
+                char *s = g_date_time_format(local_start, "%H:%M");
                 char *e = g_date_time_format(local_end, "%H:%M");
                 time_text = g_strdup_printf("%s - %s", s, e);
                 g_free(s);
@@ -781,7 +835,8 @@ static void load_calendar_events(AgoraMainWindow *win)
         g_free(time_text);
         gtk_widget_set_halign(time_lbl, GTK_ALIGN_START);
         PangoAttrList *time_attrs = pango_attr_list_new();
-        pango_attr_list_insert(time_attrs, pango_attr_foreground_new(0x6600, 0x6600, 0x6600));
+        pango_attr_list_insert(time_attrs,
+            pango_attr_foreground_new(0x6600, 0x6600, 0x6600));
         pango_attr_list_insert(time_attrs, pango_attr_scale_new(0.9));
         gtk_label_set_attributes(GTK_LABEL(time_lbl), time_attrs);
         pango_attr_list_unref(time_attrs);
@@ -791,7 +846,7 @@ static void load_calendar_events(AgoraMainWindow *win)
         if (location) {
             GtkWidget *loc_lbl = gtk_label_new(NULL);
             char *loc_markup = g_strdup_printf(
-                "<span color='#888888'>\xF0\x9F\x93\x8D %s</span>", location); /* 📍 */
+                "<span color='#888888'>\xF0\x9F\x93\x8D %s</span>", location);
             gtk_label_set_markup(GTK_LABEL(loc_lbl), loc_markup);
             g_free(loc_markup);
             gtk_widget_set_halign(loc_lbl, GTK_ALIGN_START);
@@ -809,7 +864,8 @@ static void load_calendar_events(AgoraMainWindow *win)
             gtk_label_set_lines(GTK_LABEL(desc_lbl), 2);
             PangoAttrList *desc_attrs = pango_attr_list_new();
             pango_attr_list_insert(desc_attrs, pango_attr_scale_new(0.9));
-            pango_attr_list_insert(desc_attrs, pango_attr_foreground_new(0x5500, 0x5500, 0x5500));
+            pango_attr_list_insert(desc_attrs,
+                pango_attr_foreground_new(0x5500, 0x5500, 0x5500));
             gtk_label_set_attributes(GTK_LABEL(desc_lbl), desc_attrs);
             pango_attr_list_unref(desc_attrs);
             gtk_box_pack_start(GTK_BOX(row_box), desc_lbl, FALSE, FALSE, 0);
@@ -831,10 +887,33 @@ static void load_calendar_events(AgoraMainWindow *win)
         GtkWidget *row = gtk_list_box_row_new();
         gtk_container_add(GTK_CONTAINER(row), row_box);
         gtk_list_box_insert(win->calendar_list, row, -1);
+        shown++;
+    }
+
+    /* Empty state for selected day */
+    if (shown == 0) {
+        GtkWidget *lbl = gtk_label_new(T("calendar.empty"));
+        gtk_widget_set_margin_top(lbl, 20);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(row), lbl);
+        gtk_list_box_insert(win->calendar_list, row, -1);
     }
 
     gtk_widget_show_all(GTK_WIDGET(win->calendar_list));
-    json_node_unref(result);
+}
+
+static void on_calendar_day_selected(GtkCalendar *calendar, gpointer data)
+{
+    (void)calendar;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    populate_calendar_day_events(win);
+}
+
+static void on_calendar_month_changed(GtkCalendar *calendar, gpointer data)
+{
+    (void)calendar;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    load_calendar_events(win);
 }
 
 /* --- Image loading helper --- */
@@ -2266,6 +2345,7 @@ static void agora_main_window_finalize(GObject *obj)
     g_free(win->reminder_channel_id);
     if (win->reminder_start_time) g_date_time_unref(win->reminder_start_time);
     if (win->dismissed_reminders) g_hash_table_destroy(win->dismissed_reminders);
+    if (win->calendar_events_cache) json_array_unref(win->calendar_events_cache);
     g_free(win->notification_sound_path);
     G_OBJECT_CLASS(agora_main_window_parent_class)->finalize(obj);
 }
@@ -2594,7 +2674,25 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_box_pack_start(GTK_BOX(calendar_box), cal_header, FALSE, FALSE, 0);
 
-    /* Scrollable calendar event list */
+    /* GtkCalendar month grid widget */
+    win->gtk_calendar = gtk_calendar_new();
+    gtk_calendar_set_display_options(GTK_CALENDAR(win->gtk_calendar),
+        GTK_CALENDAR_SHOW_HEADING | GTK_CALENDAR_SHOW_DAY_NAMES);
+    gtk_widget_set_margin_start(win->gtk_calendar, 16);
+    gtk_widget_set_margin_end(win->gtk_calendar, 16);
+    gtk_widget_set_margin_top(win->gtk_calendar, 8);
+    gtk_widget_set_margin_bottom(win->gtk_calendar, 4);
+    g_signal_connect(win->gtk_calendar, "day-selected",
+                     G_CALLBACK(on_calendar_day_selected), win);
+    g_signal_connect(win->gtk_calendar, "month-changed",
+                     G_CALLBACK(on_calendar_month_changed), win);
+    gtk_box_pack_start(GTK_BOX(calendar_box), win->gtk_calendar, FALSE, FALSE, 0);
+
+    /* Separator between calendar and event list */
+    gtk_box_pack_start(GTK_BOX(calendar_box),
+                       gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
+
+    /* Scrollable calendar event list for selected day */
     win->calendar_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(win->calendar_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
