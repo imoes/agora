@@ -308,6 +308,35 @@ public class ApiClient : IDisposable
                ?? new List<System.Text.Json.JsonElement>();
     }
 
+    public async Task CreateCalendarEventAsync(object eventData)
+    {
+        var response = await _http.PostAsJsonAsync("/api/calendar/events", eventData);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<System.Text.Json.JsonElement?> GetCalendarIntegrationAsync()
+    {
+        try
+        {
+            var response = await _http.GetAsync("/api/calendar/integration");
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        }
+        catch { return null; }
+    }
+
+    public async Task SaveCalendarIntegrationAsync(object integrationData)
+    {
+        var response = await _http.PutAsJsonAsync("/api/calendar/integration", integrationData);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task SyncCalendarAsync()
+    {
+        var response = await _http.PostAsync("/api/calendar/sync", null);
+        response.EnsureSuccessStatusCode();
+    }
+
     // --- Video ---
 
     public async Task<Dictionary<string, object>> CreateVideoRoomAsync(string channelId)

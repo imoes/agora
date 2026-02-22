@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -34,6 +35,35 @@ public class FeedEvent
 
     [JsonPropertyName("created_at")]
     public string CreatedAt { get; set; } = "";
+
+    [JsonIgnore]
+    public string FormattedTime
+    {
+        get
+        {
+            if (DateTime.TryParse(CreatedAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+            {
+                var diff = DateTime.UtcNow - dt.ToUniversalTime();
+                if (diff.TotalMinutes < 1) return "Jetzt";
+                if (diff.TotalMinutes < 60) return $"vor {(int)diff.TotalMinutes}m";
+                if (diff.TotalHours < 24) return $"vor {(int)diff.TotalHours}h";
+                if (diff.TotalDays < 7) return $"vor {(int)diff.TotalDays}d";
+                return dt.ToLocalTime().ToString("dd.MM");
+            }
+            return CreatedAt;
+        }
+    }
+
+    [JsonIgnore]
+    public DateTime CreatedAtDateTime
+    {
+        get
+        {
+            if (DateTime.TryParse(CreatedAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+                return dt.ToUniversalTime();
+            return DateTime.MinValue;
+        }
+    }
 }
 
 public class FeedResponse
