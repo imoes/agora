@@ -102,6 +102,7 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id);
 static void on_feed_show_all_toggled(GtkToggleButton *btn, gpointer data);
 static void on_feed_show_unread_toggled(GtkToggleButton *btn, gpointer data);
 static void on_calendar_join_clicked(GtkButton *btn, gpointer data);
+static void on_calendar_new_event_clicked(GtkButton *btn, gpointer data);
 static void on_video_call_clicked(GtkButton *btn, gpointer data);
 static void ws_send_json(AgoraMainWindow *win, const char *json_str);
 
@@ -914,6 +915,276 @@ static void on_calendar_month_changed(GtkCalendar *calendar, gpointer data)
     (void)calendar;
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
     load_calendar_events(win);
+}
+
+/* --- New calendar event creation dialog --- */
+
+static void on_calendar_new_event_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "Neuer Termin", GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "_Abbrechen", GTK_RESPONSE_CANCEL,
+        "_Erstellen", GTK_RESPONSE_ACCEPT,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, -1);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+
+    /* Title */
+    GtkWidget *title_lbl = gtk_label_new("Titel:");
+    gtk_widget_set_halign(title_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), title_lbl, FALSE, FALSE, 2);
+    GtkWidget *title_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(title_entry), "Titel des Termins");
+    gtk_box_pack_start(GTK_BOX(content), title_entry, FALSE, FALSE, 4);
+
+    /* Description */
+    GtkWidget *desc_lbl = gtk_label_new("Beschreibung:");
+    gtk_widget_set_halign(desc_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), desc_lbl, FALSE, FALSE, 2);
+    GtkWidget *desc_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(desc_entry), "Optional");
+    gtk_box_pack_start(GTK_BOX(content), desc_entry, FALSE, FALSE, 4);
+
+    /* Location */
+    GtkWidget *loc_lbl = gtk_label_new("Ort:");
+    gtk_widget_set_halign(loc_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), loc_lbl, FALSE, FALSE, 2);
+    GtkWidget *loc_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(loc_entry), "Optional");
+    gtk_box_pack_start(GTK_BOX(content), loc_entry, FALSE, FALSE, 4);
+
+    /* All day checkbox */
+    GtkWidget *allday_check = gtk_check_button_new_with_label("Ganztaegig");
+    gtk_box_pack_start(GTK_BOX(content), allday_check, FALSE, FALSE, 4);
+
+    /* Date */
+    GtkWidget *date_lbl = gtk_label_new("Datum (YYYY-MM-DD):");
+    gtk_widget_set_halign(date_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), date_lbl, FALSE, FALSE, 2);
+    GtkWidget *date_entry = gtk_entry_new();
+    /* Pre-fill with selected date from calendar */
+    guint sel_y, sel_m, sel_d;
+    gtk_calendar_get_date(GTK_CALENDAR(win->gtk_calendar), &sel_y, &sel_m, &sel_d);
+    char *date_str = g_strdup_printf("%04u-%02u-%02u", sel_y, sel_m + 1, sel_d);
+    gtk_entry_set_text(GTK_ENTRY(date_entry), date_str);
+    g_free(date_str);
+    gtk_box_pack_start(GTK_BOX(content), date_entry, FALSE, FALSE, 4);
+
+    /* Start time */
+    GtkWidget *start_lbl = gtk_label_new("Startzeit (HH:MM):");
+    gtk_widget_set_halign(start_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), start_lbl, FALSE, FALSE, 2);
+    GtkWidget *start_entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(start_entry), "09:00");
+    gtk_box_pack_start(GTK_BOX(content), start_entry, FALSE, FALSE, 4);
+
+    /* End time */
+    GtkWidget *end_lbl = gtk_label_new("Endzeit (HH:MM):");
+    gtk_widget_set_halign(end_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), end_lbl, FALSE, FALSE, 2);
+    GtkWidget *end_entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(end_entry), "10:00");
+    gtk_box_pack_start(GTK_BOX(content), end_entry, FALSE, FALSE, 4);
+
+    gtk_widget_show_all(content);
+
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+    if (response == GTK_RESPONSE_ACCEPT) {
+        const char *title = gtk_entry_get_text(GTK_ENTRY(title_entry));
+        const char *desc = gtk_entry_get_text(GTK_ENTRY(desc_entry));
+        const char *loc = gtk_entry_get_text(GTK_ENTRY(loc_entry));
+        const char *date = gtk_entry_get_text(GTK_ENTRY(date_entry));
+        const char *stime = gtk_entry_get_text(GTK_ENTRY(start_entry));
+        const char *etime = gtk_entry_get_text(GTK_ENTRY(end_entry));
+        gboolean allday = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(allday_check));
+
+        if (title && strlen(title) > 0) {
+            char *start_iso, *end_iso;
+            if (allday) {
+                start_iso = g_strdup_printf("%sT00:00:00Z", date);
+                end_iso = g_strdup_printf("%sT23:59:59Z", date);
+            } else {
+                start_iso = g_strdup_printf("%sT%s:00Z", date, stime);
+                end_iso = g_strdup_printf("%sT%s:00Z", date, etime);
+            }
+
+            /* Build JSON body */
+            JsonBuilder *builder = json_builder_new();
+            json_builder_begin_object(builder);
+            json_builder_set_member_name(builder, "title");
+            json_builder_add_string_value(builder, title);
+            if (desc && strlen(desc) > 0) {
+                json_builder_set_member_name(builder, "description");
+                json_builder_add_string_value(builder, desc);
+            }
+            if (loc && strlen(loc) > 0) {
+                json_builder_set_member_name(builder, "location");
+                json_builder_add_string_value(builder, loc);
+            }
+            json_builder_set_member_name(builder, "start_time");
+            json_builder_add_string_value(builder, start_iso);
+            json_builder_set_member_name(builder, "end_time");
+            json_builder_add_string_value(builder, end_iso);
+            json_builder_set_member_name(builder, "all_day");
+            json_builder_add_boolean_value(builder, allday);
+            json_builder_end_object(builder);
+
+            JsonGenerator *gen = json_generator_new();
+            json_generator_set_root(gen, json_builder_get_root(builder));
+            char *body = json_generator_to_data(gen, NULL);
+            g_object_unref(gen);
+            g_object_unref(builder);
+
+            GError *err = NULL;
+            JsonNode *res = agora_api_client_post(win->api,
+                "/api/calendar/events", body, &err);
+            g_free(body);
+            g_free(start_iso);
+            g_free(end_iso);
+
+            if (res) {
+                json_node_unref(res);
+                /* Reload calendar events */
+                load_calendar_events(win);
+            } else {
+                g_print("[calendar] Create event error: %s\n",
+                    err ? err->message : "unknown");
+                if (err) g_error_free(err);
+            }
+        }
+    }
+
+    gtk_widget_destroy(dialog);
+}
+
+/* --- Calendar integration config dialog --- */
+
+static void on_calendar_config_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "Kalender Konfiguration", GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "_Abbrechen", GTK_RESPONSE_CANCEL,
+        "_Speichern", GTK_RESPONSE_ACCEPT,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, -1);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+
+    /* Provider selection */
+    GtkWidget *prov_lbl = gtk_label_new("Anbieter:");
+    gtk_widget_set_halign(prov_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), prov_lbl, FALSE, FALSE, 2);
+
+    GtkWidget *prov_combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(prov_combo), "internal", "Intern");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(prov_combo), "webdav", "CalDAV / WebDAV");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(prov_combo), "google", "Google Calendar");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(prov_combo), "outlook", "Outlook / Exchange");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(prov_combo), "internal");
+    gtk_box_pack_start(GTK_BOX(content), prov_combo, FALSE, FALSE, 4);
+
+    /* CalDAV fields */
+    GtkWidget *url_lbl = gtk_label_new("CalDAV URL:");
+    gtk_widget_set_halign(url_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), url_lbl, FALSE, FALSE, 2);
+    GtkWidget *url_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(url_entry), "https://calendar.example.com/dav/");
+    gtk_box_pack_start(GTK_BOX(content), url_entry, FALSE, FALSE, 4);
+
+    GtkWidget *user_lbl = gtk_label_new("Benutzername:");
+    gtk_widget_set_halign(user_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), user_lbl, FALSE, FALSE, 2);
+    GtkWidget *user_entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(content), user_entry, FALSE, FALSE, 4);
+
+    GtkWidget *pass_lbl = gtk_label_new("Passwort:");
+    gtk_widget_set_halign(pass_lbl, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), pass_lbl, FALSE, FALSE, 2);
+    GtkWidget *pass_entry = gtk_entry_new();
+    gtk_entry_set_visibility(GTK_ENTRY(pass_entry), FALSE);
+    gtk_box_pack_start(GTK_BOX(content), pass_entry, FALSE, FALSE, 4);
+
+    /* Load current config */
+    GError *load_err = NULL;
+    JsonNode *cfg = agora_api_client_get(win->api, "/api/calendar/integration", &load_err);
+    if (cfg && JSON_NODE_HOLDS_OBJECT(cfg)) {
+        JsonObject *obj = json_node_get_object(cfg);
+        const char *provider = json_object_has_member(obj, "provider")
+            ? json_object_get_string_member(obj, "provider") : "internal";
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(prov_combo), provider);
+
+        if (json_object_has_member(obj, "webdav_url") &&
+            !json_object_get_null_member(obj, "webdav_url"))
+            gtk_entry_set_text(GTK_ENTRY(url_entry),
+                json_object_get_string_member(obj, "webdav_url"));
+        if (json_object_has_member(obj, "webdav_username") &&
+            !json_object_get_null_member(obj, "webdav_username"))
+            gtk_entry_set_text(GTK_ENTRY(user_entry),
+                json_object_get_string_member(obj, "webdav_username"));
+    }
+    if (cfg) json_node_unref(cfg);
+    if (load_err) g_error_free(load_err);
+
+    gtk_widget_show_all(content);
+
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+    if (response == GTK_RESPONSE_ACCEPT) {
+        const char *provider = gtk_combo_box_get_active_id(GTK_COMBO_BOX(prov_combo));
+        const char *url_val = gtk_entry_get_text(GTK_ENTRY(url_entry));
+        const char *user_val = gtk_entry_get_text(GTK_ENTRY(user_entry));
+        const char *pass_val = gtk_entry_get_text(GTK_ENTRY(pass_entry));
+
+        JsonBuilder *builder = json_builder_new();
+        json_builder_begin_object(builder);
+        json_builder_set_member_name(builder, "provider");
+        json_builder_add_string_value(builder, provider ? provider : "internal");
+        if (url_val && strlen(url_val) > 0) {
+            json_builder_set_member_name(builder, "webdav_url");
+            json_builder_add_string_value(builder, url_val);
+        }
+        if (user_val && strlen(user_val) > 0) {
+            json_builder_set_member_name(builder, "webdav_username");
+            json_builder_add_string_value(builder, user_val);
+        }
+        if (pass_val && strlen(pass_val) > 0) {
+            json_builder_set_member_name(builder, "webdav_password");
+            json_builder_add_string_value(builder, pass_val);
+        }
+        json_builder_end_object(builder);
+
+        JsonGenerator *gen = json_generator_new();
+        json_generator_set_root(gen, json_builder_get_root(builder));
+        char *body = json_generator_to_data(gen, NULL);
+        g_object_unref(gen);
+        g_object_unref(builder);
+
+        GError *err = NULL;
+        JsonNode *res = agora_api_client_put(win->api,
+            "/api/calendar/integration", body, &err);
+        g_free(body);
+
+        if (res) {
+            json_node_unref(res);
+            g_print("[calendar] Integration saved\n");
+        } else {
+            g_print("[calendar] Save integration error: %s\n",
+                err ? err->message : "unknown");
+            if (err) g_error_free(err);
+        }
+    }
+
+    gtk_widget_destroy(dialog);
 }
 
 /* --- Image loading helper --- */
@@ -2671,6 +2942,25 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_bottom(cal_title, 12);
     gtk_box_pack_start(GTK_BOX(cal_header), cal_title, TRUE, TRUE, 0);
     gtk_widget_set_halign(cal_title, GTK_ALIGN_START);
+
+    /* Calendar config button */
+    GtkWidget *cal_config_btn = gtk_button_new_with_label("\xE2\x9A\x99 Konfiguration");
+    gtk_widget_set_margin_end(cal_config_btn, 4);
+    gtk_widget_set_margin_top(cal_config_btn, 8);
+    gtk_widget_set_margin_bottom(cal_config_btn, 8);
+    g_signal_connect(cal_config_btn, "clicked",
+                     G_CALLBACK(on_calendar_config_clicked), win);
+    gtk_box_pack_end(GTK_BOX(cal_header), cal_config_btn, FALSE, FALSE, 0);
+
+    /* New event button */
+    GtkWidget *cal_new_btn = gtk_button_new_with_label("+ Neuer Termin");
+    gtk_style_context_add_class(gtk_widget_get_style_context(cal_new_btn), "suggested-action");
+    gtk_widget_set_margin_end(cal_new_btn, 8);
+    gtk_widget_set_margin_top(cal_new_btn, 8);
+    gtk_widget_set_margin_bottom(cal_new_btn, 8);
+    g_signal_connect(cal_new_btn, "clicked",
+                     G_CALLBACK(on_calendar_new_event_clicked), win);
+    gtk_box_pack_end(GTK_BOX(cal_header), cal_new_btn, FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(calendar_box), cal_header, FALSE, FALSE, 0);
 

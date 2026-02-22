@@ -290,7 +290,7 @@
                                                 <TextBlock Text="{Binding ActorName}" FontSize="12"
                                                            FontWeight="SemiBold"
                                                            Foreground="{StaticResource TextPrimaryBrush}" />
-                                                <TextBlock Text="{Binding CreatedAt}" FontSize="10"
+                                                <TextBlock Text="{Binding FormattedTime}" FontSize="10"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            HorizontalAlignment="Right"
                                                            VerticalAlignment="Center" />
@@ -441,6 +441,164 @@
                 </Grid>
             </Border>
 
+            <!-- Calendar view (main content area) -->
+            <Border x:Name="CalendarView" Visibility="Collapsed" Background="{StaticResource BackgroundBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- Calendar header -->
+                    <Border Grid.Row="0" Padding="16,12" Background="White"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Click="CalendarNewEvent_Click"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Padding="12,6" Margin="8,0,0,0" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets"
+                                               FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBlock x:Name="CalendarNewEventBtn" Text="Neuer Termin" FontSize="12" />
+                                </StackPanel>
+                            </Button>
+                            <Button DockPanel.Dock="Right" Click="CalendarRefresh_Click"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Padding="8,4" ToolTip="Refresh">
+                                <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" />
+                            </Button>
+                            <TextBlock x:Name="CalendarViewTitle" Text="Kalender" FontSize="18" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </Border>
+                    <!-- Calendar body: calendar widget + event list -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16">
+                        <StackPanel MaxWidth="800" HorizontalAlignment="Left">
+                            <!-- WPF Calendar widget -->
+                            <Calendar x:Name="WpfCalendar" SelectionMode="SingleDate"
+                                      IsTodayHighlighted="True"
+                                      SelectedDatesChanged="WpfCalendar_SelectedDatesChanged"
+                                      DisplayDateChanged="WpfCalendar_DisplayDateChanged"
+                                      HorizontalAlignment="Left" Margin="0,0,0,16" />
+                            <!-- Selected day label -->
+                            <TextBlock x:Name="CalendarDayLabel" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12" />
+                            <!-- Event list for selected day -->
+                            <ItemsControl x:Name="CalendarDayEventList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,8" Padding="14,12" Background="White"
+                                                CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
+                                                BorderThickness="1">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="4" Opacity="0.08" ShadowDepth="1" />
+                                            </Border.Effect>
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <TextBlock Text="{Binding TimeRange}" FontSize="12"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Title}" FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding Location}" FontSize="11"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Margin="0,4,0,0"
+                                                           Visibility="{Binding Location, Converter={x:Static local:Converters.StringToVisibility}}" />
+                                                <TextBlock Text="{Binding Description}" FontSize="12"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           TextWrapping="Wrap" MaxHeight="40"
+                                                           Margin="0,4,0,0"
+                                                           Visibility="{Binding Description, Converter={x:Static local:Converters.StringToVisibility}}" />
+                                                <Button Margin="0,6,0,0" Padding="10,4"
+                                                        HorizontalAlignment="Left"
+                                                        Style="{StaticResource PrimaryButton}"
+                                                        Click="CalendarEventJoin_Click"
+                                                        Tag="{Binding ChannelId}"
+                                                        Visibility="{Binding ChannelId, Converter={x:Static local:Converters.StringToVisibility}}">
+                                                    <TextBlock Text="Video Call beitreten" FontSize="11" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="CalendarEmptyDay" Text="Keine Termine an diesem Tag"
+                                       FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="0,8,0,0" Visibility="Collapsed" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- New Event dialog overlay -->
+            <Border x:Name="NewEventOverlay" Visibility="Collapsed"
+                    Background="#80000000" Panel.ZIndex="5">
+                <Border Background="White" CornerRadius="8" Padding="24"
+                        MaxWidth="480" MaxHeight="560"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="16" Opacity="0.3" ShadowDepth="4" />
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock Text="Neuer Termin" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16" />
+                        <!-- Title -->
+                        <TextBlock Text="Titel" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <TextBox x:Name="NewEventTitle" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                 BorderBrush="{StaticResource BorderBrush}" />
+                        <!-- Description -->
+                        <TextBlock Text="Beschreibung" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <TextBox x:Name="NewEventDescription" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                 BorderBrush="{StaticResource BorderBrush}" AcceptsReturn="True"
+                                 TextWrapping="Wrap" Height="60" VerticalScrollBarVisibility="Auto" />
+                        <!-- Location -->
+                        <TextBlock Text="Ort" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <TextBox x:Name="NewEventLocation" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                 BorderBrush="{StaticResource BorderBrush}" />
+                        <!-- All day -->
+                        <CheckBox x:Name="NewEventAllDay" Content="Ganztaegig" Margin="0,0,0,12"
+                                  FontSize="12" Checked="NewEventAllDay_Changed" Unchecked="NewEventAllDay_Changed" />
+                        <!-- Start -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <StackPanel Margin="0,0,16,0">
+                                <TextBlock Text="Startdatum" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                                <DatePicker x:Name="NewEventStartDate" FontSize="13" Width="160" />
+                            </StackPanel>
+                            <StackPanel x:Name="NewEventStartTimePanel">
+                                <TextBlock Text="Startzeit" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                                <TextBox x:Name="NewEventStartTime" Padding="8" FontSize="13" Width="100"
+                                         BorderBrush="{StaticResource BorderBrush}" Text="09:00" />
+                            </StackPanel>
+                        </StackPanel>
+                        <!-- End -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <StackPanel Margin="0,0,16,0">
+                                <TextBlock Text="Enddatum" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                                <DatePicker x:Name="NewEventEndDate" FontSize="13" Width="160" />
+                            </StackPanel>
+                            <StackPanel x:Name="NewEventEndTimePanel">
+                                <TextBlock Text="Endzeit" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                                <TextBox x:Name="NewEventEndTime" Padding="8" FontSize="13" Width="100"
+                                         BorderBrush="{StaticResource BorderBrush}" Text="10:00" />
+                            </StackPanel>
+                        </StackPanel>
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="Abbrechen" Padding="16,8" Margin="0,0,8,0"
+                                    Background="#E0E0E0" Foreground="#333333" BorderThickness="0"
+                                    Click="NewEventCancel_Click" Cursor="Hand" />
+                            <Button Content="Erstellen" Style="{StaticResource PrimaryButton}"
+                                    Padding="16,8" Click="NewEventSave_Click" Cursor="Hand" />
+                        </StackPanel>
+                        <TextBlock x:Name="NewEventStatus" FontSize="12" Margin="0,8,0,0"
+                                   Foreground="Red" TextWrapping="Wrap" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+            </Border>
+
             <!-- Settings view -->
             <Border x:Name="SettingsView" Visibility="Collapsed" Padding="32">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -490,6 +648,69 @@
                                     Click="SettingsCancel_Click"
                                     Background="#E0E0E0" Foreground="#333333" BorderThickness="0" />
                         </StackPanel>
+
+                        <Separator Margin="0,24,0,24" />
+
+                        <!-- Calendar Integration -->
+                        <TextBlock Text="Kalender Integration" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16" />
+
+                        <TextBlock Text="Anbieter" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <ComboBox x:Name="CalendarProvider" Padding="8" FontSize="13" Margin="0,0,0,16"
+                                  BorderBrush="{StaticResource BorderBrush}"
+                                  SelectionChanged="CalendarProvider_Changed">
+                            <ComboBoxItem Content="Intern" Tag="internal" />
+                            <ComboBoxItem Content="CalDAV / WebDAV" Tag="webdav" />
+                            <ComboBoxItem Content="Google Calendar" Tag="google" />
+                            <ComboBoxItem Content="Outlook / Exchange" Tag="outlook" />
+                        </ComboBox>
+
+                        <!-- CalDAV fields -->
+                        <StackPanel x:Name="CalDavSettings" Visibility="Collapsed">
+                            <TextBlock Text="CalDAV URL" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                            <TextBox x:Name="CalDavUrl" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                     BorderBrush="{StaticResource BorderBrush}" />
+                            <TextBlock Text="Benutzername" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                            <TextBox x:Name="CalDavUsername" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                     BorderBrush="{StaticResource BorderBrush}" />
+                            <TextBlock Text="Passwort" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                            <PasswordBox x:Name="CalDavPassword" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                         BorderBrush="{StaticResource BorderBrush}" />
+                        </StackPanel>
+
+                        <!-- Outlook fields -->
+                        <StackPanel x:Name="OutlookSettings" Visibility="Collapsed">
+                            <TextBlock Text="Exchange Server URL" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                            <TextBox x:Name="OutlookServerUrl" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                     BorderBrush="{StaticResource BorderBrush}" />
+                            <TextBlock Text="Benutzername" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                            <TextBox x:Name="OutlookUsername" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                     BorderBrush="{StaticResource BorderBrush}" />
+                            <TextBlock Text="Passwort" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                            <PasswordBox x:Name="OutlookPassword" Padding="8" FontSize="13" Margin="0,0,0,12"
+                                         BorderBrush="{StaticResource BorderBrush}" />
+                        </StackPanel>
+
+                        <!-- Google info -->
+                        <StackPanel x:Name="GoogleSettings" Visibility="Collapsed">
+                            <TextBlock Text="Google Calendar wird ueber OAuth verbunden."
+                                       FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap" Margin="0,0,0,12" />
+                        </StackPanel>
+
+                        <Button x:Name="CalendarSaveBtn" Content="Kalender speichern"
+                                Style="{StaticResource PrimaryButton}"
+                                Padding="20,8" Click="CalendarIntegrationSave_Click"
+                                Cursor="Hand" Margin="0,0,0,8" />
+                        <TextBlock x:Name="CalendarIntegrationStatus" FontSize="12" Margin="0,4,0,0"
+                                   Foreground="#4CAF50" Visibility="Collapsed" />
 
                         <!-- Status message -->
                         <TextBlock x:Name="SettingsStatus" FontSize="12" Margin="0,12,0,0"

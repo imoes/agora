@@ -419,6 +419,7 @@ function insertText(text) {
         SettingsView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Visible;
         FeedTitle.Text = Translations.T("nav.feed");
         _ = LoadFeedAsync();
@@ -434,7 +435,9 @@ function insertText(text) {
         FeedList.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Collapsed;
         if (_currentChannelId == null)
         {
             EmptyState.Visibility = Visibility.Visible;
@@ -455,6 +458,7 @@ function insertText(text) {
         ChatView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("teams.teams");
@@ -474,9 +478,9 @@ function insertText(text) {
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
-        EmptyState.Visibility = Visibility.Visible;
-        EmptyStateTitle.Text = Translations.T("nav.calendar");
-        EmptyStateSubtitle.Text = Translations.T("calendar.subtitle");
+        EmptyState.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Visible;
+        WpfCalendar.SelectedDate = DateTime.Today;
         _ = LoadCalendarAsync();
     }
 
@@ -492,7 +496,9 @@ function insertText(text) {
             _feedEvents.Clear();
             if (feed.Events != null)
             {
-                foreach (var ev in feed.Events)
+                // Sort by created_at descending (newest first), like Angular frontend
+                var sorted = feed.Events.OrderByDescending(e => e.CreatedAtDateTime);
+                foreach (var ev in sorted)
                     _feedEvents.Add(ev);
             }
         }
@@ -518,14 +524,21 @@ function insertText(text) {
 
     // === Calendar ===
 
+    private List<CalendarEventItem> _allCalendarEvents = new();
+
     private async System.Threading.Tasks.Task LoadCalendarAsync()
     {
         try
         {
-            var now = DateTime.UtcNow;
-            var end = now.AddDays(30);
-            var events = await _api.GetCalendarEventsAsync(now.ToString("o"), end.ToString("o"));
+            // Fetch events for the displayed month
+            var displayDate = WpfCalendar.DisplayDate;
+            var monthStart = new DateTime(displayDate.Year, displayDate.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var monthEnd = monthStart.AddMonths(1);
+            var events = await _api.GetCalendarEventsAsync(monthStart.ToString("o"), monthEnd.ToString("o"));
+
+            _allCalendarEvents.Clear();
             _calendarEvents.Clear();
+
             foreach (var ev in events)
             {
                 try
@@ -533,26 +546,237 @@ function insertText(text) {
                     var title = ev.GetProperty("title").GetString() ?? "";
                     var startTime = ev.GetProperty("start_time").GetString() ?? "";
                     var endTime = ev.TryGetProperty("end_time", out var et) ? et.GetString() : null;
-                    var desc = ev.TryGetProperty("description", out var d) ? d.GetString() : null;
-                    var allDay = ev.TryGetProperty("all_day", out var ad) && ad.GetBoolean();
+                    var desc = ev.TryGetProperty("description", out var d) && d.ValueKind != JsonValueKind.Null ? d.GetString() : null;
+                    var allDay = ev.TryGetProperty("all_day", out var ad) && ad.ValueKind == JsonValueKind.True && ad.GetBoolean();
+                    var location = ev.TryGetProperty("location", out var loc) && loc.ValueKind != JsonValueKind.Null ? loc.GetString() : null;
+                    var channelId = ev.TryGetProperty("channel_id", out var ch) && ch.ValueKind != JsonValueKind.Null ? ch.GetString() : null;
 
                     var start = DateTime.Parse(startTime).ToLocalTime();
-                    var timeRange = allDay ? "All day" : start.ToString("ddd dd MMM, HH:mm");
-                    if (endTime != null)
+                    var timeRange = allDay ? "Ganztaegig" : start.ToString("HH:mm");
+                    if (!allDay && endTime != null)
                     {
                         var endDt = DateTime.Parse(endTime).ToLocalTime();
                         timeRange += " - " + endDt.ToString("HH:mm");
                     }
 
-                    _calendarEvents.Add(new CalendarEventItem
+                    var item = new CalendarEventItem
                     {
                         Title = title,
                         TimeRange = timeRange,
-                        Description = desc
-                    });
+                        Description = desc,
+                        Location = location,
+                        ChannelId = channelId,
+                        StartDateTime = start,
+                        AllDay = allDay
+                    };
+
+                    _allCalendarEvents.Add(item);
+                    _calendarEvents.Add(item);
                 }
                 catch { }
             }
+
+            // Update the day event list for the selected date
+            UpdateCalendarDayEvents();
+        }
+        catch { }
+    }
+
+    private void UpdateCalendarDayEvents()
+    {
+        var selectedDate = WpfCalendar.SelectedDate ?? DateTime.Today;
+        CalendarDayLabel.Text = selectedDate.ToString("dddd, dd. MMMM yyyy");
+
+        var dayEvents = _allCalendarEvents
+            .Where(e => e.StartDateTime.Date == selectedDate.Date)
+            .OrderBy(e => e.AllDay ? 0 : 1)
+            .ThenBy(e => e.StartDateTime)
+            .ToList();
+
+        CalendarDayEventList.ItemsSource = dayEvents;
+        CalendarEmptyDay.Visibility = dayEvents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void WpfCalendar_SelectedDatesChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        UpdateCalendarDayEvents();
+    }
+
+    private void WpfCalendar_DisplayDateChanged(object? sender, CalendarDateChangedEventArgs e)
+    {
+        _ = LoadCalendarAsync();
+    }
+
+    private void CalendarRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        _ = LoadCalendarAsync();
+    }
+
+    private async void CalendarEventJoin_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string channelId && !string.IsNullOrEmpty(channelId))
+        {
+            try
+            {
+                await _api.CreateVideoRoomAsync(channelId);
+                var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
+                var url = $"{baseUrl}/video/{channelId}";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch { }
+        }
+    }
+
+    // === New Event Creation ===
+
+    private void CalendarNewEvent_Click(object sender, RoutedEventArgs e)
+    {
+        NewEventTitle.Text = "";
+        NewEventDescription.Text = "";
+        NewEventLocation.Text = "";
+        NewEventAllDay.IsChecked = false;
+        var selected = WpfCalendar.SelectedDate ?? DateTime.Today;
+        NewEventStartDate.SelectedDate = selected;
+        NewEventEndDate.SelectedDate = selected;
+        NewEventStartTime.Text = "09:00";
+        NewEventEndTime.Text = "10:00";
+        NewEventStatus.Visibility = Visibility.Collapsed;
+        NewEventOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void NewEventCancel_Click(object sender, RoutedEventArgs e)
+    {
+        NewEventOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void NewEventAllDay_Changed(object sender, RoutedEventArgs e)
+    {
+        var isAllDay = NewEventAllDay.IsChecked == true;
+        NewEventStartTimePanel.Visibility = isAllDay ? Visibility.Collapsed : Visibility.Visible;
+        NewEventEndTimePanel.Visibility = isAllDay ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async void NewEventSave_Click(object sender, RoutedEventArgs e)
+    {
+        var title = NewEventTitle.Text.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            NewEventStatus.Text = "Titel ist erforderlich";
+            NewEventStatus.Visibility = Visibility.Visible;
+            return;
+        }
+
+        var startDate = NewEventStartDate.SelectedDate ?? DateTime.Today;
+        var endDate = NewEventEndDate.SelectedDate ?? startDate;
+        var allDay = NewEventAllDay.IsChecked == true;
+
+        DateTime startDt, endDt;
+        if (allDay)
+        {
+            startDt = startDate.Date;
+            endDt = endDate.Date.AddDays(1);
+        }
+        else
+        {
+            if (!TimeSpan.TryParse(NewEventStartTime.Text, out var startTimeSpan))
+                startTimeSpan = new TimeSpan(9, 0, 0);
+            if (!TimeSpan.TryParse(NewEventEndTime.Text, out var endTimeSpan))
+                endTimeSpan = startTimeSpan.Add(TimeSpan.FromHours(1));
+            startDt = startDate.Date + startTimeSpan;
+            endDt = endDate.Date + endTimeSpan;
+        }
+
+        try
+        {
+            await _api.CreateCalendarEventAsync(new
+            {
+                title,
+                description = string.IsNullOrEmpty(NewEventDescription.Text) ? (string?)null : NewEventDescription.Text,
+                location = string.IsNullOrEmpty(NewEventLocation.Text) ? (string?)null : NewEventLocation.Text,
+                start_time = startDt.ToUniversalTime().ToString("o"),
+                end_time = endDt.ToUniversalTime().ToString("o"),
+                all_day = allDay
+            });
+
+            NewEventOverlay.Visibility = Visibility.Collapsed;
+            await LoadCalendarAsync();
+        }
+        catch (Exception ex)
+        {
+            NewEventStatus.Text = $"Fehler: {ex.Message}";
+            NewEventStatus.Visibility = Visibility.Visible;
+        }
+    }
+
+    // === Calendar Integration Settings ===
+
+    private void CalendarProvider_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (CalDavSettings == null) return; // Not initialized yet
+        var tag = (CalendarProvider.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        CalDavSettings.Visibility = tag == "webdav" ? Visibility.Visible : Visibility.Collapsed;
+        OutlookSettings.Visibility = tag == "outlook" ? Visibility.Visible : Visibility.Collapsed;
+        GoogleSettings.Visibility = tag == "google" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void CalendarIntegrationSave_Click(object sender, RoutedEventArgs e)
+    {
+        var provider = (CalendarProvider.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "internal";
+        try
+        {
+            var body = new Dictionary<string, string?> { ["provider"] = provider };
+            if (provider == "webdav")
+            {
+                body["webdav_url"] = CalDavUrl.Text;
+                body["webdav_username"] = CalDavUsername.Text;
+                body["webdav_password"] = CalDavPassword.Password;
+            }
+            else if (provider == "outlook")
+            {
+                body["outlook_server_url"] = OutlookServerUrl.Text;
+                body["outlook_username"] = OutlookUsername.Text;
+                body["outlook_password"] = OutlookPassword.Password;
+            }
+
+            await _api.SaveCalendarIntegrationAsync(body);
+            CalendarIntegrationStatus.Text = "Gespeichert!";
+            CalendarIntegrationStatus.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CAF50"));
+            CalendarIntegrationStatus.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            CalendarIntegrationStatus.Text = $"Fehler: {ex.Message}";
+            CalendarIntegrationStatus.Foreground = new SolidColorBrush(Colors.Red);
+            CalendarIntegrationStatus.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async System.Threading.Tasks.Task LoadCalendarIntegrationAsync()
+    {
+        try
+        {
+            var integration = await _api.GetCalendarIntegrationAsync();
+            if (integration == null) return;
+            var el = integration.Value;
+
+            var provider = el.TryGetProperty("provider", out var p) ? p.GetString() : "internal";
+            for (int i = 0; i < CalendarProvider.Items.Count; i++)
+            {
+                if (CalendarProvider.Items[i] is ComboBoxItem item && (string)item.Tag == provider)
+                {
+                    CalendarProvider.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            if (el.TryGetProperty("webdav_url", out var wu) && wu.ValueKind == JsonValueKind.String)
+                CalDavUrl.Text = wu.GetString() ?? "";
+            if (el.TryGetProperty("webdav_username", out var wn) && wn.ValueKind == JsonValueKind.String)
+                CalDavUsername.Text = wn.GetString() ?? "";
+            if (el.TryGetProperty("outlook_server_url", out var ou) && ou.ValueKind == JsonValueKind.String)
+                OutlookServerUrl.Text = ou.GetString() ?? "";
+            if (el.TryGetProperty("outlook_username", out var on) && on.ValueKind == JsonValueKind.String)
+                OutlookUsername.Text = on.GetString() ?? "";
         }
         catch { }
     }
@@ -1124,16 +1348,37 @@ function insertText(text) {
 
         try
         {
-            var msg = _messages.FirstOrDefault(m => m.Id == messageId);
-            if (msg?.Reactions != null &&
-                msg.Reactions.Any(r => r.Emoji == emoji && r.UserId == _api.CurrentUser?.Id))
+            var existing = _messages.FirstOrDefault(m => m.Id == messageId);
+            if (existing == null) return;
+
+            existing.Reactions ??= new List<Reaction>();
+            var userId = _api.CurrentUser?.Id;
+            var displayName = _api.CurrentUser?.DisplayName ?? "?";
+            bool isRemoving = existing.Reactions.Any(r => r.Emoji == emoji && r.UserId == userId);
+
+            if (isRemoving)
             {
                 await _api.RemoveReactionAsync(_currentChannelId, messageId, emoji);
+                // Optimistic local update
+                existing.Reactions.RemoveAll(r => r.Emoji == emoji && r.UserId == userId);
             }
             else
             {
                 await _api.AddReactionAsync(_currentChannelId, messageId, emoji);
+                // Optimistic local update
+                if (userId != null)
+                    existing.Reactions.Add(new Reaction { Emoji = emoji, UserId = userId, DisplayName = displayName });
             }
+
+            // Refresh reaction groups and UI
+            existing.ReactionGroups = existing.Reactions
+                .GroupBy(r => r.Emoji)
+                .Select(g => new ReactionGroup { Emoji = g.Key, Count = g.Count() })
+                .ToList();
+            existing.HasReactions = existing.ReactionGroups.Count > 0;
+
+            var idx = _messages.IndexOf(existing);
+            if (idx >= 0) _messages[idx] = existing;
         }
         catch { }
     }
@@ -1839,8 +2084,10 @@ function insertText(text) {
         EmptyState.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
+        _ = LoadCalendarIntegrationAsync();
     }
 
     private async void SettingsSave_Click(object sender, RoutedEventArgs e)
@@ -1945,4 +2192,8 @@ public class CalendarEventItem
     public string Title { get; set; } = "";
     public string TimeRange { get; set; } = "";
     public string? Description { get; set; }
+    public string? Location { get; set; }
+    public string? ChannelId { get; set; }
+    public DateTime StartDateTime { get; set; }
+    public bool AllDay { get; set; }
 }
