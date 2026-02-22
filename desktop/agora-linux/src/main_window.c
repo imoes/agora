@@ -176,11 +176,6 @@ static const char *app_css =
     "  border-radius: 12px; padding: 2px 6px; border: none; box-shadow: none; "
     "  font-size: 12px; min-height: 0; min-width: 0; }"
     ".reaction-badge:hover { background-color: #D0D0D0; }"
-    /* Reaction picker */
-    ".reaction-pick { background-image: none; background-color: transparent; "
-    "  border: none; padding: 2px 4px; border-radius: 4px; box-shadow: none; "
-    "  font-size: 14px; min-height: 0; min-width: 0; opacity: 0.5; }"
-    ".reaction-pick:hover { background-color: #E0E0E0; opacity: 1.0; }"
 ;
 
 /* --- Leave channel --- */
@@ -656,13 +651,15 @@ static void load_calendar_events(AgoraMainWindow *win)
     if (end_month > 12) { end_month -= 12; end_year++; }
     GDateTime *end = g_date_time_new_utc(end_year, end_month, 1, 0, 0, 0);
 
-    char *start_str = g_date_time_format_iso8601(start);
-    char *end_str = g_date_time_format_iso8601(end);
+    /* Use explicit UTC format to avoid +00:00 URL encoding issues */
+    char *start_str = g_date_time_format(start, "%Y-%m-%dT%H:%M:%SZ");
+    char *end_str = g_date_time_format(end, "%Y-%m-%dT%H:%M:%SZ");
     g_date_time_unref(now);
     g_date_time_unref(start);
     g_date_time_unref(end);
 
     char *path = g_strdup_printf("/api/calendar/events?start=%s&end=%s", start_str, end_str);
+    g_print("[calendar] Fetching: %s\n", path);
     g_free(start_str);
     g_free(end_str);
 
@@ -677,17 +674,38 @@ static void load_calendar_events(AgoraMainWindow *win)
     g_list_free(children);
 
     if (!result) {
+        g_print("[calendar] API error: %s\n", error ? error->message : "unknown");
+        /* Show empty state on error */
+        GtkWidget *err_lbl = gtk_label_new(T("calendar.empty"));
+        gtk_widget_set_margin_top(err_lbl, 40);
+        GtkWidget *err_row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(err_row), err_lbl);
+        gtk_list_box_insert(win->calendar_list, err_row, -1);
+        gtk_widget_show_all(GTK_WIDGET(win->calendar_list));
         if (error) g_error_free(error);
         return;
     }
 
     if (!JSON_NODE_HOLDS_ARRAY(result)) {
+        g_print("[calendar] Response is not a JSON array\n");
         json_node_unref(result);
         return;
     }
 
     JsonArray *arr = json_node_get_array(result);
     guint len = json_array_get_length(arr);
+    g_print("[calendar] Got %u events\n", len);
+
+    if (len == 0) {
+        GtkWidget *empty_lbl = gtk_label_new(T("calendar.empty"));
+        gtk_widget_set_margin_top(empty_lbl, 40);
+        GtkWidget *empty_row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(empty_row), empty_lbl);
+        gtk_list_box_insert(win->calendar_list, empty_row, -1);
+        gtk_widget_show_all(GTK_WIDGET(win->calendar_list));
+        json_node_unref(result);
+        return;
+    }
 
     for (guint i = 0; i < len; i++) {
         JsonObject *ev = json_array_get_object_element(arr, i);
@@ -915,6 +933,57 @@ static void on_reaction_btn_clicked(GtkButton *btn, gpointer data)
     if (err) g_error_free(err);
 }
 
+static void on_reaction_menu_activate(GtkMenuItem *item, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *emoji = g_object_get_data(G_OBJECT(item), "emoji");
+    const char *msg_id = g_object_get_data(G_OBJECT(item), "message-id");
+    if (!emoji || !msg_id || !win->current_channel_id) return;
+
+    char *path = g_strdup_printf("/api/channels/%s/messages/%s/reactions",
+                                 win->current_channel_id, msg_id);
+    char *body = g_strdup_printf("{\"emoji\":\"%s\"}", emoji);
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_post(win->api, path, body, &err);
+    g_free(path);
+    g_free(body);
+    if (res) json_node_unref(res);
+    if (err) g_error_free(err);
+}
+
+static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
+                                        gpointer data)
+{
+    if (event->button != 3) return FALSE; /* Only right-click */
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *msg_id = g_object_get_data(G_OBJECT(widget), "message-id");
+    if (!msg_id || !win->current_channel_id) return FALSE;
+
+    static const char *emojis[] = {
+        "\xF0\x9F\x91\x8D",           /* 👍 */
+        "\xE2\x9D\xA4\xEF\xB8\x8F",  /* ❤️ */
+        "\xF0\x9F\x98\x82",           /* 😂 */
+        "\xF0\x9F\x8E\x89",           /* 🎉 */
+        "\xF0\x9F\x98\xAE",           /* 😮 */
+        NULL
+    };
+
+    GtkWidget *menu = gtk_menu_new();
+    for (int i = 0; emojis[i]; i++) {
+        GtkWidget *item = gtk_menu_item_new_with_label(emojis[i]);
+        g_object_set_data_full(G_OBJECT(item), "emoji",
+                               g_strdup(emojis[i]), g_free);
+        g_object_set_data_full(G_OBJECT(item), "message-id",
+                               g_strdup(msg_id), g_free);
+        g_signal_connect(item, "activate",
+                         G_CALLBACK(on_reaction_menu_activate), win);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
+    }
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), (GdkEvent *)event);
+    return TRUE;
+}
+
 static void scroll_message_list_to_bottom(AgoraMainWindow *win)
 {
     GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(
@@ -1069,32 +1138,17 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
         }
     }
 
-    /* Reaction picker buttons (always visible, small) */
+    /* Wrap bubble in GtkEventBox for right-click reaction menu */
+    GtkWidget *evbox = gtk_event_box_new();
+    gtk_container_add(GTK_CONTAINER(evbox), bubble);
     if (msg_id) {
-        GtkWidget *picker = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-        gtk_widget_set_margin_top(picker, 2);
-        static const char *quick_emojis[] = {
-            "\xF0\x9F\x91\x8D",   /* 👍 */
-            "\xE2\x9D\xA4\xEF\xB8\x8F", /* ❤️ */
-            "\xF0\x9F\x98\x82",   /* 😂 */
-            "\xF0\x9F\x8E\x89",   /* 🎉 */
-            "\xF0\x9F\x98\xAE",   /* 😮 */
-            NULL
-        };
-        for (int e = 0; quick_emojis[e]; e++) {
-            GtkWidget *ebtn = gtk_button_new_with_label(quick_emojis[e]);
-            gtk_style_context_add_class(gtk_widget_get_style_context(ebtn), "reaction-pick");
-            g_object_set_data_full(G_OBJECT(ebtn), "emoji",
-                                   g_strdup(quick_emojis[e]), g_free);
-            g_object_set_data_full(G_OBJECT(ebtn), "message-id",
-                                   g_strdup(msg_id), g_free);
-            g_signal_connect(ebtn, "clicked", G_CALLBACK(on_reaction_btn_clicked), win);
-            gtk_box_pack_start(GTK_BOX(picker), ebtn, FALSE, FALSE, 0);
-        }
-        gtk_box_pack_start(GTK_BOX(bubble), picker, FALSE, FALSE, 0);
+        g_object_set_data_full(G_OBJECT(evbox), "message-id",
+                               g_strdup(msg_id), g_free);
+        g_signal_connect(evbox, "button-press-event",
+                         G_CALLBACK(on_message_right_click), win);
     }
 
-    gtk_box_pack_start(GTK_BOX(align_box), bubble, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(align_box), evbox, FALSE, FALSE, 0);
 
     if (!is_own)
         gtk_box_pack_start(GTK_BOX(align_box),
