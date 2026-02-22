@@ -84,6 +84,15 @@ public static class Translations
             ["file.select"] = "Select File",
             ["file.save"] = "Save File",
             ["file.upload_error"] = "Upload failed",
+            ["chat.new_channel"] = "New Chat",
+            ["chat.channel_name"] = "Chat name:",
+            ["chat.create"] = "Create",
+            ["chat.cancel"] = "Cancel",
+            ["chat.search_users"] = "Search users...",
+            ["chat.add_member"] = "Add Member",
+            ["chat.leave_channel"] = "Leave Channel",
+            ["chat.leave_confirm"] = "Leave this channel?",
+            ["chat.direct_chat"] = "Direct Chat",
         },
         ["de"] = new()
         {
@@ -149,6 +158,15 @@ public static class Translations
             ["file.select"] = "Datei auswaehlen",
             ["file.save"] = "Datei speichern",
             ["file.upload_error"] = "Upload fehlgeschlagen",
+            ["chat.new_channel"] = "Neuer Chat",
+            ["chat.channel_name"] = "Chat-Name:",
+            ["chat.create"] = "Erstellen",
+            ["chat.cancel"] = "Abbrechen",
+            ["chat.search_users"] = "Benutzer suchen...",
+            ["chat.add_member"] = "Mitglied hinzufuegen",
+            ["chat.leave_channel"] = "Kanal verlassen",
+            ["chat.leave_confirm"] = "Diesen Kanal verlassen?",
+            ["chat.direct_chat"] = "Direktnachricht",
         },
         ["fr"] = new()
         {

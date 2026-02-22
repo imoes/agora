@@ -94,11 +94,18 @@
                     </DockPanel>
                 </Border>
 
-                <!-- Section header -->
+                <!-- Section header with new chat button -->
                 <Border DockPanel.Dock="Top" Padding="14,8"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                    <TextBlock x:Name="SidebarHeader" Text="Chats" FontSize="13" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="+" FontSize="16" FontWeight="Bold"
+                                Click="NewChat_Click" Cursor="Hand"
+                                Background="Transparent" BorderThickness="0"
+                                Foreground="{StaticResource PrimaryBrush}"
+                                Padding="6,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="SidebarHeader" Text="Chats" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                    </DockPanel>
                 </Border>
 
                 <!-- Scrollable sidebar content -->
@@ -726,6 +733,21 @@
                                 Background="Transparent" BorderThickness="0" Padding="8,4">
                             <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="18" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Button>
+                        <!-- Leave channel button -->
+                        <Button x:Name="LeaveChannelBtn" DockPanel.Dock="Right" Cursor="Hand"
+                                Click="LeaveChannel_Click"
+                                Background="Transparent" BorderThickness="0" Padding="8,4">
+                            <TextBlock Text="&#xE89B;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="16" Foreground="#CC0000" ToolTip="Leave Channel" />
+                        </Button>
+                        <!-- Add member button -->
+                        <Button x:Name="AddMemberBtn" DockPanel.Dock="Right" Cursor="Hand"
+                                Click="AddMember_Click"
+                                Background="Transparent" BorderThickness="0" Padding="8,4">
+                            <TextBlock Text="&#xE8FA;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="18" Foreground="{StaticResource TextSecondaryBrush}"
+                                       ToolTip="Add Member" />
                         </Button>
                         <!-- File upload button -->
                         <Button x:Name="FileUploadHeaderBtn" DockPanel.Dock="Right" Cursor="Hand"

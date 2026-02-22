@@ -79,6 +79,19 @@ static const TransEntry en_entries[] = {
     {"video.leave", "Leave Call"},
     {"chat.leave_channel", "Leave Channel"},
     {"chat.error_loading_messages", "Error loading messages"},
+    {"chat.reply", "Reply"},
+    {"chat.edit", "Edit"},
+    {"chat.delete", "Delete"},
+    {"chat.reply_to", "Reply to"},
+    {"chat.editing_message", "Editing message..."},
+    {"chat.delete_confirm", "Delete this message?"},
+    {"chat.cancel", "Cancel"},
+    {"chat.new_channel", "New Chat"},
+    {"chat.channel_name", "Chat name:"},
+    {"chat.create", "Create"},
+    {"chat.search_users", "Search users..."},
+    {"chat.add_member", "Add Member"},
+    {"chat.direct_chat", "Direct Chat"},
     {NULL, NULL}
 };
 
@@ -135,6 +148,19 @@ static const TransEntry de_entries[] = {
     {"video.leave", "Anruf verlassen"},
     {"chat.leave_channel", "Kanal verlassen"},
     {"chat.error_loading_messages", "Fehler beim Laden der Nachrichten"},
+    {"chat.reply", "Antworten"},
+    {"chat.edit", "Bearbeiten"},
+    {"chat.delete", "L\xc3\xb6schen"},
+    {"chat.reply_to", "Antwort an"},
+    {"chat.editing_message", "Nachricht bearbeiten..."},
+    {"chat.delete_confirm", "Diese Nachricht l\xc3\xb6schen?"},
+    {"chat.cancel", "Abbrechen"},
+    {"chat.new_channel", "Neuer Chat"},
+    {"chat.channel_name", "Chat-Name:"},
+    {"chat.create", "Erstellen"},
+    {"chat.search_users", "Benutzer suchen..."},
+    {"chat.add_member", "Mitglied hinzuf\xc3\xbcgen"},
+    {"chat.direct_chat", "Direktnachricht"},
     {NULL, NULL}
 };
 

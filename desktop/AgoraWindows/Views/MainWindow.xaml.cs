@@ -934,6 +934,194 @@ function insertText(text) {
         await OpenChannelAsync(channel);
     }
 
+    // === New Chat / User Search / Add Member / Leave Channel ===
+
+    private async void NewChat_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Window
+        {
+            Title = Translations.T("chat.new_channel"),
+            Width = 420, Height = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this, ResizeMode = ResizeMode.NoResize
+        };
+        var stack = new StackPanel { Margin = new Thickness(16) };
+
+        // Channel name
+        stack.Children.Add(new TextBlock { Text = Translations.T("chat.channel_name"), Margin = new Thickness(0, 0, 0, 4) });
+        var nameBox = new TextBox { Margin = new Thickness(0, 0, 0, 12) };
+        stack.Children.Add(nameBox);
+
+        stack.Children.Add(new Separator { Margin = new Thickness(0, 0, 0, 12) });
+
+        // User search
+        stack.Children.Add(new TextBlock { Text = Translations.T("chat.search_users"), Margin = new Thickness(0, 0, 0, 4) });
+        var searchBox = new TextBox { Margin = new Thickness(0, 0, 0, 8) };
+        stack.Children.Add(searchBox);
+
+        var resultsList = new ListBox { Height = 150, Margin = new Thickness(0, 0, 0, 12) };
+        stack.Children.Add(resultsList);
+
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var cancelBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0) };
+        var createBtn = new Button { Content = Translations.T("chat.create"), Padding = new Thickness(16, 6, 16, 6),
+            Background = (Brush)FindResource("PrimaryBrush"), Foreground = Brushes.White };
+        btnPanel.Children.Add(cancelBtn);
+        btnPanel.Children.Add(createBtn);
+        stack.Children.Add(btnPanel);
+
+        dlg.Content = stack;
+
+        // Search users on text change
+        searchBox.TextChanged += async (s, ev) =>
+        {
+            var query = searchBox.Text;
+            if (query.Length < 2) { resultsList.Items.Clear(); return; }
+            try
+            {
+                var users = await _api.SearchUsersAsync(query);
+                resultsList.Items.Clear();
+                resultsList.DisplayMemberPath = "DisplayLabel";
+                foreach (var u in users)
+                {
+                    resultsList.Items.Add(new { u.Id, DisplayLabel = $"{u.DisplayName ?? u.Username} (@{u.Username})" });
+                }
+            }
+            catch { }
+        };
+
+        cancelBtn.Click += (s, ev) => dlg.Close();
+        createBtn.Click += async (s, ev) =>
+        {
+            // If user selected -> create direct chat
+            if (resultsList.SelectedItem != null)
+            {
+                dynamic selected = resultsList.SelectedItem;
+                try
+                {
+                    var ch = await _api.CreateDirectChatAsync(selected.Id);
+                    await LoadChannelsAsync();
+                    // Select the new channel
+                    foreach (var c in _channels)
+                    {
+                        if (c.Id == ch.Id) { ChannelList.SelectedItem = c; break; }
+                    }
+                }
+                catch (Exception ex) { MessageBox.Show(ex.Message); }
+                dlg.Close();
+                return;
+            }
+
+            // Create group channel
+            var name = nameBox.Text.Trim();
+            if (!string.IsNullOrEmpty(name))
+            {
+                try
+                {
+                    var ch = await _api.CreateChannelAsync(name, "group");
+                    await LoadChannelsAsync();
+                    foreach (var c in _channels)
+                    {
+                        if (c.Id == ch.Id) { ChannelList.SelectedItem = c; break; }
+                    }
+                }
+                catch (Exception ex) { MessageBox.Show(ex.Message); }
+            }
+            dlg.Close();
+        };
+
+        dlg.ShowDialog();
+    }
+
+    private async void AddMember_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentChannelId == null) return;
+
+        var dlg = new Window
+        {
+            Title = Translations.T("chat.add_member"),
+            Width = 380, Height = 350,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this, ResizeMode = ResizeMode.NoResize
+        };
+        var stack = new StackPanel { Margin = new Thickness(16) };
+
+        var searchBox = new TextBox { Margin = new Thickness(0, 0, 0, 8) };
+        searchBox.SetValue(TextBox.TagProperty, Translations.T("chat.search_users"));
+        stack.Children.Add(new TextBlock { Text = Translations.T("chat.search_users"), Margin = new Thickness(0, 0, 0, 4) });
+        stack.Children.Add(searchBox);
+
+        var resultsList = new ListBox { Height = 200, Margin = new Thickness(0, 0, 0, 8) };
+        stack.Children.Add(resultsList);
+
+        var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6),
+            HorizontalAlignment = HorizontalAlignment.Right };
+        stack.Children.Add(closeBtn);
+
+        dlg.Content = stack;
+
+        searchBox.TextChanged += async (s, ev) =>
+        {
+            var query = searchBox.Text;
+            if (query.Length < 2) { resultsList.Items.Clear(); return; }
+            try
+            {
+                var users = await _api.SearchUsersAsync(query);
+                resultsList.Items.Clear();
+                resultsList.DisplayMemberPath = "DisplayLabel";
+                foreach (var u in users)
+                    resultsList.Items.Add(new { u.Id, DisplayLabel = $"{u.DisplayName ?? u.Username} (@{u.Username})" });
+            }
+            catch { }
+        };
+
+        // Double-click to add member
+        resultsList.MouseDoubleClick += async (s, ev) =>
+        {
+            if (resultsList.SelectedItem == null) return;
+            dynamic selected = resultsList.SelectedItem;
+            try
+            {
+                await _api.AddChannelMemberAsync(_currentChannelId, selected.Id);
+                if (resultsList.SelectedItem is System.Windows.Controls.ListBoxItem item)
+                    item.IsEnabled = false;
+                ShowToast(Translations.T("chat.add_member"), $"{selected.DisplayLabel}");
+            }
+            catch { }
+        };
+
+        closeBtn.Click += (s, ev) => { dlg.Close(); };
+        dlg.ShowDialog();
+        await LoadChannelsAsync();
+    }
+
+    private async void LeaveChannel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentChannelId == null) return;
+
+        var result = MessageBox.Show(
+            Translations.T("chat.leave_confirm"),
+            Translations.T("chat.leave_channel"),
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                await _api.LeaveChannelAsync(_currentChannelId);
+                _currentChannelId = null;
+                _currentChannelName = null;
+                ChatView.Visibility = Visibility.Collapsed;
+                EmptyState.Visibility = Visibility.Visible;
+                await LoadChannelsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, Translations.T("common.error"));
+            }
+        }
+    }
+
     private async System.Threading.Tasks.Task OpenChannelAsync(Channel channel)
     {
         _currentChannelId = channel.Id;

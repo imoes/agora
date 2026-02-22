@@ -80,6 +80,14 @@ struct _AgoraMainWindow {
 
     /* Notification sound */
     char *notification_sound_path;
+
+    /* Reply / Edit state */
+    char *reply_to_id;
+    char *reply_to_sender;
+    char *reply_to_content;
+    char *editing_message_id;
+    GtkWidget *reply_bar;
+    GtkLabel *reply_bar_label;
 };
 
 G_DEFINE_TYPE(AgoraMainWindow, agora_main_window, GTK_TYPE_APPLICATION_WINDOW)
@@ -1460,14 +1468,148 @@ static void on_reaction_menu_activate(GtkMenuItem *item, gpointer data)
     send_reaction(win, emoji, msg_id);
 }
 
+/* --- Reply --- */
+
+static void clear_reply_state(AgoraMainWindow *win)
+{
+    g_free(win->reply_to_id);
+    win->reply_to_id = NULL;
+    g_free(win->reply_to_sender);
+    win->reply_to_sender = NULL;
+    g_free(win->reply_to_content);
+    win->reply_to_content = NULL;
+    if (win->reply_bar)
+        gtk_widget_hide(win->reply_bar);
+}
+
+static void clear_edit_state(AgoraMainWindow *win)
+{
+    g_free(win->editing_message_id);
+    win->editing_message_id = NULL;
+    if (win->reply_bar)
+        gtk_widget_hide(win->reply_bar);
+}
+
+static void on_reply_cancel_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    clear_reply_state(win);
+    clear_edit_state(win);
+    gtk_entry_set_text(win->message_entry, "");
+}
+
+static void on_menu_reply_activate(GtkMenuItem *item, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *msg_id = g_object_get_data(G_OBJECT(item), "message-id");
+    const char *sender = g_object_get_data(G_OBJECT(item), "sender-name");
+    const char *content = g_object_get_data(G_OBJECT(item), "msg-content");
+
+    clear_edit_state(win);
+    g_free(win->reply_to_id);
+    win->reply_to_id = g_strdup(msg_id);
+    g_free(win->reply_to_sender);
+    win->reply_to_sender = g_strdup(sender ? sender : "");
+    g_free(win->reply_to_content);
+    win->reply_to_content = g_strdup(content ? content : "");
+
+    /* Show reply bar */
+    char *preview = g_strdup_printf("%s %s: %s", T("chat.reply_to"),
+                                    sender ? sender : "?",
+                                    content ? content : "");
+    gtk_label_set_text(win->reply_bar_label, preview);
+    g_free(preview);
+    gtk_widget_show(win->reply_bar);
+    gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
+}
+
+/* --- Edit --- */
+
+static void on_menu_edit_activate(GtkMenuItem *item, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *msg_id = g_object_get_data(G_OBJECT(item), "message-id");
+    const char *content = g_object_get_data(G_OBJECT(item), "msg-content");
+
+    clear_reply_state(win);
+    g_free(win->editing_message_id);
+    win->editing_message_id = g_strdup(msg_id);
+
+    gtk_entry_set_text(win->message_entry, content ? content : "");
+    gtk_editable_set_position(GTK_EDITABLE(win->message_entry), -1);
+
+    char *label = g_strdup_printf("%s", T("chat.editing_message"));
+    gtk_label_set_text(win->reply_bar_label, label);
+    g_free(label);
+    gtk_widget_show(win->reply_bar);
+    gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
+}
+
+/* --- Delete --- */
+
+static void on_menu_delete_activate(GtkMenuItem *item, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *msg_id = g_object_get_data(G_OBJECT(item), "message-id");
+    if (!msg_id || !win->current_channel_id) return;
+
+    GtkWidget *dialog = gtk_message_dialog_new(
+        GTK_WINDOW(win), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION,
+        GTK_BUTTONS_YES_NO, "%s", T("chat.delete_confirm"));
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+
+    if (response == GTK_RESPONSE_YES) {
+        char *path = g_strdup_printf("/api/channels/%s/messages/%s",
+                                     win->current_channel_id, msg_id);
+        GError *err = NULL;
+        agora_api_client_delete(win->api, path, &err);
+        g_free(path);
+        if (err) g_error_free(err);
+        load_messages(win, win->current_channel_id);
+    }
+}
+
 static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
                                         gpointer data)
 {
     if (event->button != 3) return FALSE; /* Only right-click */
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
     const char *msg_id = g_object_get_data(G_OBJECT(widget), "message-id");
+    const char *sender_name = g_object_get_data(G_OBJECT(widget), "sender-name");
+    const char *msg_content = g_object_get_data(G_OBJECT(widget), "msg-content");
+    gboolean is_own = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "is-own"));
     if (!msg_id || !win->current_channel_id) return FALSE;
 
+    GtkWidget *menu = gtk_menu_new();
+
+    /* Reply */
+    GtkWidget *reply_item = gtk_menu_item_new_with_label(T("chat.reply"));
+    g_object_set_data_full(G_OBJECT(reply_item), "message-id", g_strdup(msg_id), g_free);
+    g_object_set_data_full(G_OBJECT(reply_item), "sender-name", g_strdup(sender_name ? sender_name : ""), g_free);
+    g_object_set_data_full(G_OBJECT(reply_item), "msg-content", g_strdup(msg_content ? msg_content : ""), g_free);
+    g_signal_connect(reply_item, "activate", G_CALLBACK(on_menu_reply_activate), win);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), reply_item);
+
+    /* Edit + Delete (only own messages) */
+    if (is_own) {
+        GtkWidget *edit_item = gtk_menu_item_new_with_label(T("chat.edit"));
+        g_object_set_data_full(G_OBJECT(edit_item), "message-id", g_strdup(msg_id), g_free);
+        g_object_set_data_full(G_OBJECT(edit_item), "msg-content", g_strdup(msg_content ? msg_content : ""), g_free);
+        g_signal_connect(edit_item, "activate", G_CALLBACK(on_menu_edit_activate), win);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), edit_item);
+
+        GtkWidget *delete_item = gtk_menu_item_new_with_label(T("chat.delete"));
+        g_object_set_data_full(G_OBJECT(delete_item), "message-id", g_strdup(msg_id), g_free);
+        g_signal_connect(delete_item, "activate", G_CALLBACK(on_menu_delete_activate), win);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), delete_item);
+    }
+
+    /* Separator */
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+
+    /* Reactions */
     static const char *emojis[] = {
         "\xF0\x9F\x91\x8D",           /* 👍 */
         "\xE2\x9D\xA4\xEF\xB8\x8F",  /* ❤️ */
@@ -1477,7 +1619,6 @@ static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
         NULL
     };
 
-    GtkWidget *menu = gtk_menu_new();
     for (int i = 0; emojis[i]; i++) {
         GtkWidget *item = gtk_menu_item_new_with_label(emojis[i]);
         g_object_set_data_full(G_OBJECT(item), "emoji",
@@ -1647,12 +1788,18 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
         }
     }
 
-    /* Wrap bubble in GtkEventBox for right-click reaction menu */
+    /* Wrap bubble in GtkEventBox for right-click context menu */
     GtkWidget *evbox = gtk_event_box_new();
     gtk_container_add(GTK_CONTAINER(evbox), bubble);
     if (msg_id) {
         g_object_set_data_full(G_OBJECT(evbox), "message-id",
                                g_strdup(msg_id), g_free);
+        g_object_set_data_full(G_OBJECT(evbox), "sender-name",
+                               g_strdup(sender ? sender : ""), g_free);
+        g_object_set_data_full(G_OBJECT(evbox), "msg-content",
+                               g_strdup(content ? content : ""), g_free);
+        g_object_set_data(G_OBJECT(evbox), "is-own",
+                          GINT_TO_POINTER(is_own ? 1 : 0));
         g_signal_connect(evbox, "button-press-event",
                          G_CALLBACK(on_message_right_click), win);
     }
@@ -2147,15 +2294,280 @@ static void ws_send_json(AgoraMainWindow *win, const char *json_str)
     }
 }
 
+/* --- User search helper --- */
+
+static void do_user_search(GtkEntry *entry, gpointer data)
+{
+    GtkListBox *results = GTK_LIST_BOX(data);
+    AgoraApiClient *api = g_object_get_data(G_OBJECT(results), "api");
+    const char *query = gtk_entry_get_text(entry);
+
+    /* Clear old results */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(results));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+
+    if (!query || strlen(query) < 2) return;
+
+    char *path = g_strdup_printf("/api/users/?search=%s", query);
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_get(api, path, &err);
+    g_free(path);
+    if (!res) { if (err) g_error_free(err); return; }
+
+    JsonArray *arr = json_node_get_array(res);
+    guint len = json_array_get_length(arr);
+    for (guint i = 0; i < len && i < 20; i++) {
+        JsonObject *user = json_array_get_object_element(arr, i);
+        const char *uid = json_object_get_string_member(user, "id");
+        const char *display = json_object_has_member(user, "display_name")
+            ? json_object_get_string_member(user, "display_name") : NULL;
+        const char *uname = json_object_get_string_member(user, "username");
+
+        char *label_text = g_strdup_printf("%s (@%s)", display ? display : uname, uname);
+        GtkWidget *label = gtk_label_new(label_text);
+        g_free(label_text);
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(label, 8);
+        gtk_widget_set_margin_top(label, 4);
+        gtk_widget_set_margin_bottom(label, 4);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        g_object_set_data_full(G_OBJECT(row), "user-id", g_strdup(uid), g_free);
+        gtk_container_add(GTK_CONTAINER(row), label);
+        gtk_list_box_insert(results, row, -1);
+    }
+    gtk_widget_show_all(GTK_WIDGET(results));
+    json_node_unref(res);
+}
+
+/* --- Add member row-activated callback --- */
+
+static void on_add_member_row_activated(GtkListBox *list, GtkListBoxRow *row,
+                                        gpointer data)
+{
+    (void)list;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *user_id = g_object_get_data(G_OBJECT(row), "user-id");
+    if (!user_id || !win->current_channel_id) return;
+    char *path = g_strdup_printf("/api/channels/%s/members/%s",
+                                 win->current_channel_id, user_id);
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_post(win->api, path, "{}", &err);
+    g_free(path);
+    if (res) json_node_unref(res);
+    if (err) g_error_free(err);
+    gtk_widget_set_sensitive(GTK_WIDGET(row), FALSE);
+}
+
+/* --- Add member dialog --- */
+
+static void on_add_member_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->current_channel_id) return;
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        T("chat.add_member"), GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        T("chat.cancel"), GTK_RESPONSE_CANCEL,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 380, 300);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+
+    GtkWidget *search_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(search_entry), T("chat.search_users"));
+    gtk_box_pack_start(GTK_BOX(content), search_entry, FALSE, FALSE, 4);
+
+    GtkWidget *results_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(results_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(results_scroll, -1, 200);
+    GtkListBox *results_list = GTK_LIST_BOX(gtk_list_box_new());
+    g_object_set_data(G_OBJECT(results_list), "api", win->api);
+    gtk_container_add(GTK_CONTAINER(results_scroll), GTK_WIDGET(results_list));
+    gtk_box_pack_start(GTK_BOX(content), results_scroll, TRUE, TRUE, 4);
+
+    g_signal_connect(search_entry, "changed", G_CALLBACK(do_user_search), results_list);
+    g_signal_connect(results_list, "row-activated",
+                     G_CALLBACK(on_add_member_row_activated), win);
+
+    gtk_widget_show_all(dialog);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    load_channels(win);
+}
+
+/* --- New Chat dialog --- */
+
+static void on_new_chat_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        T("chat.new_channel"), GTK_WINDOW(win),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        T("chat.create"), GTK_RESPONSE_OK,
+        T("chat.cancel"), GTK_RESPONSE_CANCEL,
+        NULL);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 350);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+
+    /* Channel name */
+    GtkWidget *name_label = gtk_label_new(T("chat.channel_name"));
+    gtk_widget_set_halign(name_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), name_label, FALSE, FALSE, 4);
+    GtkWidget *name_entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(content), name_entry, FALSE, FALSE, 4);
+
+    /* Separator */
+    gtk_box_pack_start(GTK_BOX(content), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 8);
+
+    /* User search for direct chat */
+    GtkWidget *search_label = gtk_label_new(T("chat.search_users"));
+    gtk_widget_set_halign(search_label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), search_label, FALSE, FALSE, 4);
+    GtkWidget *search_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(search_entry), T("chat.search_users"));
+    gtk_box_pack_start(GTK_BOX(content), search_entry, FALSE, FALSE, 4);
+
+    /* Results list */
+    GtkWidget *results_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(results_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(results_scroll, -1, 150);
+    GtkListBox *results_list = GTK_LIST_BOX(gtk_list_box_new());
+    g_object_set_data(G_OBJECT(results_list), "api", win->api);
+    gtk_container_add(GTK_CONTAINER(results_scroll), GTK_WIDGET(results_list));
+    gtk_box_pack_start(GTK_BOX(content), results_scroll, TRUE, TRUE, 4);
+
+    g_signal_connect(search_entry, "changed", G_CALLBACK(do_user_search), results_list);
+
+    gtk_widget_show_all(dialog);
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+
+    if (response == GTK_RESPONSE_OK) {
+        const char *channel_name = gtk_entry_get_text(GTK_ENTRY(name_entry));
+
+        /* Check if a user was selected for direct chat */
+        GtkListBoxRow *selected = gtk_list_box_get_selected_row(results_list);
+        if (selected) {
+            const char *user_id = g_object_get_data(G_OBJECT(selected), "user-id");
+            if (user_id) {
+                char *body = g_strdup_printf("{\"user_id\":\"%s\"}", user_id);
+                GError *err = NULL;
+                JsonNode *res = agora_api_client_post(win->api, "/api/channels/direct", body, &err);
+                g_free(body);
+                if (res) {
+                    JsonObject *ch = json_node_get_object(res);
+                    const char *ch_id = json_object_get_string_member(ch, "id");
+                    const char *ch_name = json_object_get_string_member(ch, "name");
+                    if (ch_id) {
+                        g_free(win->current_channel_id);
+                        win->current_channel_id = g_strdup(ch_id);
+                        g_free(win->current_channel_name);
+                        win->current_channel_name = g_strdup(ch_name ? ch_name : "");
+                        gtk_label_set_text(win->chat_title, win->current_channel_name);
+                        gtk_stack_set_visible_child_name(win->content_stack, "chat");
+                        load_messages(win, ch_id);
+                        connect_channel_ws(win, ch_id);
+                    }
+                    json_node_unref(res);
+                }
+                if (err) g_error_free(err);
+                load_channels(win);
+                gtk_widget_destroy(dialog);
+                return;
+            }
+        }
+
+        /* Create group channel */
+        if (channel_name && channel_name[0]) {
+            JsonBuilder *builder = json_builder_new();
+            json_builder_begin_object(builder);
+            json_builder_set_member_name(builder, "name");
+            json_builder_add_string_value(builder, channel_name);
+            json_builder_set_member_name(builder, "channel_type");
+            json_builder_add_string_value(builder, "group");
+            json_builder_end_object(builder);
+            JsonGenerator *gen = json_generator_new();
+            json_generator_set_root(gen, json_builder_get_root(builder));
+            char *body = json_generator_to_data(gen, NULL);
+
+            GError *err = NULL;
+            JsonNode *res = agora_api_client_post(win->api, "/api/channels/", body, &err);
+            g_free(body);
+            g_object_unref(gen);
+            g_object_unref(builder);
+            if (res) {
+                JsonObject *ch = json_node_get_object(res);
+                const char *ch_id = json_object_get_string_member(ch, "id");
+                const char *ch_name2 = json_object_get_string_member(ch, "name");
+                if (ch_id) {
+                    g_free(win->current_channel_id);
+                    win->current_channel_id = g_strdup(ch_id);
+                    g_free(win->current_channel_name);
+                    win->current_channel_name = g_strdup(ch_name2 ? ch_name2 : "");
+                    gtk_label_set_text(win->chat_title, win->current_channel_name);
+                    gtk_stack_set_visible_child_name(win->content_stack, "chat");
+                    load_messages(win, ch_id);
+                    connect_channel_ws(win, ch_id);
+                }
+                json_node_unref(res);
+            }
+            if (err) g_error_free(err);
+            load_channels(win);
+        }
+    }
+
+    gtk_widget_destroy(dialog);
+}
+
 static void send_message(AgoraMainWindow *win)
 {
     const char *text = gtk_entry_get_text(win->message_entry);
     if (!text || !text[0] || !win->current_channel_id) return;
 
+    /* --- Edit mode: PATCH existing message --- */
+    if (win->editing_message_id) {
+        JsonBuilder *builder = json_builder_new();
+        json_builder_begin_object(builder);
+        json_builder_set_member_name(builder, "content");
+        json_builder_add_string_value(builder, text);
+        json_builder_end_object(builder);
+
+        JsonGenerator *gen = json_generator_new();
+        json_generator_set_root(gen, json_builder_get_root(builder));
+        char *body = json_generator_to_data(gen, NULL);
+
+        char *path = g_strdup_printf("/api/channels/%s/messages/%s",
+                                     win->current_channel_id, win->editing_message_id);
+        GError *err = NULL;
+        JsonNode *res = agora_api_client_patch(win->api, path, body, &err);
+        g_free(path);
+        g_free(body);
+        g_object_unref(gen);
+        g_object_unref(builder);
+        if (res) json_node_unref(res);
+        if (err) g_error_free(err);
+
+        clear_edit_state(win);
+        gtk_entry_set_text(win->message_entry, "");
+        load_messages(win, win->current_channel_id);
+        return;
+    }
+
+    /* --- Normal / Reply mode --- */
     /* Try sending via WebSocket first */
     if (win->ws_conn &&
         soup_websocket_connection_get_state(win->ws_conn) == SOUP_WEBSOCKET_STATE_OPEN) {
-        /* Escape text for JSON */
         JsonBuilder *builder = json_builder_new();
         json_builder_begin_object(builder);
         json_builder_set_member_name(builder, "type");
@@ -2164,6 +2576,10 @@ static void send_message(AgoraMainWindow *win)
         json_builder_add_string_value(builder, text);
         json_builder_set_member_name(builder, "message_type");
         json_builder_add_string_value(builder, "text");
+        if (win->reply_to_id) {
+            json_builder_set_member_name(builder, "reply_to_id");
+            json_builder_add_string_value(builder, win->reply_to_id);
+        }
         json_builder_end_object(builder);
 
         JsonGenerator *gen = json_generator_new();
@@ -2177,15 +2593,30 @@ static void send_message(AgoraMainWindow *win)
         /* Fallback to REST */
         char *path = g_strdup_printf("/api/channels/%s/messages/",
                                      win->current_channel_id);
-        char *body = g_strdup_printf("{\"content\":\"%s\",\"message_type\":\"text\"}", text);
+        JsonBuilder *builder = json_builder_new();
+        json_builder_begin_object(builder);
+        json_builder_set_member_name(builder, "content");
+        json_builder_add_string_value(builder, text);
+        json_builder_set_member_name(builder, "message_type");
+        json_builder_add_string_value(builder, "text");
+        if (win->reply_to_id) {
+            json_builder_set_member_name(builder, "reply_to_id");
+            json_builder_add_string_value(builder, win->reply_to_id);
+        }
+        json_builder_end_object(builder);
+
+        JsonGenerator *gen = json_generator_new();
+        json_generator_set_root(gen, json_builder_get_root(builder));
+        char *body = json_generator_to_data(gen, NULL);
 
         GError *error = NULL;
         JsonNode *result = agora_api_client_post(win->api, path, body, &error);
         g_free(path);
         g_free(body);
+        g_object_unref(gen);
+        g_object_unref(builder);
 
         if (result) {
-            /* Reload messages to show new one as bubble */
             load_messages(win, win->current_channel_id);
             json_node_unref(result);
         } else if (error) {
@@ -2193,6 +2624,7 @@ static void send_message(AgoraMainWindow *win)
         }
     }
 
+    clear_reply_state(win);
     gtk_entry_set_text(win->message_entry, "");
 }
 
@@ -2920,7 +3352,17 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_start(chats_label, 16);
     gtk_widget_set_margin_top(chats_label, 4);
     gtk_widget_set_margin_bottom(chats_label, 4);
-    gtk_box_pack_start(GTK_BOX(chats_page), chats_label, FALSE, FALSE, 0);
+
+    /* Header row: label + new chat button */
+    GtkWidget *chats_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(chats_header), chats_label, TRUE, TRUE, 0);
+    GtkWidget *new_chat_btn = gtk_button_new_with_label("+");
+    gtk_widget_set_tooltip_text(new_chat_btn, T("chat.new_channel"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(new_chat_btn), "input-btn");
+    gtk_widget_set_margin_end(new_chat_btn, 8);
+    g_signal_connect(new_chat_btn, "clicked", G_CALLBACK(on_new_chat_clicked), win);
+    gtk_box_pack_end(GTK_BOX(chats_header), new_chat_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(chats_page), chats_header, FALSE, FALSE, 0);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
@@ -3221,6 +3663,15 @@ static void agora_main_window_init(AgoraMainWindow *win)
     g_signal_connect(win->attach_header_btn, "clicked", G_CALLBACK(on_attach_file_clicked), win);
     gtk_box_pack_start(GTK_BOX(chat_header), win->attach_header_btn, FALSE, FALSE, 0);
 
+    /* Add member button (header) */
+    GtkWidget *add_member_btn = gtk_button_new_with_label("\xE2\x9E\x95\xF0\x9F\x91\xA4"); /* ➕👤 */
+    gtk_style_context_add_class(gtk_widget_get_style_context(add_member_btn), "chat-header-btn");
+    gtk_widget_set_tooltip_text(add_member_btn, T("chat.add_member"));
+    gtk_widget_set_valign(add_member_btn, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_end(add_member_btn, 8);
+    g_signal_connect(add_member_btn, "clicked", G_CALLBACK(on_add_member_clicked), win);
+    gtk_box_pack_start(GTK_BOX(chat_header), add_member_btn, FALSE, FALSE, 0);
+
     gtk_box_pack_start(GTK_BOX(win->chat_box), chat_header, FALSE, FALSE, 0);
 
     /* Message list (bubble-style) */
@@ -3246,6 +3697,21 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_no_show_all(GTK_WIDGET(win->typing_label), TRUE);
     gtk_box_pack_start(GTK_BOX(win->chat_box), GTK_WIDGET(win->typing_label),
                        FALSE, FALSE, 0);
+
+    /* Reply / Edit bar */
+    win->reply_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_style_context_add_class(gtk_widget_get_style_context(win->reply_bar), "msg-reply");
+    gtk_container_set_border_width(GTK_CONTAINER(win->reply_bar), 6);
+    win->reply_bar_label = GTK_LABEL(gtk_label_new(""));
+    gtk_label_set_ellipsize(GTK_LABEL(win->reply_bar_label), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_halign(GTK_WIDGET(win->reply_bar_label), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(win->reply_bar), GTK_WIDGET(win->reply_bar_label), TRUE, TRUE, 0);
+    GtkWidget *reply_cancel_btn = gtk_button_new_with_label("\xE2\x9C\x95"); /* ✕ */
+    gtk_style_context_add_class(gtk_widget_get_style_context(reply_cancel_btn), "input-btn");
+    g_signal_connect(reply_cancel_btn, "clicked", G_CALLBACK(on_reply_cancel_clicked), win);
+    gtk_box_pack_end(GTK_BOX(win->reply_bar), reply_cancel_btn, FALSE, FALSE, 0);
+    gtk_widget_set_no_show_all(win->reply_bar, TRUE);
+    gtk_box_pack_start(GTK_BOX(win->chat_box), win->reply_bar, FALSE, FALSE, 0);
 
     /* Input area with buttons */
     GtkWidget *input_area = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
