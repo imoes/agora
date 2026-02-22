@@ -1344,22 +1344,86 @@ static gboolean is_image_content(const char *content)
 
 /* --- Message loading (bubble-style) --- */
 
+static void send_reaction(AgoraMainWindow *win, const char *emoji, const char *msg_id)
+{
+    if (!emoji || !msg_id || !win->current_channel_id) return;
+
+    /* Check if the user already reacted with this emoji -> toggle (remove) */
+    gboolean should_remove = FALSE;
+
+    /* Try to get current reactions for this message to check if we already reacted */
+    char *get_path = g_strdup_printf("/api/channels/%s/messages/%s/reactions",
+                                     win->current_channel_id, msg_id);
+    GError *get_err = NULL;
+    JsonNode *reactions_node = agora_api_client_get(win->api, get_path, &get_err);
+    g_free(get_path);
+
+    if (reactions_node) {
+        /* Get current user id */
+        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+        AgoraSession *session = agora_app_get_session(app);
+        const char *my_user_id = session ? session->user_id : NULL;
+
+        if (my_user_id && JSON_NODE_HOLDS_ARRAY(reactions_node)) {
+            JsonArray *arr = json_node_get_array(reactions_node);
+            guint len = json_array_get_length(arr);
+            for (guint i = 0; i < len; i++) {
+                JsonObject *r = json_array_get_object_element(arr, i);
+                const char *r_emoji = json_object_get_string_member(r, "emoji");
+                const char *r_uid = json_object_get_string_member(r, "user_id");
+                if (r_emoji && r_uid &&
+                    g_strcmp0(r_emoji, emoji) == 0 &&
+                    g_strcmp0(r_uid, my_user_id) == 0) {
+                    should_remove = TRUE;
+                    break;
+                }
+            }
+        }
+        json_node_unref(reactions_node);
+    }
+    if (get_err) g_error_free(get_err);
+
+    if (should_remove) {
+        /* Remove reaction */
+        char *encoded_emoji = g_uri_escape_string(emoji, NULL, TRUE);
+        char *path = g_strdup_printf("/api/channels/%s/messages/%s/reactions/%s",
+                                     win->current_channel_id, msg_id, encoded_emoji);
+        GError *err = NULL;
+        JsonNode *res = agora_api_client_delete(win->api, path, &err);
+        g_free(path);
+        g_free(encoded_emoji);
+        if (res) json_node_unref(res);
+        if (err) {
+            g_print("[Reaction] Remove error: %s\n", err->message);
+            g_error_free(err);
+        }
+    } else {
+        /* Add reaction */
+        char *path = g_strdup_printf("/api/channels/%s/messages/%s/reactions",
+                                     win->current_channel_id, msg_id);
+        char *body = g_strdup_printf("{\"emoji\":\"%s\"}", emoji);
+        GError *err = NULL;
+        JsonNode *res = agora_api_client_post(win->api, path, body, &err);
+        g_free(path);
+        g_free(body);
+        if (res) json_node_unref(res);
+        if (err) {
+            g_print("[Reaction] Add error: %s\n", err->message);
+            g_error_free(err);
+        }
+    }
+
+    /* Immediately reload messages to reflect the change */
+    if (win->current_channel_id)
+        load_messages(win, win->current_channel_id);
+}
+
 static void on_reaction_btn_clicked(GtkButton *btn, gpointer data)
 {
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
     const char *emoji = g_object_get_data(G_OBJECT(btn), "emoji");
     const char *msg_id = g_object_get_data(G_OBJECT(btn), "message-id");
-    if (!emoji || !msg_id || !win->current_channel_id) return;
-
-    char *path = g_strdup_printf("/api/channels/%s/messages/%s/reactions",
-                                 win->current_channel_id, msg_id);
-    char *body = g_strdup_printf("{\"emoji\":\"%s\"}", emoji);
-    GError *err = NULL;
-    JsonNode *res = agora_api_client_post(win->api, path, body, &err);
-    g_free(path);
-    g_free(body);
-    if (res) json_node_unref(res);
-    if (err) g_error_free(err);
+    send_reaction(win, emoji, msg_id);
 }
 
 static void on_reaction_menu_activate(GtkMenuItem *item, gpointer data)
@@ -1367,17 +1431,7 @@ static void on_reaction_menu_activate(GtkMenuItem *item, gpointer data)
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
     const char *emoji = g_object_get_data(G_OBJECT(item), "emoji");
     const char *msg_id = g_object_get_data(G_OBJECT(item), "message-id");
-    if (!emoji || !msg_id || !win->current_channel_id) return;
-
-    char *path = g_strdup_printf("/api/channels/%s/messages/%s/reactions",
-                                 win->current_channel_id, msg_id);
-    char *body = g_strdup_printf("{\"emoji\":\"%s\"}", emoji);
-    GError *err = NULL;
-    JsonNode *res = agora_api_client_post(win->api, path, body, &err);
-    g_free(path);
-    g_free(body);
-    if (res) json_node_unref(res);
-    if (err) g_error_free(err);
+    send_reaction(win, emoji, msg_id);
 }
 
 static gboolean on_message_right_click(GtkWidget *widget, GdkEventButton *event,
