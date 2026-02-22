@@ -1786,6 +1786,12 @@ static void close_video_overlay(AgoraMainWindow *win)
             gtk_stack_get_visible_child_name(win->content_stack));
 }
 
+static void on_video_leave_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    close_video_overlay(AGORA_MAIN_WINDOW(data));
+}
+
 /* Called when Angular sends window.webkit.messageHandlers.leaveCall.postMessage() */
 static void on_script_leave_call(WebKitUserContentManager *manager,
                                  WebKitJavascriptResult *result,
@@ -1827,6 +1833,16 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
                 ".observe(document.body||document.documentElement,"
                 "{childList:true,subtree:true});});"
         "var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);"
+        /* Detect SPA navigation away from /video/ by patching pushState/replaceState */
+        "var _ps=history.pushState,_rs=history.replaceState;"
+        "function _chk(url){"
+            "var s=(url&&url.toString())||location.href;"
+            "if(s.indexOf('/video/')===-1){"
+                "try{window.webkit.messageHandlers.leaveCall.postMessage('leave');}catch(e){}}"
+        "}"
+        "history.pushState=function(){_ps.apply(this,arguments);_chk(arguments[2]);};"
+        "history.replaceState=function(){_rs.apply(this,arguments);_chk(arguments[2]);};"
+        "window.addEventListener('popstate',function(){_chk();});"
         "})();",
         session->token,
         session->user_id ? session->user_id : "",
@@ -2495,6 +2511,14 @@ static void agora_main_window_init(AgoraMainWindow *win)
         "<span color='white' weight='bold'>Video Call</span>");
     gtk_box_pack_start(GTK_BOX(video_header_box), video_title, TRUE, TRUE, 0);
     gtk_widget_set_halign(video_title, GTK_ALIGN_START);
+
+    GtkWidget *leave_btn = gtk_button_new_with_label(T("video.leave"));
+    GdkRGBA leave_bg = {0.8, 0.2, 0.2, 1.0};
+    GdkRGBA leave_fg = {1.0, 1.0, 1.0, 1.0};
+    gtk_widget_override_background_color(leave_btn, GTK_STATE_FLAG_NORMAL, &leave_bg);
+    gtk_widget_override_color(leave_btn, GTK_STATE_FLAG_NORMAL, &leave_fg);
+    g_signal_connect(leave_btn, "clicked", G_CALLBACK(on_video_leave_clicked), win);
+    gtk_box_pack_end(GTK_BOX(video_header_box), leave_btn, FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(video_vbox), video_header, FALSE, FALSE, 0);
 
