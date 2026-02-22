@@ -98,6 +98,7 @@ static void on_feed_show_all_toggled(GtkToggleButton *btn, gpointer data);
 static void on_feed_show_unread_toggled(GtkToggleButton *btn, gpointer data);
 static void on_calendar_join_clicked(GtkButton *btn, gpointer data);
 static void on_video_call_clicked(GtkButton *btn, gpointer data);
+static void ws_send_json(AgoraMainWindow *win, const char *json_str);
 
 /* Accept self-signed certificates callback */
 static gboolean accept_cert_cb(SoupMessage *msg, GTlsCertificate *cert,
