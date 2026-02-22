@@ -30,8 +30,8 @@ struct _AgoraMainWindow {
     GtkStack *content_stack;
     GtkLabel *chat_title;
     GtkLabel *chat_subtitle;
-    GtkTextView *message_view;
-    GtkTextBuffer *message_buffer;
+    GtkListBox *message_list;
+    GtkWidget *message_scroll;
     GtkEntry *message_entry;
     GtkWidget *chat_box;
     GtkLabel *typing_label;
@@ -43,7 +43,8 @@ struct _AgoraMainWindow {
     /* Feed */
     GtkListBox *feed_list;
     GtkWidget *feed_scroll;
-    GtkWidget *feed_unread_toggle;
+    GtkWidget *feed_all_btn;
+    GtkWidget *feed_unread_btn;
     gboolean feed_unread_only;
 
     /* Calendar */
@@ -93,6 +94,10 @@ static void inject_video_user_scripts(AgoraMainWindow *win);
 static void load_feed(AgoraMainWindow *win);
 static void load_calendar_events(AgoraMainWindow *win);
 static void load_messages(AgoraMainWindow *win, const char *channel_id);
+static void on_feed_show_all_toggled(GtkToggleButton *btn, gpointer data);
+static void on_feed_show_unread_toggled(GtkToggleButton *btn, gpointer data);
+static void on_calendar_join_clicked(GtkButton *btn, gpointer data);
+static void on_video_call_clicked(GtkButton *btn, gpointer data);
 
 /* Accept self-signed certificates callback */
 static gboolean accept_cert_cb(SoupMessage *msg, GTlsCertificate *cert,
@@ -160,6 +165,21 @@ static const char *app_css =
     "  padding: 0; border: none; box-shadow: none; }"
     /* Welcome */
     ".welcome-title { color: #6264a7; }"
+    /* Message bubbles */
+    ".msg-own { background-color: #E8E5FC; border-radius: 12px 12px 2px 12px; }"
+    ".msg-other { background-color: #F0F0F0; border-radius: 12px 12px 12px 2px; }"
+    ".msg-reply { background-color: #E0E0E0; border-left: 3px solid #6264a7; "
+    "  border-radius: 3px; padding: 4px 8px; margin-bottom: 4px; }"
+    /* Reaction badges */
+    ".reaction-badge { background-image: none; background-color: #E0E0E0; "
+    "  border-radius: 12px; padding: 2px 6px; border: none; box-shadow: none; "
+    "  font-size: 12px; min-height: 0; min-width: 0; }"
+    ".reaction-badge:hover { background-color: #D0D0D0; }"
+    /* Reaction picker */
+    ".reaction-pick { background-image: none; background-color: transparent; "
+    "  border: none; padding: 2px 4px; border-radius: 4px; box-shadow: none; "
+    "  font-size: 14px; min-height: 0; min-width: 0; opacity: 0.5; }"
+    ".reaction-pick:hover { background-color: #E0E0E0; opacity: 1.0; }"
 ;
 
 /* --- Leave channel --- */
@@ -784,6 +804,8 @@ static void load_calendar_events(AgoraMainWindow *win)
             gtk_widget_set_margin_top(join_btn, 4);
             g_object_set_data_full(G_OBJECT(join_btn), "channel-id",
                                    g_strdup(channel_id), g_free);
+            g_signal_connect(join_btn, "clicked",
+                             G_CALLBACK(on_calendar_join_clicked), win);
             gtk_box_pack_start(GTK_BOX(row_box), join_btn, FALSE, FALSE, 0);
         }
 
@@ -872,7 +894,213 @@ static gboolean is_image_content(const char *content)
     return is_img;
 }
 
-/* --- Message loading --- */
+/* --- Message loading (bubble-style) --- */
+
+static void on_reaction_btn_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *emoji = g_object_get_data(G_OBJECT(btn), "emoji");
+    const char *msg_id = g_object_get_data(G_OBJECT(btn), "message-id");
+    if (!emoji || !msg_id || !win->current_channel_id) return;
+
+    char *path = g_strdup_printf("/api/channels/%s/messages/%s/reactions",
+                                 win->current_channel_id, msg_id);
+    char *body = g_strdup_printf("{\"emoji\":\"%s\"}", emoji);
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_post(win->api, path, body, &err);
+    g_free(path);
+    g_free(body);
+    if (res) json_node_unref(res);
+    if (err) g_error_free(err);
+}
+
+static void scroll_message_list_to_bottom(AgoraMainWindow *win)
+{
+    GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(
+        GTK_SCROLLED_WINDOW(win->message_scroll));
+    gtk_adjustment_set_value(adj, gtk_adjustment_get_upper(adj));
+}
+
+static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
+                                         gboolean is_own)
+{
+    const char *msg_id = json_object_has_member(msg, "id")
+        ? json_object_get_string_member(msg, "id") : NULL;
+    const char *sender = json_object_get_string_member(msg, "sender_name");
+    const char *content = json_object_get_string_member(msg, "content");
+    const char *created = json_object_get_string_member(msg, "created_at");
+    const char *msg_type = json_object_get_string_member(msg, "message_type");
+    gboolean has_edited = json_object_has_member(msg, "edited_at") &&
+                          !json_object_get_null_member(msg, "edited_at");
+
+    /* Outer alignment: own messages right, others left */
+    GtkWidget *align_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_start(align_box, 12);
+    gtk_widget_set_margin_end(align_box, 12);
+    gtk_widget_set_margin_top(align_box, 3);
+    gtk_widget_set_margin_bottom(align_box, 3);
+
+    if (is_own)
+        gtk_box_pack_start(GTK_BOX(align_box),
+            gtk_label_new(""), TRUE, TRUE, 0); /* spacer left */
+
+    /* Bubble container */
+    GtkWidget *bubble = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_name(bubble, is_own ? "msg-bubble-own" : "msg-bubble-other");
+    gtk_style_context_add_class(gtk_widget_get_style_context(bubble),
+                                is_own ? "msg-own" : "msg-other");
+    gtk_container_set_border_width(GTK_CONTAINER(bubble), 8);
+
+    /* Reply quote */
+    if (json_object_has_member(msg, "reply_to_sender") &&
+        !json_object_get_null_member(msg, "reply_to_sender")) {
+        const char *reply_sender = json_object_get_string_member(msg, "reply_to_sender");
+        const char *reply_content = json_object_get_string_member(msg, "reply_to_content");
+        char *quote = g_strdup_printf("<small><b>%s</b>\n%s</small>",
+                                       reply_sender ? reply_sender : "?",
+                                       reply_content ? reply_content : "");
+        GtkWidget *quote_lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(quote_lbl), quote);
+        g_free(quote);
+        gtk_widget_set_halign(quote_lbl, GTK_ALIGN_START);
+        gtk_label_set_line_wrap(GTK_LABEL(quote_lbl), TRUE);
+        gtk_label_set_max_width_chars(GTK_LABEL(quote_lbl), 50);
+        gtk_style_context_add_class(gtk_widget_get_style_context(quote_lbl), "msg-reply");
+        gtk_box_pack_start(GTK_BOX(bubble), quote_lbl, FALSE, FALSE, 0);
+    }
+
+    /* Header: sender + time */
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    char *header_markup = g_strdup_printf(
+        "<span weight='bold' color='#6264A7'>%s</span>",
+        sender ? sender : "?");
+    GtkWidget *sender_lbl = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(sender_lbl), header_markup);
+    g_free(header_markup);
+    gtk_box_pack_start(GTK_BOX(header), sender_lbl, FALSE, FALSE, 0);
+
+    if (has_edited) {
+        GtkWidget *ed_lbl = gtk_label_new(NULL);
+        char *ed_markup = g_strdup_printf(
+            "<small><i>%s</i></small>", T("chat.edited"));
+        gtk_label_set_markup(GTK_LABEL(ed_lbl), ed_markup);
+        g_free(ed_markup);
+        gtk_box_pack_start(GTK_BOX(header), ed_lbl, FALSE, FALSE, 0);
+    }
+
+    /* Format time nicely */
+    char *time_str = format_relative_time(created);
+    GtkWidget *time_lbl = gtk_label_new(NULL);
+    char *time_markup = g_strdup_printf(
+        "<small color='#999999'>%s</small>", time_str);
+    gtk_label_set_markup(GTK_LABEL(time_lbl), time_markup);
+    g_free(time_markup);
+    g_free(time_str);
+    gtk_box_pack_end(GTK_BOX(header), time_lbl, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(bubble), header, FALSE, FALSE, 0);
+
+    /* Content */
+    const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
+        !json_object_get_null_member(msg, "file_reference_id")
+        ? json_object_get_string_member(msg, "file_reference_id") : NULL;
+
+    if (msg_type && g_strcmp0(msg_type, "system") == 0) {
+        char *sys = g_strdup_printf("<i>%s</i>", content ? content : "");
+        GtkWidget *sys_lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(sys_lbl), sys);
+        g_free(sys);
+        gtk_widget_set_halign(sys_lbl, GTK_ALIGN_START);
+        gtk_label_set_line_wrap(GTK_LABEL(sys_lbl), TRUE);
+        gtk_box_pack_start(GTK_BOX(bubble), sys_lbl, FALSE, FALSE, 0);
+    } else if (file_ref_id && msg_type && g_strcmp0(msg_type, "file") == 0 &&
+               is_image_content(content)) {
+        GdkPixbuf *pixbuf = download_inline_image(win, file_ref_id, 300);
+        if (pixbuf) {
+            GtkWidget *img = gtk_image_new_from_pixbuf(pixbuf);
+            gtk_widget_set_halign(img, GTK_ALIGN_START);
+            gtk_box_pack_start(GTK_BOX(bubble), img, FALSE, FALSE, 2);
+            g_object_unref(pixbuf);
+        }
+    } else {
+        GtkWidget *content_lbl = gtk_label_new(content ? content : "");
+        gtk_widget_set_halign(content_lbl, GTK_ALIGN_START);
+        gtk_label_set_line_wrap(GTK_LABEL(content_lbl), TRUE);
+        gtk_label_set_max_width_chars(GTK_LABEL(content_lbl), 60);
+        gtk_label_set_selectable(GTK_LABEL(content_lbl), TRUE);
+        gtk_box_pack_start(GTK_BOX(bubble), content_lbl, FALSE, FALSE, 0);
+    }
+
+    /* Reactions display */
+    if (json_object_has_member(msg, "reactions") &&
+        !json_object_get_null_member(msg, "reactions")) {
+        JsonArray *reactions = json_object_get_array_member(msg, "reactions");
+        guint rlen = reactions ? json_array_get_length(reactions) : 0;
+        if (rlen > 0) {
+            GHashTable *counts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+            for (guint r = 0; r < rlen; r++) {
+                JsonObject *reaction = json_array_get_object_element(reactions, r);
+                const char *emoji = json_object_get_string_member(reaction, "emoji");
+                if (!emoji) continue;
+                gpointer val = g_hash_table_lookup(counts, emoji);
+                int cnt = GPOINTER_TO_INT(val) + 1;
+                g_hash_table_replace(counts, g_strdup(emoji), GINT_TO_POINTER(cnt));
+            }
+            GtkWidget *reaction_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+            gtk_widget_set_margin_top(reaction_box, 2);
+            GHashTableIter hiter;
+            gpointer key, value;
+            g_hash_table_iter_init(&hiter, counts);
+            while (g_hash_table_iter_next(&hiter, &key, &value)) {
+                char *badge_text = g_strdup_printf("%s %d", (char *)key, GPOINTER_TO_INT(value));
+                GtkWidget *badge = gtk_button_new_with_label(badge_text);
+                g_free(badge_text);
+                gtk_style_context_add_class(gtk_widget_get_style_context(badge), "reaction-badge");
+                if (msg_id) {
+                    g_object_set_data_full(G_OBJECT(badge), "emoji", g_strdup(key), g_free);
+                    g_object_set_data_full(G_OBJECT(badge), "message-id", g_strdup(msg_id), g_free);
+                    g_signal_connect(badge, "clicked", G_CALLBACK(on_reaction_btn_clicked), win);
+                }
+                gtk_box_pack_start(GTK_BOX(reaction_box), badge, FALSE, FALSE, 0);
+            }
+            gtk_box_pack_start(GTK_BOX(bubble), reaction_box, FALSE, FALSE, 0);
+            g_hash_table_destroy(counts);
+        }
+    }
+
+    /* Reaction picker buttons (always visible, small) */
+    if (msg_id) {
+        GtkWidget *picker = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+        gtk_widget_set_margin_top(picker, 2);
+        static const char *quick_emojis[] = {
+            "\xF0\x9F\x91\x8D",   /* 👍 */
+            "\xE2\x9D\xA4\xEF\xB8\x8F", /* ❤️ */
+            "\xF0\x9F\x98\x82",   /* 😂 */
+            "\xF0\x9F\x8E\x89",   /* 🎉 */
+            "\xF0\x9F\x98\xAE",   /* 😮 */
+            NULL
+        };
+        for (int e = 0; quick_emojis[e]; e++) {
+            GtkWidget *ebtn = gtk_button_new_with_label(quick_emojis[e]);
+            gtk_style_context_add_class(gtk_widget_get_style_context(ebtn), "reaction-pick");
+            g_object_set_data_full(G_OBJECT(ebtn), "emoji",
+                                   g_strdup(quick_emojis[e]), g_free);
+            g_object_set_data_full(G_OBJECT(ebtn), "message-id",
+                                   g_strdup(msg_id), g_free);
+            g_signal_connect(ebtn, "clicked", G_CALLBACK(on_reaction_btn_clicked), win);
+            gtk_box_pack_start(GTK_BOX(picker), ebtn, FALSE, FALSE, 0);
+        }
+        gtk_box_pack_start(GTK_BOX(bubble), picker, FALSE, FALSE, 0);
+    }
+
+    gtk_box_pack_start(GTK_BOX(align_box), bubble, FALSE, FALSE, 0);
+
+    if (!is_own)
+        gtk_box_pack_start(GTK_BOX(align_box),
+            gtk_label_new(""), TRUE, TRUE, 0); /* spacer right */
+
+    return align_box;
+}
 
 static void load_messages(AgoraMainWindow *win, const char *channel_id)
 {
@@ -881,7 +1109,11 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
     JsonNode *result = agora_api_client_get(win->api, path, &error);
     g_free(path);
 
-    gtk_text_buffer_set_text(win->message_buffer, "", 0);
+    /* Clear existing message rows */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->message_list));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
 
     if (!result) {
         if (error) g_error_free(error);
@@ -891,122 +1123,27 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
     JsonArray *arr = json_node_get_array(result);
     guint len = json_array_get_length(arr);
 
-    GtkTextIter iter;
-    gtk_text_buffer_get_end_iter(win->message_buffer, &iter);
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *session = agora_app_get_session(app);
 
     for (guint i = 0; i < len; i++) {
         JsonObject *msg = json_array_get_object_element(arr, i);
-        const char *sender = json_object_get_string_member(msg, "sender_name");
-        const char *content = json_object_get_string_member(msg, "content");
-        const char *created = json_object_get_string_member(msg, "created_at");
-        const char *msg_type = json_object_get_string_member(msg, "message_type");
-        gboolean has_edited = json_object_has_member(msg, "edited_at") &&
-                              !json_object_get_null_member(msg, "edited_at");
+        const char *sender_id = json_object_has_member(msg, "sender_id")
+            ? json_object_get_string_member(msg, "sender_id") : NULL;
+        gboolean is_own = (sender_id && session->user_id &&
+                           g_strcmp0(sender_id, session->user_id) == 0);
 
-        /* Reply quote */
-        if (json_object_has_member(msg, "reply_to_sender") &&
-            !json_object_get_null_member(msg, "reply_to_sender")) {
-            const char *reply_sender = json_object_get_string_member(msg, "reply_to_sender");
-            const char *reply_content = json_object_get_string_member(msg, "reply_to_content");
-            char *reply_line = g_strdup_printf("  > %s: %s\n",
-                                               reply_sender ? reply_sender : "?",
-                                               reply_content ? reply_content : "");
-            gtk_text_buffer_insert(win->message_buffer, &iter, reply_line, -1);
-            g_free(reply_line);
-        }
-
-        /* File reference for images */
-        const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
-            !json_object_get_null_member(msg, "file_reference_id")
-            ? json_object_get_string_member(msg, "file_reference_id") : NULL;
-
-        /* Message content */
-        const char *edited_tag = has_edited ? T("chat.edited") : "";
-        char sys_prefix[64] = "";
-        char file_prefix[64] = "";
-        const char *type_prefix = "";
-        if (msg_type && g_strcmp0(msg_type, "system") == 0) {
-            g_snprintf(sys_prefix, sizeof(sys_prefix), "[%s] ", T("chat.system"));
-            type_prefix = sys_prefix;
-        } else if (msg_type && g_strcmp0(msg_type, "file") == 0) {
-            g_snprintf(file_prefix, sizeof(file_prefix), "[%s] ", T("chat.file"));
-            type_prefix = file_prefix;
-        }
-
-        /* Sender header line */
-        char *header_line = g_strdup_printf("[%s] %s%s: %s",
-                                             created ? created : "",
-                                             type_prefix,
-                                             sender ? sender : "?",
-                                             edited_tag);
-        gtk_text_buffer_insert(win->message_buffer, &iter, header_line, -1);
-        g_free(header_line);
-
-        /* Display image inline if this is a file message with an image */
-        if (file_ref_id && msg_type && g_strcmp0(msg_type, "file") == 0 &&
-            is_image_content(content)) {
-            /* Show filename on same line */
-            /* Extract filename from "Datei: filename.ext\n..." */
-            const char *name_start = content;
-            if (g_str_has_prefix(content, "Datei: "))
-                name_start = content + 7;
-            const char *nl = strchr(name_start, '\n');
-            char *filename = nl ? g_strndup(name_start, (gsize)(nl - name_start))
-                                : g_strdup(name_start);
-            char *fn_line = g_strdup_printf(" %s\n", filename);
-            gtk_text_buffer_insert(win->message_buffer, &iter, fn_line, -1);
-            g_free(fn_line);
-            g_free(filename);
-
-            /* Download and insert image */
-            GdkPixbuf *pixbuf = download_inline_image(win, file_ref_id, 400);
-            if (pixbuf) {
-                gtk_text_buffer_insert_pixbuf(win->message_buffer, &iter, pixbuf);
-                gtk_text_buffer_insert(win->message_buffer, &iter, "\n", -1);
-                g_object_unref(pixbuf);
-            }
-        } else {
-            /* Regular text content */
-            char *content_line = g_strdup_printf("%s\n",
-                                                  content ? content : "");
-            gtk_text_buffer_insert(win->message_buffer, &iter, content_line, -1);
-            g_free(content_line);
-        }
-
-        /* Reactions (backend sends as array of {emoji, user_id, display_name}) */
-        if (json_object_has_member(msg, "reactions") &&
-            !json_object_get_null_member(msg, "reactions")) {
-            JsonArray *reactions = json_object_get_array_member(msg, "reactions");
-            guint rlen = reactions ? json_array_get_length(reactions) : 0;
-            if (rlen > 0) {
-                /* Count reactions grouped by emoji */
-                GHashTable *counts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
-                for (guint r = 0; r < rlen; r++) {
-                    JsonObject *reaction = json_array_get_object_element(reactions, r);
-                    const char *emoji = json_object_get_string_member(reaction, "emoji");
-                    if (!emoji) continue;
-                    gpointer val = g_hash_table_lookup(counts, emoji);
-                    int count = GPOINTER_TO_INT(val) + 1;
-                    g_hash_table_replace(counts, g_strdup(emoji), GINT_TO_POINTER(count));
-                }
-                GString *reaction_str = g_string_new("  ");
-                GHashTableIter hiter;
-                gpointer key, value;
-                g_hash_table_iter_init(&hiter, counts);
-                while (g_hash_table_iter_next(&hiter, &key, &value)) {
-                    g_string_append_printf(reaction_str, "%s %d  ", (char *)key, GPOINTER_TO_INT(value));
-                }
-                g_string_append_c(reaction_str, '\n');
-                gtk_text_buffer_insert(win->message_buffer, &iter, reaction_str->str, -1);
-                g_string_free(reaction_str, TRUE);
-                g_hash_table_destroy(counts);
-            }
-        }
+        GtkWidget *bubble = create_message_bubble(win, msg, is_own);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+        gtk_container_add(GTK_CONTAINER(row), bubble);
+        gtk_list_box_insert(win->message_list, row, -1);
     }
 
-    /* Scroll to bottom */
-    GtkTextMark *end_mark = gtk_text_buffer_get_mark(win->message_buffer, "insert");
-    gtk_text_view_scroll_to_mark(win->message_view, end_mark, 0.0, FALSE, 0.0, 0.0);
+    gtk_widget_show_all(GTK_WIDGET(win->message_list));
+
+    /* Scroll to bottom after layout */
+    g_idle_add((GSourceFunc)scroll_message_list_to_bottom, win);
 
     json_node_unref(result);
 }
@@ -1039,42 +1176,30 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
         const char *content = json_object_get_string_member(msg, "content");
         const char *m_type = json_object_get_string_member(msg, "message_type");
 
-        /* Append to message view */
-        GtkTextIter iter;
-        gtk_text_buffer_get_end_iter(win->message_buffer, &iter);
+        /* Determine if own message */
+        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+        AgoraSession *session = agora_app_get_session(app);
+        const char *sender_id = json_object_has_member(msg, "sender_id")
+            ? json_object_get_string_member(msg, "sender_id") : NULL;
+        gboolean is_own = (sender_id && session->user_id &&
+                           g_strcmp0(sender_id, session->user_id) == 0);
 
-        char ws_sys_prefix[64] = "";
-        char ws_file_prefix[64] = "";
-        const char *type_prefix = "";
-        if (m_type && g_strcmp0(m_type, "system") == 0) {
-            g_snprintf(ws_sys_prefix, sizeof(ws_sys_prefix), "[%s] ", T("chat.system"));
-            type_prefix = ws_sys_prefix;
-        } else if (m_type && g_strcmp0(m_type, "file") == 0) {
-            g_snprintf(ws_file_prefix, sizeof(ws_file_prefix), "[%s] ", T("chat.file"));
-            type_prefix = ws_file_prefix;
-        }
-
-        char *line = g_strdup_printf("%s%s: %s\n",
-                                     type_prefix,
-                                     sender ? sender : "?",
-                                     content ? content : "");
-        gtk_text_buffer_insert(win->message_buffer, &iter, line, -1);
-        g_free(line);
+        /* Add bubble to message list */
+        GtkWidget *bubble = create_message_bubble(win, msg, is_own);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+        gtk_container_add(GTK_CONTAINER(row), bubble);
+        gtk_list_box_insert(win->message_list, row, -1);
+        gtk_widget_show_all(row);
 
         /* Scroll to bottom */
-        GtkTextMark *end_mark = gtk_text_buffer_get_mark(win->message_buffer, "insert");
-        gtk_text_view_scroll_to_mark(win->message_view, end_mark, 0.0, FALSE, 0.0, 0.0);
+        g_idle_add((GSourceFunc)scroll_message_list_to_bottom, win);
 
         /* Clear typing indicator */
         gtk_label_set_text(win->typing_label, "");
         gtk_widget_hide(GTK_WIDGET(win->typing_label));
 
         /* Play notification sound and show desktop notification for messages from others */
-        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
-        AgoraSession *session = agora_app_get_session(app);
-        const char *sender_id = json_object_has_member(msg, "sender_id")
-            ? json_object_get_string_member(msg, "sender_id") : NULL;
-
         if (sender_id && session->user_id &&
             g_strcmp0(sender_id, session->user_id) != 0) {
             play_notification_sound(win);
@@ -1347,6 +1472,18 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
     /* Connect WebSocket for real-time updates */
     connect_channel_ws(win, channel_id);
 
+    /* Mark channel as read (send via WebSocket + update local unread count) */
+    {
+        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+        AgoraSession *session = agora_app_get_session(app);
+        if (session->user_id) {
+            char *read_json = g_strdup_printf(
+                "{\"type\":\"read\",\"user_id\":\"%s\"}", session->user_id);
+            ws_send_json(win, read_json);
+            g_free(read_json);
+        }
+    }
+
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
 }
 
@@ -1393,6 +1530,19 @@ static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
 
     load_messages(win, channel_id);
     connect_channel_ws(win, channel_id);
+
+    /* Mark channel as read */
+    {
+        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+        AgoraSession *session = agora_app_get_session(app);
+        if (session->user_id) {
+            char *read_json = g_strdup_printf(
+                "{\"type\":\"read\",\"user_id\":\"%s\"}", session->user_id);
+            ws_send_json(win, read_json);
+            g_free(read_json);
+        }
+    }
+
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
 }
 
@@ -1442,19 +1592,8 @@ static void send_message(AgoraMainWindow *win)
         g_free(body);
 
         if (result) {
-            /* Append message to view */
-            GtkTextIter iter;
-            gtk_text_buffer_get_end_iter(win->message_buffer, &iter);
-
-            AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
-            AgoraSession *session = agora_app_get_session(app);
-
-            char *line = g_strdup_printf("%s: %s\n",
-                                         session->display_name ? session->display_name : T("common.you"),
-                                         text);
-            gtk_text_buffer_insert(win->message_buffer, &iter, line, -1);
-            g_free(line);
-
+            /* Reload messages to show new one as bubble */
+            load_messages(win, win->current_channel_id);
             json_node_unref(result);
         } else if (error) {
             g_error_free(error);
@@ -1733,10 +1872,25 @@ static void on_nav_teams_clicked(GtkButton *btn, gpointer data)
     set_active_nav(win, win->nav_teams_btn);
 }
 
-static void on_feed_unread_toggled(GtkToggleButton *btn, gpointer data)
+static void on_feed_show_all_toggled(GtkToggleButton *btn, gpointer data)
 {
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
-    win->feed_unread_only = gtk_toggle_button_get_active(btn);
+    if (!gtk_toggle_button_get_active(btn)) return; /* ignore deactivation */
+    win->feed_unread_only = FALSE;
+    g_signal_handlers_block_by_func(win->feed_unread_btn, on_feed_show_unread_toggled, win);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(win->feed_unread_btn), FALSE);
+    g_signal_handlers_unblock_by_func(win->feed_unread_btn, on_feed_show_unread_toggled, win);
+    load_feed(win);
+}
+
+static void on_feed_show_unread_toggled(GtkToggleButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!gtk_toggle_button_get_active(btn)) return;
+    win->feed_unread_only = TRUE;
+    g_signal_handlers_block_by_func(win->feed_all_btn, on_feed_show_all_toggled, win);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(win->feed_all_btn), FALSE);
+    g_signal_handlers_unblock_by_func(win->feed_all_btn, on_feed_show_all_toggled, win);
     load_feed(win);
 }
 
@@ -1863,6 +2017,20 @@ static void inject_video_user_scripts(AgoraMainWindow *win)
     g_free(js);
 
     g_print("[Video] Injected UserScript with auth token and CSS\n");
+}
+
+static void on_calendar_join_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *channel_id = g_object_get_data(G_OBJECT(btn), "channel-id");
+    if (!channel_id) return;
+
+    /* Set current channel so the video call code works */
+    g_free(win->current_channel_id);
+    win->current_channel_id = g_strdup(channel_id);
+
+    /* Trigger the regular video call flow */
+    on_video_call_clicked(btn, data);
 }
 
 static void on_video_call_clicked(GtkButton *btn, gpointer data)
@@ -2319,13 +2487,24 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_box_pack_start(GTK_BOX(feed_header), feed_title, TRUE, TRUE, 0);
     gtk_widget_set_halign(feed_title, GTK_ALIGN_START);
 
-    /* Unread filter toggle */
-    win->feed_unread_toggle = gtk_toggle_button_new_with_label(T("feed.unread_only"));
-    gtk_widget_set_valign(win->feed_unread_toggle, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_end(win->feed_unread_toggle, 12);
-    g_signal_connect(win->feed_unread_toggle, "toggled",
-                     G_CALLBACK(on_feed_unread_toggled), win);
-    gtk_box_pack_end(GTK_BOX(feed_header), win->feed_unread_toggle, FALSE, FALSE, 0);
+    /* Feed filter: "Show All" and "Show Unread" buttons */
+    GtkWidget *feed_filter_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_style_context_add_class(gtk_widget_get_style_context(feed_filter_box), "linked");
+    gtk_widget_set_valign(feed_filter_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_end(feed_filter_box, 12);
+
+    win->feed_all_btn = gtk_toggle_button_new_with_label(T("feed.show_all"));
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(win->feed_all_btn), TRUE);
+    g_signal_connect(win->feed_all_btn, "toggled",
+                     G_CALLBACK(on_feed_show_all_toggled), win);
+    gtk_box_pack_start(GTK_BOX(feed_filter_box), win->feed_all_btn, FALSE, FALSE, 0);
+
+    win->feed_unread_btn = gtk_toggle_button_new_with_label(T("feed.unread_only"));
+    g_signal_connect(win->feed_unread_btn, "toggled",
+                     G_CALLBACK(on_feed_show_unread_toggled), win);
+    gtk_box_pack_start(GTK_BOX(feed_filter_box), win->feed_unread_btn, FALSE, FALSE, 0);
+
+    gtk_box_pack_end(GTK_BOX(feed_header), feed_filter_box, FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(feed_box), feed_header, FALSE, FALSE, 0);
 
@@ -2410,21 +2589,14 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_box_pack_start(GTK_BOX(win->chat_box), chat_header, FALSE, FALSE, 0);
 
-    /* Message view */
-    GtkWidget *msg_scroll = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(msg_scroll),
-                                   GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-    win->message_view = GTK_TEXT_VIEW(gtk_text_view_new());
-    win->message_buffer = gtk_text_view_get_buffer(win->message_view);
-    gtk_text_view_set_editable(win->message_view, FALSE);
-    gtk_text_view_set_cursor_visible(win->message_view, FALSE);
-    gtk_text_view_set_wrap_mode(win->message_view, GTK_WRAP_WORD_CHAR);
-    gtk_text_view_set_left_margin(win->message_view, 16);
-    gtk_text_view_set_right_margin(win->message_view, 16);
-    gtk_text_view_set_top_margin(win->message_view, 12);
-    gtk_text_view_set_bottom_margin(win->message_view, 8);
-    gtk_container_add(GTK_CONTAINER(msg_scroll), GTK_WIDGET(win->message_view));
-    gtk_box_pack_start(GTK_BOX(win->chat_box), msg_scroll, TRUE, TRUE, 0);
+    /* Message list (bubble-style) */
+    win->message_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(win->message_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->message_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(win->message_list, GTK_SELECTION_NONE);
+    gtk_container_add(GTK_CONTAINER(win->message_scroll), GTK_WIDGET(win->message_list));
+    gtk_box_pack_start(GTK_BOX(win->chat_box), win->message_scroll, TRUE, TRUE, 0);
 
     /* Typing indicator */
     win->typing_label = GTK_LABEL(gtk_label_new(""));
