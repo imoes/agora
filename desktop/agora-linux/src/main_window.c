@@ -129,6 +129,8 @@ static void clear_list_box(GtkListBox *list)
     gtk_list_box_set_selection_mode(list, mode);
 }
 
+static void load_channels(AgoraMainWindow *win); /* forward decl */
+
 /* Idle callback: reload channel list outside of signal handlers so that
    GTK's internal click processing has finished and no row pointers dangle. */
 static gboolean reload_channels_idle(gpointer data)
@@ -224,8 +226,6 @@ static const char *app_css =
 ;
 
 /* --- Leave channel --- */
-
-static void load_channels(AgoraMainWindow *win); /* forward decl */
 
 static void on_leave_channel_activate(GtkMenuItem *item, gpointer data)
 {
