@@ -1,6 +1,7 @@
 import SwiftUI
 import UserNotifications
 import AVFoundation
+import WebKit
 
 class AppState: ObservableObject {
     @Published var isLoggedIn = false
@@ -16,6 +17,8 @@ class AppState: ObservableObject {
     @Published var currentEvent: CalendarEvent?
     @Published var showEventReminder = false
     @Published var eventCountdown = ""
+    @Published var showVideoOverlay = false
+    @Published var videoURL: URL?
 
     var api: ApiClient?
     var notificationWS: WebSocketClient?
@@ -326,9 +329,15 @@ class AppState: ObservableObject {
               let api = api else { return }
         let baseURL = api.getBaseURL()
         if let url = URL(string: "\(baseURL)/video/\(channelId)") {
-            NSWorkspace.shared.open(url)
+            videoURL = url
+            showVideoOverlay = true
         }
         dismissEvent()
+    }
+
+    func leaveVideoCall() {
+        showVideoOverlay = false
+        videoURL = nil
     }
 }
 
@@ -524,38 +533,179 @@ struct MainView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(appState: appState)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-        } detail: {
-            if appState.selectedChannel != nil {
-                ChatView(appState: appState)
-            } else {
-                WelcomeView()
+        ZStack {
+            NavigationSplitView {
+                SidebarView(appState: appState)
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+            } detail: {
+                if appState.selectedChannel != nil {
+                    ChatView(appState: appState)
+                } else {
+                    WelcomeView()
+                }
             }
-        }
-        .frame(minWidth: 800, minHeight: 500)
-        .overlay(alignment: .topTrailing) {
-            if let toast = appState.toastMessage {
-                ToastView(data: toast)
+            .frame(minWidth: 800, minHeight: 500)
+            .overlay(alignment: .topTrailing) {
+                if let toast = appState.toastMessage {
+                    ToastView(data: toast)
+                        .padding(16)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .animation(.easeInOut(duration: 0.3), value: appState.toastMessage?.id)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if appState.showEventReminder, let event = appState.currentEvent {
+                    EventReminderView(
+                        event: event,
+                        countdown: appState.eventCountdown,
+                        onJoin: { appState.joinEvent() },
+                        onDismiss: { appState.dismissEvent() }
+                    )
                     .padding(16)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .animation(.easeInOut(duration: 0.3), value: appState.toastMessage?.id)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.3), value: appState.showEventReminder)
+                }
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if appState.showEventReminder, let event = appState.currentEvent {
-                EventReminderView(
-                    event: event,
-                    countdown: appState.eventCountdown,
-                    onJoin: { appState.joinEvent() },
-                    onDismiss: { appState.dismissEvent() }
+
+            if appState.showVideoOverlay, let url = appState.videoURL {
+                VideoOverlayView(
+                    url: url,
+                    token: appState.api?.getToken() ?? "",
+                    currentUser: appState.currentUser,
+                    onLeave: { appState.leaveVideoCall() }
                 )
-                .padding(16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(.easeInOut(duration: 0.3), value: appState.showEventReminder)
             }
         }
+    }
+}
+
+// MARK: - Video Overlay
+
+struct VideoOverlayView: View {
+    let url: URL
+    let token: String
+    let currentUser: User?
+    let onLeave: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header bar
+            HStack {
+                Text("Video")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Spacer()
+                Button(action: onLeave) {
+                    Text(T("reminder.dismiss"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.red)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            VideoWebViewRepresentable(
+                url: url,
+                token: token,
+                currentUser: currentUser,
+                onLeave: onLeave
+            )
+        }
+        .background(Color.black)
+    }
+}
+
+class VideoWebViewCoordinator: NSObject, WKScriptMessageHandler {
+    let onLeave: () -> Void
+
+    init(onLeave: @escaping () -> Void) {
+        self.onLeave = onLeave
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "leaveCall" {
+            DispatchQueue.main.async {
+                self.onLeave()
+            }
+        }
+    }
+}
+
+struct VideoWebViewRepresentable: NSViewRepresentable {
+    let url: URL
+    let token: String
+    let currentUser: User?
+    let onLeave: () -> Void
+
+    func makeCoordinator() -> VideoWebViewCoordinator {
+        VideoWebViewCoordinator(onLeave: onLeave)
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let userController = WKUserContentController()
+
+        // Register message handler for leaveCall
+        userController.add(context.coordinator, name: "leaveCall")
+
+        // Build UserScript: auth + CSS hiding + pushState hook
+        let userId = currentUser?.id ?? ""
+        let displayName = currentUser?.displayName ?? ""
+        let escapedToken = token.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let userJson = "{\"id\":\"\(userId)\",\"display_name\":\"\(displayName)\"}"
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+
+        let js = """
+        (function(){
+        localStorage.setItem('access_token','\(escapedToken)');
+        localStorage.setItem('current_user','\(userJson)');
+        var css='nav.sidebar{display:none !important}.chat-sidebar{display:none !important}.top-bar{display:none !important}.main-body>.content{flex:1 !important;width:100% !important}';
+        function hide(){
+            if(!document.getElementById('_ah')){
+                var s=document.createElement('style');s.id='_ah';s.textContent=css;
+                var t=document.head||document.documentElement;
+                if(t)t.appendChild(s);}
+            var sels=['nav.sidebar','.chat-sidebar','.top-bar'];
+            for(var i=0;i<sels.length;i++){
+                var el=document.querySelector(sels[i]);
+                if(el)el.style.setProperty('display','none','important');}}
+        try{hide();}catch(e){}
+        document.addEventListener('DOMContentLoaded',function(){
+            hide();
+            new MutationObserver(function(){hide();})
+                .observe(document.body||document.documentElement,
+                {childList:true,subtree:true});});
+        var n=0,iv=setInterval(function(){hide();n++;if(n>300)clearInterval(iv);},100);
+        var _ps=history.pushState,_rs=history.replaceState;
+        function _chk(url){
+            var s=(url&&url.toString())||location.href;
+            if(s.indexOf('/video/')===-1){
+                try{window.webkit.messageHandlers.leaveCall.postMessage('leave');}catch(e){}}}
+        history.pushState=function(){_ps.apply(this,arguments);_chk(arguments[2]);};
+        history.replaceState=function(){_rs.apply(this,arguments);_chk(arguments[2]);};
+        window.addEventListener('popstate',function(){_chk();});
+        })();
+        """
+
+        let script = WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        userController.addUserScript(script)
+
+        let config = WKWebViewConfiguration()
+        config.userContentController = userController
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        // No dynamic updates needed
     }
 }
 
