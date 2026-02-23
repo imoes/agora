@@ -20,6 +20,8 @@ class AppState: ObservableObject {
     @Published var eventCountdown = ""
     @Published var showVideoOverlay = false
     @Published var videoURL: URL?
+    @Published var userStatuses: [String: String] = [:]
+    @Published var currentChannelMembers: [ChannelMember] = []
 
     var api: ApiClient?
     var notificationWS: WebSocketClient?
@@ -57,6 +59,8 @@ class AppState: ObservableObject {
         teamChannelsMap = [:]
         selectedChannel = nil
         messages = []
+        userStatuses = [:]
+        currentChannelMembers = []
         api = nil
     }
 
@@ -117,13 +121,32 @@ class AppState: ObservableObject {
         selectedChannel = channel
         messages = []
         typingUsers = [:]
+        currentChannelMembers = []
         loadMessages(channelId: channel.id)
         connectChannelWebSocket(channelId: channel.id)
+        loadChannelMembers(channelId: channel.id)
 
         // Mark as read
         if channel.unreadCount > 0 {
             if let idx = channels.firstIndex(where: { $0.id == channel.id }) {
                 channels[idx].unreadCount = 0
+            }
+        }
+    }
+
+    func loadChannelMembers(channelId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                let members = try await api.getChannelMembers(channelId: channelId)
+                await MainActor.run {
+                    self.currentChannelMembers = members
+                    for member in members {
+                        self.userStatuses[member.id] = member.status
+                    }
+                }
+            } catch {
+                print("Failed to load channel members: \(error)")
             }
         }
     }
@@ -381,7 +404,7 @@ extension AppState: WebSocketClientDelegate {
         case "user_joined", "user_statuses":
             break // Status updates handled in UI
         case "status_change":
-            break
+            handleStatusChange(data)
         case "video_call_invite":
             handleCallInvite(data)
         default:
@@ -525,6 +548,16 @@ extension AppState: WebSocketClientDelegate {
             title: T("notify.incoming_call"),
             body: "\(displayName) \(T("notify.calling"))"
         )
+    }
+
+    private func handleStatusChange(_ data: [String: Any]) {
+        guard let userId = data["user_id"] as? String,
+              let status = data["status"] as? String else { return }
+        userStatuses[userId] = status
+        // Update in currentChannelMembers as well
+        if let idx = currentChannelMembers.firstIndex(where: { $0.id == userId }) {
+            currentChannelMembers[idx].status = status
+        }
     }
 }
 

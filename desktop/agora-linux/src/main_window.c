@@ -465,6 +465,7 @@ static void on_team_tree_channel_clicked(GtkListBox *list, GtkListBoxRow *row, g
     win->current_channel_name = g_strdup(channel_name);
 
     gtk_label_set_text(win->chat_title, channel_name);
+    update_chat_subtitle_status(win, channel_id);
     gtk_stack_set_visible_child_name(win->content_stack, "chat");
     load_messages(win, channel_id);
     connect_channel_ws(win, channel_id);
@@ -2751,6 +2752,69 @@ static void show_notification(const char *title, const char *body)
     g_object_unref(notif);
 }
 
+/* --- Status helpers --- */
+
+static void update_chat_subtitle_status(AgoraMainWindow *win, const char *channel_id)
+{
+    /* Load members to get status for direct chats */
+    char *path = g_strdup_printf("/api/channels/%s/members", channel_id);
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &error);
+    g_free(path);
+
+    if (!result) {
+        gtk_label_set_text(win->chat_subtitle, "");
+        if (error) g_error_free(error);
+        return;
+    }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *session = agora_app_get_session(app);
+
+    /* For 2-member channels (direct), show the other user's status */
+    if (len == 2 && session->user_id) {
+        for (guint i = 0; i < len; i++) {
+            JsonObject *member = json_array_get_object_element(arr, i);
+            if (!json_object_has_member(member, "user")) continue;
+            JsonObject *user = json_object_get_object_member(member, "user");
+            const char *uid = json_object_get_string_member(user, "id");
+            if (g_strcmp0(uid, session->user_id) == 0) continue;
+
+            const char *status = json_object_has_member(user, "status")
+                ? json_object_get_string_member(user, "status") : "offline";
+
+            if (g_strcmp0(status, "online") == 0)
+                gtk_label_set_text(win->chat_subtitle, T("status.online"));
+            else if (g_strcmp0(status, "away") == 0)
+                gtk_label_set_text(win->chat_subtitle, T("status.away"));
+            else
+                gtk_label_set_text(win->chat_subtitle, T("status.offline"));
+
+            /* Color the subtitle green for online */
+            PangoAttrList *attrs = pango_attr_list_new();
+            pango_attr_list_insert(attrs, pango_attr_scale_new(0.8));
+            if (g_strcmp0(status, "online") == 0)
+                pango_attr_list_insert(attrs, pango_attr_foreground_new(0x6B00, 0xB700, 0x0000));
+            else if (g_strcmp0(status, "away") == 0)
+                pango_attr_list_insert(attrs, pango_attr_foreground_new(0xFF00, 0xAA00, 0x4400));
+            else
+                pango_attr_list_insert(attrs, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+            gtk_label_set_attributes(win->chat_subtitle, attrs);
+            pango_attr_list_unref(attrs);
+            break;
+        }
+    } else {
+        char *members_text = g_strdup_printf("%u %s", len, T("chat.members"));
+        gtk_label_set_text(win->chat_subtitle, members_text);
+        g_free(members_text);
+    }
+
+    json_node_unref(result);
+}
+
 /* --- Event handlers --- */
 
 static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
@@ -2769,6 +2833,7 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
     win->current_channel_name = g_strdup(channel_name);
 
     gtk_label_set_text(win->chat_title, channel_name);
+    update_chat_subtitle_status(win, channel_id);
     gtk_stack_set_visible_child_name(win->content_stack, "chat");
 
     /* Clear typing indicator */
@@ -4789,6 +4854,13 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_style_context_add_class(gtk_widget_get_style_context(chat_header), "chat-header");
     gtk_container_set_border_width(GTK_CONTAINER(chat_header), 0);
 
+    GtkWidget *title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    gtk_widget_set_halign(title_box, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(title_box, 16);
+    gtk_widget_set_margin_top(title_box, 8);
+    gtk_widget_set_margin_bottom(title_box, 8);
+    gtk_widget_set_valign(title_box, GTK_ALIGN_CENTER);
+
     win->chat_title = GTK_LABEL(gtk_label_new(""));
     PangoAttrList *title_attrs = pango_attr_list_new();
     pango_attr_list_insert(title_attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
@@ -4796,10 +4868,18 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_label_set_attributes(win->chat_title, title_attrs);
     pango_attr_list_unref(title_attrs);
     gtk_widget_set_halign(GTK_WIDGET(win->chat_title), GTK_ALIGN_START);
-    gtk_widget_set_margin_start(GTK_WIDGET(win->chat_title), 16);
-    gtk_widget_set_margin_top(GTK_WIDGET(win->chat_title), 12);
-    gtk_widget_set_margin_bottom(GTK_WIDGET(win->chat_title), 12);
-    gtk_box_pack_start(GTK_BOX(chat_header), GTK_WIDGET(win->chat_title), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(title_box), GTK_WIDGET(win->chat_title), FALSE, FALSE, 0);
+
+    win->chat_subtitle = GTK_LABEL(gtk_label_new(""));
+    PangoAttrList *sub_attrs = pango_attr_list_new();
+    pango_attr_list_insert(sub_attrs, pango_attr_scale_new(0.8));
+    pango_attr_list_insert(sub_attrs, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+    gtk_label_set_attributes(win->chat_subtitle, sub_attrs);
+    pango_attr_list_unref(sub_attrs);
+    gtk_widget_set_halign(GTK_WIDGET(win->chat_subtitle), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(title_box), GTK_WIDGET(win->chat_subtitle), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(chat_header), title_box, TRUE, TRUE, 0);
 
     /* Video call button */
     win->video_btn = gtk_button_new_with_label("\xF0\x9F\x93\xB9");  /* 📹 */

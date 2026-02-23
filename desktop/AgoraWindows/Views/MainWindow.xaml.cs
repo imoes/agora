@@ -146,6 +146,8 @@ public partial class MainWindow : Window
     private ObservableCollection<Message> _messages = new();
     private string? _currentChannelId;
     private string? _currentChannelName;
+    private string? _currentChannelType;
+    private List<ChannelMember>? _currentChannelMembers;
 
     // Navigation state
     private string _activeNav = "chat";
@@ -160,6 +162,7 @@ public partial class MainWindow : Window
 
     // Typing indicator
     private readonly Dictionary<string, DispatcherTimer> _typingTimers = new();
+    private readonly Dictionary<string, string> _userStatuses = new(); // userId -> "online"/"offline"/"away"
     private readonly HashSet<string> _typingUsers = new();
     private DispatcherTimer? _typingSendTimer;
 
@@ -998,6 +1001,44 @@ function insertText(text) {
         }
     }
 
+    private void UpdateChatStatusIndicator()
+    {
+        if (_currentChannelMembers == null || _currentChannelType != "direct")
+        {
+            ChatStatusDot.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // For direct chats, show the OTHER user's status
+        var otherMember = _currentChannelMembers
+            .FirstOrDefault(m => m.User != null && m.User.Id != _api.CurrentUser?.Id);
+
+        if (otherMember?.User == null)
+        {
+            ChatStatusDot.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var status = _userStatuses.GetValueOrDefault(otherMember.User.Id, otherMember.User.Status);
+        ChatStatusDot.Visibility = Visibility.Visible;
+
+        switch (status)
+        {
+            case "online":
+                ChatStatusDot.Fill = new SolidColorBrush(Color.FromRgb(0x6B, 0xB7, 0x00)); // green
+                ChatSubtitle.Text = Translations.T("status.online");
+                break;
+            case "away":
+                ChatStatusDot.Fill = new SolidColorBrush(Color.FromRgb(0xFF, 0xAA, 0x44)); // orange
+                ChatSubtitle.Text = Translations.T("status.away");
+                break;
+            default:
+                ChatStatusDot.Fill = new SolidColorBrush(Color.FromRgb(0xBD, 0xBD, 0xBD)); // gray
+                ChatSubtitle.Text = Translations.T("status.offline");
+                break;
+        }
+    }
+
     private async System.Threading.Tasks.Task LoadTeamsAsync()
     {
         try
@@ -1274,6 +1315,16 @@ function insertText(text) {
                 var from = msg.TryGetProperty("display_name", out var dn) ? dn.GetString() : "?";
                 ShowToast(Translations.T("notify.incoming_call"), $"{from} {Translations.T("notify.calling")}");
             }
+            else if (type == "status_change")
+            {
+                var userId = msg.TryGetProperty("user_id", out var uid) ? uid.GetString() : null;
+                var status = msg.TryGetProperty("status", out var st) ? st.GetString() : "offline";
+                if (userId != null)
+                {
+                    _userStatuses[userId] = status ?? "offline";
+                    UpdateChatStatusIndicator();
+                }
+            }
         });
     }
 
@@ -1504,8 +1555,22 @@ function insertText(text) {
     {
         _currentChannelId = channel.Id;
         _currentChannelName = channel.Name;
+        _currentChannelType = channel.ChannelType;
         ChatTitle.Text = channel.Name;
         ChatSubtitle.Text = $"{channel.MemberCount} {Translations.T("chat.members")}";
+
+        // Load members and show status for direct chats
+        try
+        {
+            _currentChannelMembers = await _api.GetChannelMembersAsync(channel.Id);
+            foreach (var m in _currentChannelMembers)
+            {
+                if (m.User != null)
+                    _userStatuses[m.User.Id] = m.User.Status;
+            }
+            UpdateChatStatusIndicator();
+        }
+        catch { _currentChannelMembers = null; }
         EmptyState.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;

@@ -13,9 +13,20 @@ struct ChatView: View {
                     .foregroundColor(.accentColor)
                 Text(appState.selectedChannel?.name ?? "")
                     .font(.headline)
-                Text("\(appState.selectedChannel?.memberCount ?? 0) \(T("chat.members"))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if appState.selectedChannel?.channelType == "direct" {
+                    if let otherStatus = otherUserStatus {
+                        Circle()
+                            .fill(statusColor(for: otherStatus))
+                            .frame(width: 8, height: 8)
+                        Text(statusLabel(for: otherStatus))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Text("\(appState.selectedChannel?.memberCount ?? 0) \(T("chat.members"))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -107,6 +118,29 @@ struct ChatView: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 proxy.scrollTo(lastMessage.id, anchor: .bottom)
             }
+        }
+    }
+
+    private var otherUserStatus: String? {
+        guard let currentUserId = appState.currentUser?.id else { return nil }
+        let otherMember = appState.currentChannelMembers.first { $0.id != currentUserId }
+        guard let memberId = otherMember?.id else { return nil }
+        return appState.userStatuses[memberId] ?? otherMember?.status
+    }
+
+    private func statusColor(for status: String) -> Color {
+        switch status {
+        case "online": return .green
+        case "away": return .orange
+        default: return .gray
+        }
+    }
+
+    private func statusLabel(for status: String) -> String {
+        switch status {
+        case "online": return T("status.online")
+        case "away": return T("status.away")
+        default: return T("status.offline")
         }
     }
 }

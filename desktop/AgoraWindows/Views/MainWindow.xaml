@@ -805,8 +805,13 @@
                         <StackPanel>
                             <TextBlock x:Name="ChatTitle" FontSize="15" FontWeight="SemiBold"
                                        Foreground="{StaticResource TextPrimaryBrush}" />
-                            <TextBlock x:Name="ChatSubtitle" FontSize="11"
-                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="ChatStatusDot" Width="8" Height="8"
+                                         Margin="0,0,5,0" VerticalAlignment="Center"
+                                         Visibility="Collapsed" />
+                                <TextBlock x:Name="ChatSubtitle" FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                            </StackPanel>
                         </StackPanel>
                     </DockPanel>
                 </Border>
