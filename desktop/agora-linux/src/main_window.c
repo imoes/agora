@@ -2782,6 +2782,16 @@ static void on_notif_ws_message(SoupWebsocketConnection *conn,
     g_object_unref(parser);
 }
 
+static gboolean notif_ws_reconnect_cb(gpointer user_data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
+    connect_notification_ws(win);
+    /* Reload data that may have been missed while disconnected */
+    load_teams(win);
+    load_channels(win);
+    return G_SOURCE_REMOVE;
+}
+
 static void on_notif_ws_closed(SoupWebsocketConnection *conn, gpointer user_data)
 {
     (void)conn;
@@ -2790,6 +2800,8 @@ static void on_notif_ws_closed(SoupWebsocketConnection *conn, gpointer user_data
         g_object_unref(win->notif_ws_conn);
         win->notif_ws_conn = NULL;
     }
+    /* Reconnect after 5 seconds */
+    g_timeout_add_seconds(5, notif_ws_reconnect_cb, win);
 }
 
 static void on_notif_ws_connected(GObject *source, GAsyncResult *result, gpointer user_data)

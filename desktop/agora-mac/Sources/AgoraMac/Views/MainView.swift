@@ -382,7 +382,15 @@ extension AppState: WebSocketClientDelegate {
     }
 
     func webSocketDidDisconnect(_ client: WebSocketClient, error: Error?) {
-        // Fail gracefully
+        // Reconnect notification WebSocket after a delay
+        if client.identifier == "notifications" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                self?.connectNotificationWebSocket()
+                // Reload data that may have been missed while disconnected
+                self?.loadTeams()
+                self?.loadChannels()
+            }
+        }
     }
 
     func webSocketDidReceiveMessage(_ client: WebSocketClient, type: String, data: [String: Any]) {
