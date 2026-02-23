@@ -60,6 +60,7 @@ export class CreateChannelDialogComponent {
           <div class="team-avatar">{{ team.name?.charAt(0)?.toUpperCase() }}</div>
           <div>
             <h2>{{ team.name }}</h2>
+            <span class="team-member-count">{{ team.member_count }} Mitglieder</span>
             <p>{{ team.description || 'Kein Beschreibung' }}</p>
           </div>
         </div>
@@ -193,6 +194,10 @@ export class CreateChannelDialogComponent {
     }
     .team-info h2 {
       margin: 0;
+    }
+    .team-member-count {
+      font-size: 14px;
+      color: var(--text-secondary);
     }
     .team-info p {
       margin: 4px 0 0;
