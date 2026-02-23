@@ -29,6 +29,8 @@ public static class Converters
     public static readonly IValueConverter FileTypeToVisibility = new FileTypeToVisibilityConverter();
     public static readonly IValueConverter FirstChar = new FirstCharConverter();
     public static readonly IValueConverter NullToVisibility = new NullToVisibilityConverter();
+    public static readonly IValueConverter InverseBoolToVisibility = new InverseBoolToVisibilityConverter();
+    public static readonly IValueConverter NameToAvatarColor = new NameToAvatarColorConverter();
 
     private class IntToVisibilityConverter : IValueConverter
     {
@@ -84,6 +86,52 @@ public static class Converters
             => throw new NotImplementedException();
     }
 
+    private class InverseBoolToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+            => value is true ? Visibility.Collapsed : Visibility.Visible;
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => throw new NotImplementedException();
+    }
+
+    private class NameToAvatarColorConverter : IValueConverter
+    {
+        private static readonly string[] AvatarPalette = {
+            "#6264A7", "#C239B3", "#2B88D8", "#00A5AF", "#E74856",
+            "#4A154B", "#0078D4", "#498205", "#CA5010", "#8764B8"
+        };
+
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            var name = value as string ?? "";
+            var hash = (uint)name.GetHashCode();
+            var color = AvatarPalette[hash % AvatarPalette.Length];
+            return new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => throw new NotImplementedException();
+    }
+
+    // Static helper for avatar colors (used in code-behind)
+    private static readonly string[] _avatarPalette = {
+        "#6264A7", "#C239B3", "#2B88D8", "#00A5AF", "#E74856",
+        "#4A154B", "#0078D4", "#498205", "#CA5010", "#8764B8"
+    };
+
+    public static Brush GetAvatarBrush(string name)
+    {
+        var hash = (uint)(name ?? "").GetHashCode();
+        var color = _avatarPalette[hash % _avatarPalette.Length];
+        return new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+    }
+
+    public static string GetAvatarInitial(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "?";
+        return char.ToUpper(name[0]).ToString();
+    }
 }
 
 public partial class MainWindow : Window
@@ -164,6 +212,7 @@ public partial class MainWindow : Window
             StartReminderPolling();
             await DownloadNotificationSoundAsync();
             await InitializeEditorAsync();
+            InitializeWeekGrid();
         };
     }
 
@@ -638,6 +687,66 @@ function insertText(text) {
 
         CalendarDayEventList.ItemsSource = dayEvents;
         CalendarEmptyDay.Visibility = dayEvents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void InitializeWeekGrid()
+    {
+        // Populate week day headers
+        var now = DateTime.Now;
+        var monday = now.AddDays(-(((int)now.DayOfWeek + 6) % 7));
+        var lang = Translations.CurrentLang;
+        var culture = lang == "de" ? new CultureInfo("de-DE") : CultureInfo.CurrentCulture;
+        string[] shortDays = lang == "de" ? new[] { "Mo", "Di", "Mi", "Do", "Fr" }
+                                          : new[] { "Mon", "Tue", "Wed", "Thu", "Fri" };
+
+        TextBlock[] dayHeaders = { WeekDay1, WeekDay2, WeekDay3, WeekDay4, WeekDay5 };
+        for (int d = 0; d < 5; d++)
+        {
+            var day = monday.AddDays(d);
+            dayHeaders[d].Text = $"{shortDays[d]} {day.Day}";
+            if (day.Date == now.Date)
+                dayHeaders[d].Foreground = (Brush)FindResource("PrimaryBrush");
+        }
+
+        // Build time rows (07:00 - 19:00)
+        for (int hour = 7; hour <= 19; hour++)
+        {
+            int row = hour - 7;
+            WeekTimeGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
+
+            // Time label
+            var timeLbl = new TextBlock
+            {
+                Text = $"{hour:D2}:00",
+                FontSize = 11,
+                Foreground = (Brush)FindResource("TextSecondaryBrush"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            Grid.SetColumn(timeLbl, 0);
+            Grid.SetRow(timeLbl, row);
+            WeekTimeGrid.Children.Add(timeLbl);
+
+            // Day columns
+            for (int d = 0; d < 5; d++)
+            {
+                var cell = new Border
+                {
+                    BorderBrush = (Brush)FindResource("BorderBrush"),
+                    BorderThickness = new Thickness(0, 0, d < 4 ? 1 : 0, 1),
+                    Background = Brushes.Transparent
+                };
+                // Highlight today's column
+                var dayDate = monday.AddDays(d);
+                if (dayDate.Date == now.Date)
+                    cell.Background = new SolidColorBrush(Color.FromArgb(0x15, 0x62, 0x64, 0xA7));
+
+                Grid.SetColumn(cell, d + 1);
+                Grid.SetRow(cell, row);
+                WeekTimeGrid.Children.Add(cell);
+            }
+        }
     }
 
     private void WpfCalendar_SelectedDatesChanged(object? sender, SelectionChangedEventArgs e)
@@ -1213,12 +1322,13 @@ function insertText(text) {
             var messages = await _api.GetMessagesAsync(channel.Id);
             _messages.Clear();
 
-            // Set bubble colors based on sender
-            foreach (var msg in messages)
-            {
+            // Set Teams-style properties and add day separators
+            var msgList = messages.ToList();
+            foreach (var msg in msgList)
                 SetMessageBubbleProperties(msg);
+            InsertDaySeparators(msgList);
+            foreach (var msg in msgList)
                 _messages.Add(msg);
-            }
             ScrollToBottom();
             _ = LoadMessageImagesAsync();
         }
@@ -1276,22 +1386,22 @@ function insertText(text) {
 
     private void SetMessageBubbleProperties(Message msg)
     {
-        var isOwn = msg.SenderId == _api.CurrentUser?.Id;
-        msg.BubbleColor = isOwn
-            ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8E5FC"))
-            : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F0F0F0"));
-        msg.BubbleAlignment = isOwn ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        // Teams-style: all messages left-aligned, transparent background
+        msg.BubbleColor = Brushes.Transparent;
+        msg.BubbleAlignment = HorizontalAlignment.Left;
+        msg.BubbleCornerRadius = new CornerRadius(0);
+        msg.BubbleMargin = new Thickness(0, 2, 0, 2);
 
-        // Asymmetric corner radius for chat bubble "tail" effect
-        // Own messages: tail bottom-right, Others: tail bottom-left
-        msg.BubbleCornerRadius = isOwn
-            ? new CornerRadius(12, 12, 2, 12)
-            : new CornerRadius(12, 12, 12, 2);
+        // Avatar properties
+        msg.AvatarColor = Converters.GetAvatarBrush(msg.SenderName);
+        msg.AvatarInitial = Converters.GetAvatarInitial(msg.SenderName);
 
-        // Margin: own messages get space on left, others get space on right
-        msg.BubbleMargin = isOwn
-            ? new Thickness(60, 3, 12, 3)
-            : new Thickness(12, 3, 60, 3);
+        // Format time as HH:mm
+        if (!string.IsNullOrEmpty(msg.CreatedAt))
+        {
+            if (DateTime.TryParse(msg.CreatedAt, null, DateTimeStyles.RoundtripKind, out var dt))
+                msg.FormattedTime = dt.ToLocalTime().ToString("HH:mm");
+        }
 
         // Reaction groups
         if (msg.Reactions != null && msg.Reactions.Count > 0)
@@ -1301,6 +1411,52 @@ function insertText(text) {
                 .Select(g => new ReactionGroup { Emoji = g.Key, Count = g.Count() })
                 .ToList();
             msg.HasReactions = true;
+        }
+    }
+
+    private static string FormatDayLabel(DateTime date)
+    {
+        var now = DateTime.Now.Date;
+        var lang = Translations.CurrentLang;
+
+        if (date.Date == now)
+            return lang == "de" ? "Heute" : "Today";
+        if (date.Date == now.AddDays(-1))
+            return lang == "de" ? "Gestern" : "Yesterday";
+
+        return date.ToString("dddd, d. MMMM yyyy",
+            lang == "de" ? new CultureInfo("de-DE") : CultureInfo.CurrentCulture);
+    }
+
+    private void InsertDaySeparators(List<Message> messages)
+    {
+        DateTime? lastDate = null;
+        var toInsert = new List<(int index, Message separator)>();
+
+        for (int i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (msg.IsDaySeparator) continue;
+
+            DateTime? msgDate = null;
+            if (DateTime.TryParse(msg.CreatedAt, null, DateTimeStyles.RoundtripKind, out var dt))
+                msgDate = dt.ToLocalTime().Date;
+
+            if (msgDate.HasValue && msgDate != lastDate)
+            {
+                toInsert.Add((i, new Message
+                {
+                    IsDaySeparator = true,
+                    DaySeparatorText = FormatDayLabel(msgDate.Value)
+                }));
+                lastDate = msgDate;
+            }
+        }
+
+        // Insert in reverse order to maintain indices
+        for (int i = toInsert.Count - 1; i >= 0; i--)
+        {
+            messages.Insert(toInsert[i].index + i, toInsert[i].separator);
         }
     }
 

@@ -218,6 +218,16 @@ data/uploads/*
 !data/chats/.gitkeep
 !data/uploads/.gitkeep
 
+# .NET build artifacts
+obj/
+bin/
+*.user
+*.suo
+
+# Seed script output
+user.txt
+test_user.txt
+
 # IDE
 .idea/
 .vscode/

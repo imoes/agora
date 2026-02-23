@@ -76,6 +76,25 @@ public class Message
     [JsonPropertyName("edited")]
     public bool Edited { get; set; }
 
+    // === Teams-style display properties ===
+    [JsonIgnore]
+    public Brush AvatarColor { get; set; } = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7));
+
+    [JsonIgnore]
+    public string AvatarInitial { get; set; } = "?";
+
+    [JsonIgnore]
+    public string FormattedTime { get; set; } = "";
+
+    [JsonIgnore]
+    public bool IsDaySeparator { get; set; } = false;
+
+    [JsonIgnore]
+    public string DaySeparatorText { get; set; } = "";
+
+    [JsonIgnore]
+    public bool IsNotDaySeparator => !IsDaySeparator;
+
     // Display helpers
     [JsonIgnore]
     public string DisplayReactions
