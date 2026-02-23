@@ -20,10 +20,7 @@ struct _AgoraMainWindow {
     /* Channel sidebar */
     GtkStack *sidebar_stack;
     GtkListBox *channel_list;
-    GtkListBox *team_list;
-    GtkListBox *team_channel_list;
-    GtkWidget *team_channels_box;
-    GtkLabel *team_channels_header;
+    GtkWidget *team_tree_box;  /* VBox with GtkExpanders for tree structure */
     GtkLabel *user_label;
 
     /* Chat area */
@@ -451,6 +448,96 @@ static void load_channels(AgoraMainWindow *win)
 
 /* --- Teams loading --- */
 
+static void on_team_tree_channel_clicked(GtkListBox *list, GtkListBoxRow *row, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!row) return;
+    const char *channel_id = g_object_get_data(G_OBJECT(row), "channel-id");
+    const char *channel_name = g_object_get_data(G_OBJECT(row), "channel-name");
+    if (!channel_id) return;
+
+    /* Deselect main channel list */
+    gtk_list_box_unselect_all(win->channel_list);
+
+    g_free(win->current_channel_id);
+    win->current_channel_id = g_strdup(channel_id);
+    g_free(win->current_channel_name);
+    win->current_channel_name = g_strdup(channel_name);
+
+    gtk_label_set_text(win->chat_title, channel_name);
+    gtk_stack_set_visible_child_name(win->content_stack, "chat");
+    load_messages(win, channel_id);
+    connect_channel_ws(win, channel_id);
+}
+
+static void load_team_channels_into_expander(AgoraMainWindow *win, const char *team_id, GtkWidget *channel_list_box)
+{
+    g_print("[Teams] Loading channels for team_id=%s\n", team_id);
+    char *path = g_strdup_printf("/api/channels/?team_id=%s", team_id);
+    GError *error = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &error);
+    g_free(path);
+
+    if (!result) {
+        if (error) g_error_free(error);
+        return;
+    }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+
+    for (guint i = 0; i < len; i++) {
+        JsonObject *ch = json_array_get_object_element(arr, i);
+        const char *id = json_object_get_string_member(ch, "id");
+        const char *name = json_object_get_string_member(ch, "name");
+
+        char *display = g_strdup_printf("# %s", name);
+        GtkWidget *label = gtk_label_new(display);
+        g_free(display);
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(label, 16);
+        gtk_widget_set_margin_top(label, 4);
+        gtk_widget_set_margin_bottom(label, 4);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
+        g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(name), g_free);
+        gtk_container_add(GTK_CONTAINER(row), label);
+        gtk_list_box_insert(GTK_LIST_BOX(channel_list_box), row, -1);
+    }
+
+    gtk_widget_show_all(channel_list_box);
+    json_node_unref(result);
+}
+
+static void on_team_expander_toggled(GObject *expander, GParamSpec *pspec, gpointer data)
+{
+    (void)pspec;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!gtk_expander_get_expanded(GTK_EXPANDER(expander)))
+        return;
+
+    const char *team_id = g_object_get_data(G_OBJECT(expander), "team-id");
+    GtkWidget *channel_list = g_object_get_data(G_OBJECT(expander), "channel-list");
+    if (!team_id || !channel_list) return;
+
+    /* Clear and reload channels */
+    GList *children = gtk_container_get_children(GTK_CONTAINER(channel_list));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+
+    load_team_channels_into_expander(win, team_id, channel_list);
+}
+
+static void clear_team_tree(AgoraMainWindow *win)
+{
+    GList *children = gtk_container_get_children(GTK_CONTAINER(win->team_tree_box));
+    for (GList *l = children; l; l = l->next)
+        gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+}
+
 static void load_teams(AgoraMainWindow *win)
 {
     GError *error = NULL;
@@ -461,8 +548,7 @@ static void load_teams(AgoraMainWindow *win)
         return;
     }
 
-    /* Clear existing list */
-    clear_list_box(win->team_list);
+    clear_team_tree(win);
 
     JsonArray *arr = json_node_get_array(result);
     guint len = json_array_get_length(arr);
@@ -474,16 +560,13 @@ static void load_teams(AgoraMainWindow *win)
         gint64 member_count = json_object_has_member(team, "member_count")
             ? json_object_get_int_member(team, "member_count") : 0;
 
-        /* Teams-style: [Avatar 28px] [Team Name + member count] */
-        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-        gtk_container_set_border_width(GTK_CONTAINER(row_box), 6);
+        /* Header: [Avatar 28px] [Team Name + member count] */
+        GtkWidget *header_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
 
-        /* Team avatar */
         GtkWidget *team_avatar = create_avatar_widget(name, 28);
         gtk_widget_set_valign(team_avatar, GTK_ALIGN_CENTER);
-        gtk_box_pack_start(GTK_BOX(row_box), team_avatar, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(header_box), team_avatar, FALSE, FALSE, 0);
 
-        /* Text column */
         GtkWidget *text_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
         GtkWidget *name_label = gtk_label_new(name);
         gtk_label_set_ellipsize(GTK_LABEL(name_label), PANGO_ELLIPSIZE_END);
@@ -505,72 +588,34 @@ static void load_teams(AgoraMainWindow *win)
         pango_attr_list_unref(small_attrs);
         gtk_box_pack_start(GTK_BOX(text_col), members_label, FALSE, FALSE, 0);
 
-        gtk_box_pack_start(GTK_BOX(row_box), text_col, TRUE, TRUE, 0);
+        gtk_box_pack_start(GTK_BOX(header_box), text_col, TRUE, TRUE, 0);
 
-        GtkWidget *row = gtk_list_box_row_new();
-        g_object_set_data_full(G_OBJECT(row), "team-id", g_strdup(id), g_free);
-        g_object_set_data_full(G_OBJECT(row), "team-name", g_strdup(name), g_free);
-        gtk_container_add(GTK_CONTAINER(row), row_box);
-        gtk_list_box_insert(win->team_list, row, -1);
+        /* Expander with team header */
+        GtkWidget *expander = gtk_expander_new(NULL);
+        gtk_expander_set_label_widget(GTK_EXPANDER(expander), header_box);
+        gtk_widget_set_margin_start(expander, 8);
+        gtk_widget_set_margin_end(expander, 8);
+        gtk_widget_set_margin_top(expander, 2);
+        gtk_widget_set_margin_bottom(expander, 2);
+
+        /* Channel list inside the expander */
+        GtkWidget *ch_list = gtk_list_box_new();
+        gtk_list_box_set_selection_mode(GTK_LIST_BOX(ch_list), GTK_SELECTION_SINGLE);
+        g_signal_connect(ch_list, "row-selected", G_CALLBACK(on_team_tree_channel_clicked), win);
+
+        gtk_container_add(GTK_CONTAINER(expander), ch_list);
+
+        g_object_set_data_full(G_OBJECT(expander), "team-id", g_strdup(id), g_free);
+        g_object_set_data(G_OBJECT(expander), "channel-list", ch_list);
+
+        g_signal_connect(expander, "notify::expanded", G_CALLBACK(on_team_expander_toggled), win);
+
+        gtk_box_pack_start(GTK_BOX(win->team_tree_box), expander, FALSE, FALSE, 0);
         g_print("[Teams] Added team: %s (%s)\n", name, id);
     }
 
     g_print("[Teams] Loaded %u teams\n", len);
-    gtk_widget_show_all(GTK_WIDGET(win->team_list));
-
-    /* Auto-select first team to show its channels */
-    if (len > 0) {
-        GtkListBoxRow *first_row = gtk_list_box_get_row_at_index(win->team_list, 0);
-        if (first_row) {
-            gtk_list_box_select_row(win->team_list, first_row);
-        }
-    }
-
-    json_node_unref(result);
-}
-
-static void load_team_channels(AgoraMainWindow *win, const char *team_id)
-{
-    g_print("[Teams] Loading channels for team_id=%s\n", team_id);
-    char *path = g_strdup_printf("/api/channels/?team_id=%s", team_id);
-    GError *error = NULL;
-    JsonNode *result = agora_api_client_get(win->api, path, &error);
-    g_free(path);
-
-    /* Clear existing list */
-    clear_list_box(win->team_channel_list);
-
-    if (!result) {
-        g_printerr("[Teams] ERROR loading team channels: %s\n", error ? error->message : "null response");
-        if (error) g_error_free(error);
-        return;
-    }
-
-    JsonArray *arr = json_node_get_array(result);
-    guint len = json_array_get_length(arr);
-    g_print("[Teams] Found %u channels for team %s\n", len, team_id);
-
-    for (guint i = 0; i < len; i++) {
-        JsonObject *ch = json_array_get_object_element(arr, i);
-        const char *id = json_object_get_string_member(ch, "id");
-        const char *name = json_object_get_string_member(ch, "name");
-
-        char *display = g_strdup_printf("# %s", name);
-        GtkWidget *label = gtk_label_new(display);
-        g_free(display);
-        gtk_widget_set_halign(label, GTK_ALIGN_START);
-        gtk_widget_set_margin_start(label, 8);
-        gtk_widget_set_margin_top(label, 4);
-        gtk_widget_set_margin_bottom(label, 4);
-
-        GtkWidget *row = gtk_list_box_row_new();
-        g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
-        g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(name), g_free);
-        gtk_container_add(GTK_CONTAINER(row), label);
-        gtk_list_box_insert(win->team_channel_list, row, -1);
-    }
-
-    gtk_widget_show_all(GTK_WIDGET(win->team_channel_list));
+    gtk_widget_show_all(win->team_tree_box);
     json_node_unref(result);
 }
 
@@ -2809,26 +2854,6 @@ static void on_new_team_clicked(GtkButton *btn, gpointer data)
     gtk_widget_destroy(dialog);
 }
 
-static void on_team_selected(GtkListBox *list_box, GtkListBoxRow *row,
-                              gpointer user_data)
-{
-    (void)list_box;
-    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
-    if (!row) return;
-
-    const char *team_id = g_object_get_data(G_OBJECT(row), "team-id");
-    const char *team_name = g_object_get_data(G_OBJECT(row), "team-name");
-
-    g_free(win->current_team_id);
-    win->current_team_id = g_strdup(team_id);
-
-    gtk_label_set_text(win->team_channels_header, team_name);
-    load_team_channels(win, team_id);
-    gtk_widget_set_no_show_all(win->team_channels_box, FALSE);
-    gtk_widget_show_all(win->team_channels_box);
-    gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
-}
-
 static void on_new_team_channel_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
@@ -2879,54 +2904,13 @@ static void on_new_team_channel_clicked(GtkButton *btn, gpointer data)
             if (res) json_node_unref(res);
             if (err) g_error_free(err);
 
-            load_team_channels(win, win->current_team_id);
+            load_teams(win);
         }
     }
 
     gtk_widget_destroy(dialog);
 }
 
-static void on_team_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
-                                      gpointer user_data)
-{
-    (void)list_box;
-    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
-    if (!row) return;
-
-    const char *channel_id = g_object_get_data(G_OBJECT(row), "channel-id");
-    const char *channel_name = g_object_get_data(G_OBJECT(row), "channel-name");
-
-    /* Deselect main channel list */
-    gtk_list_box_unselect_all(win->channel_list);
-
-    g_free(win->current_channel_id);
-    win->current_channel_id = g_strdup(channel_id);
-    g_free(win->current_channel_name);
-    win->current_channel_name = g_strdup(channel_name);
-
-    gtk_label_set_text(win->chat_title, channel_name);
-    gtk_stack_set_visible_child_name(win->content_stack, "chat");
-
-    gtk_label_set_text(win->typing_label, "");
-    gtk_widget_hide(GTK_WIDGET(win->typing_label));
-
-    load_messages(win, channel_id);
-    connect_channel_ws(win, channel_id);
-
-    /* Mark channel as read */
-    {
-        AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
-        AgoraSession *session = agora_app_get_session(app);
-        if (session->user_id) {
-            char *read_json = g_strdup_printf(
-                "{\"type\":\"read\",\"user_id\":\"%s\"}", session->user_id);
-            ws_send_json(win, read_json);
-            g_free(read_json);
-        }
-    }
-
-    gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
-}
 
 static void ws_send_json(AgoraMainWindow *win, const char *json_str)
 {
@@ -4424,7 +4408,7 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_stack_add_named(win->sidebar_stack, chats_page, "chats");
 
-    /* --- Teams page --- */
+    /* --- Teams page (tree structure) --- */
     GtkWidget *teams_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
     GtkWidget *teams_label = gtk_label_new(NULL);
@@ -4447,65 +4431,13 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_box_pack_end(GTK_BOX(teams_header), new_team_btn, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(teams_page), teams_header, FALSE, FALSE, 0);
 
+    /* Scrollable tree of teams with expanders */
     GtkWidget *team_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(team_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    win->team_list = GTK_LIST_BOX(gtk_list_box_new());
-    g_signal_connect(win->team_list, "row-selected",
-                     G_CALLBACK(on_team_selected), win);
-    gtk_container_add(GTK_CONTAINER(team_scroll), GTK_WIDGET(win->team_list));
-    /* Team list gets half the space; team channels get the other half */
+    win->team_tree_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_add(GTK_CONTAINER(team_scroll), win->team_tree_box);
     gtk_box_pack_start(GTK_BOX(teams_page), team_scroll, TRUE, TRUE, 0);
-
-    /* Separator between teams and channels */
-    GtkWidget *team_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_box_pack_start(GTK_BOX(teams_page), team_sep, FALSE, FALSE, 0);
-
-    /* Team channels (hidden until a team is selected) */
-    win->team_channels_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_no_show_all(win->team_channels_box, TRUE);
-
-    GtkWidget *tch_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(tch_label), "<b>Channels</b>");
-    gtk_style_context_add_class(gtk_widget_get_style_context(tch_label), "sidebar-section");
-    gtk_widget_set_halign(tch_label, GTK_ALIGN_START);
-    gtk_widget_set_margin_start(tch_label, 16);
-    gtk_widget_set_margin_top(tch_label, 6);
-    gtk_widget_set_margin_bottom(tch_label, 2);
-
-    GtkWidget *tch_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_box_pack_start(GTK_BOX(tch_header), tch_label, TRUE, TRUE, 0);
-    GtkWidget *new_tch_btn = gtk_button_new_with_label("+");
-    gtk_widget_set_tooltip_text(new_tch_btn, T("teams.new_channel"));
-    gtk_style_context_add_class(gtk_widget_get_style_context(new_tch_btn), "input-btn");
-    gtk_widget_set_margin_end(new_tch_btn, 8);
-    g_signal_connect(new_tch_btn, "clicked", G_CALLBACK(on_new_team_channel_clicked), win);
-    gtk_box_pack_end(GTK_BOX(tch_header), new_tch_btn, FALSE, FALSE, 0);
-
-    gtk_box_pack_start(GTK_BOX(win->team_channels_box), tch_header, FALSE, FALSE, 0);
-
-    win->team_channels_header = GTK_LABEL(gtk_label_new(""));
-    PangoAttrList *tch_attrs = pango_attr_list_new();
-    pango_attr_list_insert(tch_attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
-    gtk_label_set_attributes(win->team_channels_header, tch_attrs);
-    pango_attr_list_unref(tch_attrs);
-    gtk_widget_set_halign(GTK_WIDGET(win->team_channels_header), GTK_ALIGN_START);
-    gtk_widget_set_margin_start(GTK_WIDGET(win->team_channels_header), 16);
-    gtk_widget_set_margin_top(GTK_WIDGET(win->team_channels_header), 4);
-    gtk_box_pack_start(GTK_BOX(win->team_channels_box), GTK_WIDGET(win->team_channels_header), FALSE, FALSE, 0);
-
-    /* Scrolled window for team channels */
-    GtkWidget *tch_scroll = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tch_scroll),
-                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    win->team_channel_list = GTK_LIST_BOX(gtk_list_box_new());
-    g_signal_connect(win->team_channel_list, "row-selected",
-                     G_CALLBACK(on_team_channel_selected), win);
-    gtk_container_add(GTK_CONTAINER(tch_scroll), GTK_WIDGET(win->team_channel_list));
-    gtk_box_pack_start(GTK_BOX(win->team_channels_box), tch_scroll, TRUE, TRUE, 0);
-
-    /* Team channels box also gets expand=TRUE for equal space sharing */
-    gtk_box_pack_start(GTK_BOX(teams_page), win->team_channels_box, TRUE, TRUE, 0);
 
     gtk_stack_add_named(win->sidebar_stack, teams_page, "teams");
 

@@ -196,8 +196,6 @@ public partial class MainWindow : Window
         ApplyTranslations();
 
         ChannelList.ItemsSource = _channels;
-        TeamList.ItemsSource = _teams;
-        TeamChannelList.ItemsSource = _teamChannels;
         MessageList.ItemsSource = _messages;
         FeedMainList.ItemsSource = _feedEvents;
         CalendarList.ItemsSource = _calendarEvents;
@@ -465,8 +463,8 @@ function insertText(text) {
         NewChatBtn.Visibility = Visibility.Collapsed;
         ChannelList.Visibility = Visibility.Collapsed;
         TeamsHeader.Visibility = Visibility.Collapsed;
-        TeamList.Visibility = Visibility.Collapsed;
-        TeamChannelsBorder.Visibility = Visibility.Collapsed;
+        TeamTreeList.Visibility = Visibility.Collapsed;
+
         FeedSidebarInfo.Visibility = Visibility.Visible;
         CalendarList.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
@@ -486,8 +484,8 @@ function insertText(text) {
         NewChatBtn.Visibility = Visibility.Visible;
         ChannelList.Visibility = Visibility.Visible;
         TeamsHeader.Visibility = Visibility.Collapsed;
-        TeamList.Visibility = Visibility.Collapsed;
-        TeamChannelsBorder.Visibility = Visibility.Collapsed;
+        TeamTreeList.Visibility = Visibility.Collapsed;
+
         FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
@@ -513,7 +511,7 @@ function insertText(text) {
         NewChatBtn.Visibility = Visibility.Collapsed;
         ChannelList.Visibility = Visibility.Collapsed;
         TeamsHeader.Visibility = Visibility.Visible;
-        TeamList.Visibility = Visibility.Visible;
+        TeamTreeList.Visibility = Visibility.Visible;
         FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Collapsed;
@@ -533,8 +531,8 @@ function insertText(text) {
         NewChatBtn.Visibility = Visibility.Collapsed;
         ChannelList.Visibility = Visibility.Collapsed;
         TeamsHeader.Visibility = Visibility.Collapsed;
-        TeamList.Visibility = Visibility.Collapsed;
-        TeamChannelsBorder.Visibility = Visibility.Collapsed;
+        TeamTreeList.Visibility = Visibility.Collapsed;
+
         FeedSidebarInfo.Visibility = Visibility.Collapsed;
         CalendarList.Visibility = Visibility.Visible;
         ChatView.Visibility = Visibility.Collapsed;
@@ -613,8 +611,8 @@ function insertText(text) {
             _activeNav = "chat";
             SidebarHeader.Text = Translations.T("chat.chats");
             ChannelList.Visibility = Visibility.Visible;
-            TeamList.Visibility = Visibility.Collapsed;
-            TeamChannelsBorder.Visibility = Visibility.Collapsed;
+            TeamTreeList.Visibility = Visibility.Collapsed;
+    
             FeedSidebarInfo.Visibility = Visibility.Collapsed;
             CalendarList.Visibility = Visibility.Collapsed;
             FeedView.Visibility = Visibility.Collapsed;
@@ -977,9 +975,8 @@ function insertText(text) {
             var teams = await _api.GetTeamsAsync();
             _teams.Clear();
             foreach (var t in teams)
-            {
                 _teams.Add(t);
-            }
+            await BuildTeamTreeAsync();
         }
         catch
         {
@@ -987,34 +984,124 @@ function insertText(text) {
         }
     }
 
-    private async void TeamList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async System.Threading.Tasks.Task BuildTeamTreeAsync()
     {
-        if (TeamList.SelectedItem is not Team team) return;
-
-        TeamChannelsHeader.Text = team.Name;
-        TeamChannelsBorder.Visibility = Visibility.Visible;
-
-        try
+        TeamTreeList.Items.Clear();
+        foreach (var team in _teams)
         {
-            var channels = await _api.GetTeamChannelsAsync(team.Id);
-            _teamChannels.Clear();
-            foreach (var ch in channels)
+            var expander = new System.Windows.Controls.Expander
             {
-                _teamChannels.Add(ch);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"{Translations.T("teams.error_loading")}: {ex.Message}", Translations.T("common.error"),
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-    }
+                IsExpanded = false,
+                Margin = new Thickness(0, 0, 0, 2),
+            };
 
-    private async void TeamChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (TeamChannelList.SelectedItem is not Channel channel) return;
-        ChannelList.SelectedIndex = -1;
-        await OpenChannelAsync(channel);
+            // Team header
+            var header = new DockPanel();
+            var avatar = new Border
+            {
+                Width = 28, Height = 28, CornerRadius = new CornerRadius(4),
+                Background = (Brush)FindResource("PrimaryBrush"),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            avatar.Child = new TextBlock
+            {
+                Text = team.Name.Length > 0 ? team.Name.Substring(0, 1).ToUpper() : "?",
+                FontSize = 12, FontWeight = FontWeights.Bold,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            header.Children.Add(avatar);
+
+            var nameStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            nameStack.Children.Add(new TextBlock
+            {
+                Text = team.Name, FontSize = 13,
+                Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            nameStack.Children.Add(new TextBlock
+            {
+                Text = $"{team.MemberCount} members", FontSize = 11,
+                Foreground = (Brush)FindResource("TextSecondaryBrush")
+            });
+            header.Children.Add(nameStack);
+
+            var addChBtn = new Button
+            {
+                Content = new TextBlock { Text = "\uE710", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 10 },
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Padding = new Thickness(4, 2, 4, 2), Cursor = Cursors.Hand,
+                ToolTip = Translations.T("teams.new_channel"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Tag = team
+            };
+            addChBtn.Click += NewTeamChannel_Click;
+            DockPanel.SetDock(addChBtn, Dock.Right);
+            header.Children.Insert(0, addChBtn);
+
+            expander.Header = header;
+
+            // Channel list content
+            var channelStack = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
+            expander.Content = channelStack;
+
+            // Load channels when expanded
+            var teamCapture = team;
+            var channelStackCapture = channelStack;
+            expander.Expanded += async (s, ev) =>
+            {
+                channelStackCapture.Children.Clear();
+                try
+                {
+                    var channels = await _api.GetTeamChannelsAsync(teamCapture.Id);
+                    foreach (var ch in channels)
+                    {
+                        var chRow = new Border
+                        {
+                            Padding = new Thickness(10, 6, 10, 6),
+                            Background = Brushes.Transparent,
+                            CornerRadius = new CornerRadius(4),
+                            Cursor = Cursors.Hand
+                        };
+                        var chPanel = new DockPanel();
+                        var chNameBlock = new TextBlock { FontSize = 12, Foreground = (Brush)FindResource("TextPrimaryBrush") };
+                        chNameBlock.Inlines.Add(new Run("# ") { Foreground = (Brush)FindResource("TextSecondaryBrush") });
+                        chNameBlock.Inlines.Add(new Run(ch.Name));
+                        chPanel.Children.Add(chNameBlock);
+
+                        if (ch.UnreadCount > 0)
+                        {
+                            var badge = new TextBlock
+                            {
+                                Text = ch.UnreadCount.ToString(), FontSize = 10,
+                                Foreground = Brushes.White,
+                                Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)),
+                                Padding = new Thickness(4, 1, 4, 1),
+                                HorizontalAlignment = HorizontalAlignment.Right
+                            };
+                            DockPanel.SetDock(badge, Dock.Right);
+                            chPanel.Children.Insert(0, badge);
+                        }
+                        chRow.Child = chPanel;
+
+                        var channelCapture = ch;
+                        chRow.MouseLeftButtonUp += async (_, _) =>
+                        {
+                            ChannelList.SelectedIndex = -1;
+                            await OpenChannelAsync(channelCapture);
+                        };
+                        chRow.MouseEnter += (_, _) => chRow.Background = (Brush)FindResource("HoverBrush");
+                        chRow.MouseLeave += (_, _) => chRow.Background = Brushes.Transparent;
+
+                        channelStackCapture.Children.Add(chRow);
+                    }
+                }
+                catch { }
+            };
+
+            TeamTreeList.Items.Add(expander);
+        }
     }
 
     private async void NewTeamButton_Click(object sender, RoutedEventArgs e)
@@ -1057,10 +1144,8 @@ function insertText(text) {
             {
                 var desc = string.IsNullOrWhiteSpace(descBox.Text) ? null : descBox.Text.Trim();
                 await _api.CreateTeamAsync(nameBox.Text.Trim(), desc);
-                // Reload teams list
-                var teams = await _api.GetTeamsAsync();
-                _teams.Clear();
-                foreach (var t in teams) _teams.Add(t);
+                // Reload teams tree
+                await LoadTeamsAsync();
             }
             catch (Exception ex)
             {
@@ -1072,7 +1157,8 @@ function insertText(text) {
 
     private async void NewTeamChannel_Click(object sender, RoutedEventArgs e)
     {
-        if (TeamList.SelectedItem is not Team team) return;
+        // Get team from button Tag (set when building the tree)
+        if ((sender as FrameworkElement)?.Tag is not Team team) return;
 
         var dialog = new System.Windows.Window
         {
@@ -1112,10 +1198,8 @@ function insertText(text) {
             {
                 var desc = string.IsNullOrWhiteSpace(descBox.Text) ? null : descBox.Text.Trim();
                 await _api.CreateChannelAsync(nameBox.Text.Trim(), "team", desc, team.Id);
-                // Reload team channels
-                var channels = await _api.GetTeamChannelsAsync(team.Id);
-                _teamChannels.Clear();
-                foreach (var ch in channels) _teamChannels.Add(ch);
+                // Reload teams tree
+                await LoadTeamsAsync();
             }
             catch (Exception ex)
             {
@@ -1159,7 +1243,6 @@ function insertText(text) {
     private async void ChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ChannelList.SelectedItem is not Channel channel) return;
-        TeamChannelList.SelectedIndex = -1;
         await OpenChannelAsync(channel);
     }
 
