@@ -234,6 +234,10 @@ public partial class MainWindow : Window
         CtxReply.Content = Translations.T("ctx.reply");
         CtxEdit.Content = Translations.T("ctx.edit");
         CtxDelete.Content = Translations.T("ctx.delete");
+        NewChatBtnLabel.Text = Translations.T("chat.new_channel");
+        NewTeamBtnLabel.Text = Translations.T("teams.new_team");
+        NewChannelBtnLabel.Text = Translations.T("teams.new_channel");
+        CalendarNewEventBtn.Text = Translations.T("calendar.new_event");
     }
 
     // === WYSIWYG Editor ===
