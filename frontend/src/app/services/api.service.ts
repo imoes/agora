@@ -34,6 +34,10 @@ export class ApiService {
     return this.http.delete(`${this.baseUrl}/teams/${teamId}/members/${userId}`);
   }
 
+  leaveTeam(teamId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/teams/${teamId}/leave`, {});
+  }
+
   // Channels
   getChannels(teamId?: string): Observable<any[]> {
     let params = new HttpParams();
