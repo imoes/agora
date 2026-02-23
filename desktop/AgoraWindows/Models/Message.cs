@@ -93,7 +93,10 @@ public class Message
     public string DaySeparatorText { get; set; } = "";
 
     [JsonIgnore]
-    public bool IsNotDaySeparator => !IsDaySeparator;
+    public bool IsLastReadMarker { get; set; } = false;
+
+    [JsonIgnore]
+    public bool IsNotDaySeparator => !IsDaySeparator && !IsLastReadMarker;
 
     // Display helpers
     [JsonIgnore]

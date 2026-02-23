@@ -462,6 +462,7 @@ function insertText(text) {
     {
         _activeNav = "feed";
         SidebarHeader.Text = Translations.T("nav.feed");
+        NewChatBtn.Visibility = Visibility.Collapsed;
         ChannelList.Visibility = Visibility.Collapsed;
         TeamsHeader.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
@@ -482,6 +483,7 @@ function insertText(text) {
     {
         _activeNav = "chat";
         SidebarHeader.Text = Translations.T("chat.chats");
+        NewChatBtn.Visibility = Visibility.Visible;
         ChannelList.Visibility = Visibility.Visible;
         TeamsHeader.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
@@ -508,6 +510,7 @@ function insertText(text) {
     {
         _activeNav = "teams";
         SidebarHeader.Text = Translations.T("teams.teams");
+        NewChatBtn.Visibility = Visibility.Collapsed;
         ChannelList.Visibility = Visibility.Collapsed;
         TeamsHeader.Visibility = Visibility.Visible;
         TeamList.Visibility = Visibility.Visible;
@@ -527,6 +530,7 @@ function insertText(text) {
     {
         _activeNav = "calendar";
         SidebarHeader.Text = Translations.T("nav.calendar");
+        NewChatBtn.Visibility = Visibility.Collapsed;
         ChannelList.Visibility = Visibility.Collapsed;
         TeamsHeader.Visibility = Visibility.Collapsed;
         TeamList.Visibility = Visibility.Collapsed;
@@ -1279,9 +1283,15 @@ function insertText(text) {
         var resultsList = new ListBox { Height = 200, Margin = new Thickness(0, 0, 0, 8) };
         stack.Children.Add(resultsList);
 
-        var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6),
-            HorizontalAlignment = HorizontalAlignment.Right };
-        stack.Children.Add(closeBtn);
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var addBtn = new Button { Content = Translations.T("chat.add_member_btn"), Padding = new Thickness(16, 6, 16, 6),
+            Margin = new Thickness(0, 0, 8, 0), IsEnabled = false,
+            Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)), Foreground = Brushes.White,
+            BorderThickness = new Thickness(0) };
+        var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6) };
+        btnPanel.Children.Add(addBtn);
+        btnPanel.Children.Add(closeBtn);
+        stack.Children.Add(btnPanel);
 
         dlg.Content = stack;
 
@@ -1300,20 +1310,31 @@ function insertText(text) {
             catch { }
         };
 
-        // Double-click to add member
-        resultsList.MouseDoubleClick += async (s, ev) =>
+        resultsList.SelectionChanged += (s, ev) =>
+        {
+            addBtn.IsEnabled = resultsList.SelectedItem != null;
+        };
+
+        // Helper to add selected member
+        async System.Threading.Tasks.Task AddSelectedMember()
         {
             if (resultsList.SelectedItem == null) return;
             dynamic selected = resultsList.SelectedItem;
             try
             {
                 await _api.AddChannelMemberAsync(_currentChannelId, selected.Id);
-                if (resultsList.SelectedItem is System.Windows.Controls.ListBoxItem item)
-                    item.IsEnabled = false;
                 ShowToast(Translations.T("chat.add_member"), $"{selected.DisplayLabel}");
+                resultsList.Items.Remove(resultsList.SelectedItem);
+                addBtn.IsEnabled = false;
             }
             catch { }
-        };
+        }
+
+        // Click add button
+        addBtn.Click += async (s, ev) => await AddSelectedMember();
+
+        // Double-click to add member
+        resultsList.MouseDoubleClick += async (s, ev) => await AddSelectedMember();
 
         closeBtn.Click += (s, ev) => { dlg.Close(); };
         dlg.ShowDialog();
@@ -1375,9 +1396,12 @@ function insertText(text) {
             _chatWs = null;
         }
 
-        // Load messages
+        // Load messages and read position
         try
         {
+            string? lastReadMessageId = null;
+            try { lastReadMessageId = await _api.GetReadPositionAsync(channel.Id); } catch { }
+
             var messages = await _api.GetMessagesAsync(channel.Id);
             _messages.Clear();
 
@@ -1386,6 +1410,7 @@ function insertText(text) {
             foreach (var msg in msgList)
                 SetMessageBubbleProperties(msg);
             InsertDaySeparators(msgList);
+            InsertLastReadMarker(msgList, lastReadMessageId);
             foreach (var msg in msgList)
                 _messages.Add(msg);
             ScrollToBottom();
@@ -1517,6 +1542,43 @@ function insertText(text) {
         {
             messages.Insert(toInsert[i].index + i, toInsert[i].separator);
         }
+    }
+
+    private void InsertLastReadMarker(List<Message> messages, string? lastReadMessageId)
+    {
+        if (string.IsNullOrEmpty(lastReadMessageId)) return;
+
+        // Find the last-read message position
+        int lastReadIndex = -1;
+        for (int i = 0; i < messages.Count; i++)
+        {
+            if (messages[i].Id == lastReadMessageId)
+            {
+                lastReadIndex = i;
+                break;
+            }
+        }
+
+        // Only insert if there are newer messages after the last-read position
+        if (lastReadIndex < 0 || lastReadIndex >= messages.Count - 1) return;
+
+        // Check there's at least one real message after the marker position
+        bool hasNewerMessages = false;
+        for (int i = lastReadIndex + 1; i < messages.Count; i++)
+        {
+            if (!messages[i].IsDaySeparator)
+            {
+                hasNewerMessages = true;
+                break;
+            }
+        }
+        if (!hasNewerMessages) return;
+
+        messages.Insert(lastReadIndex + 1, new Message
+        {
+            IsLastReadMarker = true,
+            DaySeparatorText = Translations.T("chat.new_messages")
+        });
     }
 
     private async System.Threading.Tasks.Task LoadSingleMessageImageAsync(Message msg)

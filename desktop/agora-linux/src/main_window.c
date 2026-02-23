@@ -1576,6 +1576,51 @@ static GtkWidget *create_day_separator(const char *date_str)
     return outer;
 }
 
+/* --- Last-read marker (red line with "Neue Nachrichten" label) --- */
+
+static GtkWidget *create_last_read_marker(const char *text)
+{
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_top(outer, 6);
+    gtk_widget_set_margin_bottom(outer, 6);
+    gtk_widget_set_margin_start(outer, 16);
+    gtk_widget_set_margin_end(outer, 16);
+
+    /* Left red line */
+    GtkWidget *line1 = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_valign(line1, GTK_ALIGN_CENTER);
+    GtkCssProvider *css1 = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css1, "separator { background-color: #E74C3C; min-height: 1px; }", -1, NULL);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(line1),
+        GTK_STYLE_PROVIDER(css1), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css1);
+    gtk_box_pack_start(GTK_BOX(outer), line1, TRUE, TRUE, 0);
+
+    /* Label */
+    GtkWidget *label = gtk_label_new(text);
+    gtk_widget_set_margin_start(label, 12);
+    gtk_widget_set_margin_end(label, 12);
+    PangoAttrList *attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_scale_new(0.85));
+    pango_attr_list_insert(attrs, pango_attr_foreground_new(0xE700, 0x4C00, 0x3C00));
+    pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+    gtk_label_set_attributes(GTK_LABEL(label), attrs);
+    pango_attr_list_unref(attrs);
+    gtk_box_pack_start(GTK_BOX(outer), label, FALSE, FALSE, 0);
+
+    /* Right red line */
+    GtkWidget *line2 = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_valign(line2, GTK_ALIGN_CENTER);
+    GtkCssProvider *css2 = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css2, "separator { background-color: #E74C3C; min-height: 1px; }", -1, NULL);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(line2),
+        GTK_STYLE_PROVIDER(css2), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css2);
+    gtk_box_pack_start(GTK_BOX(outer), line2, TRUE, TRUE, 0);
+
+    return outer;
+}
+
 /* Format a date for the day separator label (e.g. "Montag, 24. Februar 2026") */
 static char *format_day_label(const char *iso_str)
 {
@@ -2231,6 +2276,25 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
 
 static void load_messages(AgoraMainWindow *win, const char *channel_id)
 {
+    /* Fetch last-read position */
+    char *last_read_msg_id = NULL;
+    {
+        char *rp_path = g_strdup_printf("/api/channels/%s/read-position", channel_id);
+        GError *rp_err = NULL;
+        JsonNode *rp_result = agora_api_client_get(win->api, rp_path, &rp_err);
+        g_free(rp_path);
+        if (rp_result) {
+            JsonObject *rp_obj = json_node_get_object(rp_result);
+            if (rp_obj && json_object_has_member(rp_obj, "last_read_message_id") &&
+                !json_object_get_null_member(rp_obj, "last_read_message_id")) {
+                const char *val = json_object_get_string_member(rp_obj, "last_read_message_id");
+                if (val && val[0]) last_read_msg_id = g_strdup(val);
+            }
+            json_node_unref(rp_result);
+        }
+        if (rp_err) g_error_free(rp_err);
+    }
+
     char *path = g_strdup_printf("/api/channels/%s/messages/?limit=50", channel_id);
     GError *error = NULL;
     JsonNode *result = agora_api_client_get(win->api, path, &error);
@@ -2241,6 +2305,7 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
 
     if (!result) {
         if (error) g_error_free(error);
+        g_free(last_read_msg_id);
         return;
     }
 
@@ -2249,6 +2314,24 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
 
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
     AgoraSession *session = agora_app_get_session(app);
+
+    /* Find the index of the last-read message */
+    int last_read_index = -1;
+    if (last_read_msg_id) {
+        for (guint i = 0; i < len; i++) {
+            JsonObject *msg = json_array_get_object_element(arr, i);
+            const char *msg_id = json_object_has_member(msg, "id")
+                ? json_object_get_string_member(msg, "id") : NULL;
+            if (msg_id && g_strcmp0(msg_id, last_read_msg_id) == 0) {
+                last_read_index = (int)i;
+                break;
+            }
+        }
+    }
+    g_free(last_read_msg_id);
+
+    /* Only show marker if there are newer messages after it */
+    gboolean show_marker = (last_read_index >= 0 && last_read_index < (int)len - 1);
 
     int prev_year = 0, prev_month = 0, prev_day = 0;
 
@@ -2276,6 +2359,16 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
                 gtk_list_box_insert(win->message_list, sep_row, -1);
             }
             prev_year = msg_y; prev_month = msg_m; prev_day = msg_d;
+        }
+
+        /* Insert last-read marker after the last-read message */
+        if (show_marker && (int)i == last_read_index + 1) {
+            GtkWidget *marker = create_last_read_marker(T("chat.new_messages"));
+            GtkWidget *marker_row = gtk_list_box_row_new();
+            gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(marker_row), FALSE);
+            gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(marker_row), FALSE);
+            gtk_container_add(GTK_CONTAINER(marker_row), marker);
+            gtk_list_box_insert(win->message_list, marker_row, -1);
         }
 
         GtkWidget *bubble = create_message_bubble(win, msg, is_own);
@@ -2907,6 +3000,17 @@ static void on_add_member_row_activated(GtkListBox *list, GtkListBoxRow *row,
     gtk_widget_set_sensitive(GTK_WIDGET(row), FALSE);
 }
 
+/* --- Add member selection changed callback --- */
+
+static void on_add_member_selection_changed(GtkListBox *list, GtkListBoxRow *row,
+                                            gpointer data)
+{
+    (void)data;
+    GtkWidget *add_btn = g_object_get_data(G_OBJECT(list), "add-btn");
+    if (add_btn)
+        gtk_widget_set_sensitive(add_btn, row != NULL);
+}
+
 /* --- Add member dialog --- */
 
 static void on_add_member_clicked(GtkButton *btn, gpointer data)
@@ -2918,9 +3022,20 @@ static void on_add_member_clicked(GtkButton *btn, gpointer data)
     GtkWidget *dialog = gtk_dialog_new_with_buttons(
         T("chat.add_member"), GTK_WINDOW(win),
         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        T("chat.add_member_btn"), GTK_RESPONSE_ACCEPT,
         T("chat.cancel"), GTK_RESPONSE_CANCEL,
         NULL);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 380, 300);
+
+    /* Style the Add button and disable it initially */
+    GtkWidget *add_btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    gtk_widget_set_sensitive(add_btn, FALSE);
+    GtkCssProvider *btn_css = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(btn_css,
+        "button { background: #6264A7; color: white; border: none; }", -1, NULL);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(add_btn),
+        GTK_STYLE_PROVIDER(btn_css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(btn_css);
 
     GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     gtk_container_set_border_width(GTK_CONTAINER(content), 16);
@@ -2942,8 +3057,22 @@ static void on_add_member_clicked(GtkButton *btn, gpointer data)
     g_signal_connect(results_list, "row-activated",
                      G_CALLBACK(on_add_member_row_activated), win);
 
+    /* Enable/disable Add button based on selection */
+    g_object_set_data(G_OBJECT(results_list), "add-btn", add_btn);
+    g_signal_connect(results_list, "row-selected",
+        G_CALLBACK(on_add_member_selection_changed), NULL);
+
     gtk_widget_show_all(dialog);
-    gtk_dialog_run(GTK_DIALOG(dialog));
+
+    /* Run dialog in a loop to allow adding multiple members */
+    gint response;
+    while ((response = gtk_dialog_run(GTK_DIALOG(dialog))) == GTK_RESPONSE_ACCEPT) {
+        GtkListBoxRow *sel = gtk_list_box_get_selected_row(results_list);
+        if (sel) {
+            on_add_member_row_activated(results_list, sel, win);
+            gtk_widget_set_sensitive(add_btn, FALSE);
+        }
+    }
     gtk_widget_destroy(dialog);
     load_channels(win);
 }

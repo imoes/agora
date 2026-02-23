@@ -159,6 +159,12 @@ public class ApiClient : IDisposable
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<string?> GetReadPositionAsync(string channelId)
+    {
+        var result = await _http.GetFromJsonAsync<Dictionary<string, string?>>($"/api/channels/{channelId}/read-position");
+        return result?.GetValueOrDefault("last_read_message_id");
+    }
+
     // --- Messages ---
 
     public async Task<List<Message>> GetMessagesAsync(string channelId, int limit = 50, string? before = null)
