@@ -1,8 +1,11 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("agora.teams")
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
@@ -71,6 +74,19 @@ async def list_teams(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    logger.warning("[list_teams] user_id=%s", current_user.id)
+
+    # Debug: check raw team memberships for this user
+    debug_memberships = await db.execute(
+        select(TeamMember.team_id, TeamMember.role).where(
+            TeamMember.user_id == current_user.id
+        )
+    )
+    debug_rows = debug_memberships.all()
+    logger.warning("[list_teams] user %s has %d team memberships: %s",
+                   current_user.id, len(debug_rows),
+                   [(str(tid), role) for tid, role in debug_rows])
+
     result = await db.execute(
         select(Team, func.count(TeamMember.id).label("member_count"))
         .join(TeamMember, Team.id == TeamMember.team_id)
@@ -83,6 +99,9 @@ async def list_teams(
         .order_by(Team.name)
     )
     rows = result.all()
+    logger.warning("[list_teams] returning %d teams for user %s: %s",
+                   len(rows), current_user.id,
+                   [(str(t.id), t.name, c) for t, c in rows])
     return [
         TeamOut(
             id=team.id,
@@ -196,6 +215,9 @@ async def add_member(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="User is already a member")
 
+    logger.warning("[add_member] Adding user %s to team %s with role %s",
+                   data.user_id, team_id, data.role)
+
     member = TeamMember(team_id=team_id, user_id=data.user_id, role=data.role)
     db.add(member)
 
@@ -204,6 +226,7 @@ async def add_member(
         select(Channel).where(Channel.team_id == team_id)
     )
     team_channels = channels_result.scalars().all()
+    logger.warning("[add_member] Adding user to %d team channels", len(team_channels))
     for channel in team_channels:
         ch_member = ChannelMember(
             channel_id=channel.id,
@@ -213,6 +236,7 @@ async def add_member(
         db.add(ch_member)
 
     await db.flush()
+    logger.warning("[add_member] Flushed to DB")
 
     # Fetch team name for notification
     team_result = await db.execute(select(Team).where(Team.id == team_id))
@@ -225,13 +249,22 @@ async def add_member(
     # Commit BEFORE sending WebSocket notifications so that when clients
     # reload their team/channel lists the new data is already visible.
     await db.commit()
+    logger.warning("[add_member] Committed to DB")
+
+    # Check if user has notification connection
+    user_id_str = str(data.user_id)
+    has_notif = user_id_str in manager.notification_connections
+    has_channels = user_id_str in manager.user_channels
+    logger.warning("[add_member] User %s: has_notif_ws=%s, has_channel_ws=%s",
+                   user_id_str, has_notif, has_channels)
 
     # Notify added user to refresh their team/channel list
-    await manager.send_to_user(str(data.user_id), {
+    await manager.send_to_user(user_id_str, {
         "type": "team_member_added",
         "team_id": str(team_id),
         "team_name": team.name if team else "",
     })
+    logger.warning("[add_member] Sent team_member_added notification to user %s", user_id_str)
 
     # Broadcast member_added to all team channels so existing members see updated counts
     for channel in team_channels:

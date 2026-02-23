@@ -208,14 +208,30 @@ public partial class MainWindow : Window
 
         Loaded += async (_, _) =>
         {
+            DebugLog("=== APP STARTUP ===");
             await LoadChannelsAsync();
             await LoadTeamsAsync();
+            DebugLog("Connecting notification WebSocket...");
             await ConnectNotificationWsAsync();
+            DebugLog($"Notification WS connected: {_notificationWs.IsConnected}");
             StartReminderPolling();
             await DownloadNotificationSoundAsync();
             await InitializeEditorAsync();
             InitializeWeekGrid();
         };
+    }
+
+    private static readonly string _logFile = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "agora_debug.log");
+
+    private static void DebugLog(string message)
+    {
+        try
+        {
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n";
+            File.AppendAllText(_logFile, line);
+        }
+        catch { }
     }
 
     private void ApplyTranslations()
@@ -1042,17 +1058,22 @@ function insertText(text) {
 
     private async System.Threading.Tasks.Task LoadTeamsAsync()
     {
+        DebugLog("LoadTeamsAsync called");
         try
         {
             var teams = await _api.GetTeamsAsync();
+            DebugLog($"LoadTeamsAsync: API returned {teams.Count} teams");
+            foreach (var t in teams)
+                DebugLog($"  Team: id={t.Id}, name={t.Name}, members={t.MemberCount}");
             _teams.Clear();
             foreach (var t in teams)
                 _teams.Add(t);
             await BuildTeamTreeAsync();
+            DebugLog("LoadTeamsAsync: BuildTeamTreeAsync completed");
         }
-        catch
+        catch (Exception ex)
         {
-            // Teams loading is optional
+            DebugLog($"LoadTeamsAsync ERROR: {ex.Message}\n{ex.StackTrace}");
         }
     }
 
@@ -1296,21 +1317,24 @@ function insertText(text) {
                 .Replace("https://", "wss://")
                 .Replace("http://", "ws://");
             wsUrl = wsUrl.Replace("/api", "") + "/ws/notifications";
+            DebugLog($"ConnectNotificationWsAsync: connecting to {wsUrl}");
             _notificationWs.OnMessage -= OnNotificationMessage;
             _notificationWs.OnMessage += OnNotificationMessage;
             _notificationWs.OnDisconnected -= OnNotificationWsDisconnected;
             _notificationWs.OnDisconnected += OnNotificationWsDisconnected;
             await _notificationWs.ConnectAsync(wsUrl, _api.Token!);
+            DebugLog($"ConnectNotificationWsAsync: connected={_notificationWs.IsConnected}");
         }
-        catch
+        catch (Exception ex)
         {
-            // Notification WS is optional – schedule a reconnect attempt
+            DebugLog($"ConnectNotificationWsAsync ERROR: {ex.Message}");
             ScheduleNotificationWsReconnect();
         }
     }
 
     private void OnNotificationWsDisconnected()
     {
+        DebugLog("Notification WebSocket DISCONNECTED - scheduling reconnect");
         ScheduleNotificationWsReconnect();
     }
 
@@ -1332,9 +1356,11 @@ function insertText(text) {
 
     private void OnNotificationMessage(JsonElement msg)
     {
+        DebugLog($"OnNotificationMessage received: {msg}");
         Dispatcher.Invoke(() =>
         {
             var type = msg.GetProperty("type").GetString();
+            DebugLog($"OnNotificationMessage type={type}");
 
             if (type == "video_call_invite")
             {
@@ -1365,7 +1391,7 @@ function insertText(text) {
             }
             else if (type == "team_member_added")
             {
-                // User was added to a team – reload teams and channels
+                DebugLog(">>> team_member_added received! Reloading teams and channels...");
                 _ = LoadTeamsAsync();
                 _ = LoadChannelsAsync();
             }
