@@ -64,6 +64,9 @@ export class CreateChannelDialogComponent {
             <p>{{ team.description || 'Kein Beschreibung' }}</p>
           </div>
         </div>
+        <button mat-stroked-button color="warn" (click)="leaveTeam()" class="leave-btn">
+          <mat-icon>exit_to_app</mat-icon> Team verlassen
+        </button>
       </div>
 
       <mat-tab-group>
@@ -202,6 +205,14 @@ export class CreateChannelDialogComponent {
     .team-info p {
       margin: 4px 0 0;
       color: var(--text-secondary);
+    }
+    .team-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .leave-btn {
+      flex-shrink: 0;
     }
     .tab-content {
       padding: 16px;
@@ -515,6 +526,20 @@ export class TeamDetailComponent implements OnInit, OnDestroy {
         const detail = err.error?.detail || 'Fehler beim Hinzufuegen';
         this.snackBar.open(detail, 'OK', { duration: 4000 });
         this.addingUserId = null;
+      },
+    });
+  }
+
+  leaveTeam(): void {
+    if (!confirm(`Moechtest du das Team "${this.team?.name}" wirklich verlassen?`)) return;
+    this.apiService.leaveTeam(this.teamId).subscribe({
+      next: () => {
+        this.snackBar.open('Du hast das Team verlassen', 'OK', { duration: 3000 });
+        this.router.navigate(['/teams']);
+      },
+      error: (err) => {
+        const detail = err.error?.detail || 'Fehler beim Verlassen des Teams';
+        this.snackBar.open(detail, 'OK', { duration: 4000 });
       },
     });
   }

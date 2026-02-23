@@ -349,3 +349,67 @@ async def remove_member(
         for cm in ch_members.scalars().all():
             await db.delete(cm)
         await db.flush()
+
+
+@router.post("/{team_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_team(
+    team_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Team).where(Team.id == team_id))
+    team = result.scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    if current_user.id == team.owner_id:
+        raise HTTPException(status_code=400, detail="Team owner cannot leave. Transfer ownership or delete the team.")
+
+    member = await db.execute(
+        select(TeamMember).where(
+            and_(TeamMember.team_id == team_id, TeamMember.user_id == current_user.id)
+        )
+    )
+    tm = member.scalar_one_or_none()
+    if not tm:
+        raise HTTPException(status_code=404, detail="Not a member of this team")
+
+    await db.delete(tm)
+
+    # Remove from team channels
+    ch_members = await db.execute(
+        select(ChannelMember)
+        .join(Channel, ChannelMember.channel_id == Channel.id)
+        .where(and_(Channel.team_id == team_id, ChannelMember.user_id == current_user.id))
+    )
+    for cm in ch_members.scalars().all():
+        await db.delete(cm)
+    await db.flush()
+
+
+@router.get("/debug/all-memberships")
+async def debug_all_memberships(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Temporary debug endpoint to inspect all team memberships."""
+    result = await db.execute(
+        select(TeamMember, Team.name, User.email, User.display_name)
+        .join(Team, TeamMember.team_id == Team.id)
+        .join(User, TeamMember.user_id == User.id)
+    )
+    rows = result.all()
+    logger.warning("[debug] ALL team memberships (%d total):", len(rows))
+    memberships = []
+    for tm, team_name, email, display_name in rows:
+        entry = {
+            "team_id": str(tm.team_id),
+            "team_name": team_name,
+            "user_id": str(tm.user_id),
+            "user_email": email,
+            "display_name": display_name,
+            "role": tm.role,
+        }
+        logger.warning("[debug]   %s", entry)
+        memberships.append(entry)
+    return memberships
