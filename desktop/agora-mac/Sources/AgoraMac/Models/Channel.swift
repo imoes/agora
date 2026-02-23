@@ -54,7 +54,7 @@ struct ChannelMember: Codable, Identifiable {
     let id: String
     let username: String
     let displayName: String
-    let status: String
+    var status: String
     let avatarPath: String?
     let lastReadAt: String?
 
