@@ -2062,6 +2062,7 @@ function insertText(text) {
         }
 
         _ = LoadChannelsAsync();
+        _ = LoadTeamsAsync();
     }
 
     private void HandleChatStatusChange(JsonElement msg)

@@ -2638,6 +2638,7 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
             g_free(count_text);
         }
         load_channels(win);
+        load_teams(win);
     }
     else if (g_strcmp0(msg_type, "typing") == 0) {
         const char *display_name = json_object_has_member(root, "display_name")
