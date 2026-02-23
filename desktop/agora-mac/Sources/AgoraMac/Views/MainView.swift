@@ -539,6 +539,7 @@ extension AppState: WebSocketClientDelegate {
             }
         }
         loadChannels()
+        loadTeams()
     }
 
     private func handleCallInvite(_ data: [String: Any]) {
