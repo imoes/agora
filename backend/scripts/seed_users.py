@@ -11,52 +11,53 @@ Verwendung:
 Die erzeugte user.txt wird von seed_chats.py eingelesen.
 """
 import argparse
-import os
 import sys
 
 import httpx
 
 
 def create_users(
-    base_url: str,
+    client: httpx.Client,
+    admin_token: str,
     count: int,
     prefix: str,
     password: str,
 ) -> list[dict]:
+    """Erstellt Benutzer ueber die Admin-API (funktioniert auch bei deaktivierter Registrierung)."""
     created = []
-    with httpx.Client(base_url=base_url, timeout=30.0) as client:
-        for i in range(1, count + 1):
-            username = f"{prefix}{i:04d}"
-            payload = {
-                "username": username,
-                "email": f"{username}@agora.local",
-                "password": password,
-                "display_name": f"{prefix.title()} {i}",
-            }
+    headers = {"Authorization": f"Bearer {admin_token}"}
 
-            resp = client.post("/api/auth/register", json=payload)
-            if resp.status_code == 201:
-                data = resp.json()
-                user = data["user"]
+    for i in range(1, count + 1):
+        username = f"{prefix}{i:04d}"
+        payload = {
+            "username": username,
+            "email": f"{username}@agora.local",
+            "password": password,
+            "display_name": f"{prefix.title()} {i}",
+        }
+
+        resp = client.post("/api/admin/users", json=payload, headers=headers)
+        if resp.status_code == 201:
+            user = resp.json()
+            user["password"] = password
+            created.append(user)
+            print(f"  [{i}/{count}] Benutzer erstellt: {username}")
+        elif resp.status_code == 409:
+            # User exists - try to login to get the ID
+            login_resp = client.post(
+                "/api/auth/login",
+                json={"username": username, "password": password},
+            )
+            if login_resp.status_code == 200:
+                user = login_resp.json()["user"]
                 user["password"] = password
                 created.append(user)
-                print(f"  [{i}/{count}] Benutzer erstellt: {username}")
-            elif resp.status_code == 409:
-                # User exists - try to login to get the ID
-                login_resp = client.post(
-                    "/api/auth/login",
-                    json={"username": username, "password": password},
-                )
-                if login_resp.status_code == 200:
-                    user = login_resp.json()["user"]
-                    user["password"] = password
-                    created.append(user)
-                print(f"  [{i}/{count}] Bereits vorhanden: {username} (uebersprungen)")
-            else:
-                print(
-                    f"  [{i}/{count}] FEHLER bei {username}: "
-                    f"{resp.status_code} - {resp.text}"
-                )
+            print(f"  [{i}/{count}] Bereits vorhanden: {username} (uebersprungen)")
+        else:
+            print(
+                f"  [{i}/{count}] FEHLER bei {username}: "
+                f"{resp.status_code} - {resp.text}"
+            )
 
     return created
 
@@ -87,38 +88,23 @@ def write_user_file(users: list[dict], admin_user: dict | None, filepath: str) -
     print(f"Benutzerliste geschrieben: {filepath}")
 
 
-def ensure_admin(base_url: str, admin_password: str) -> dict | None:
-    """Erstellt oder findet den Admin-Benutzer und gibt seine Daten zurueck."""
-    admin_data = {
-        "username": "admin",
-        "email": "admin@agora.local",
-        "password": admin_password,
-        "display_name": "Administrator",
-    }
+def login_admin(client: httpx.Client, admin_password: str) -> tuple[dict | None, str | None]:
+    """Meldet den Admin-Benutzer an und gibt (user_dict, token) zurueck."""
+    login_resp = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": admin_password},
+    )
+    if login_resp.status_code == 200:
+        data = login_resp.json()
+        user = data["user"]
+        user["password"] = admin_password
+        token = data["access_token"]
+        print("  Admin angemeldet: admin")
+        return user, token
 
-    with httpx.Client(base_url=base_url, timeout=30.0) as client:
-        # Versuche Admin zu registrieren
-        resp = client.post("/api/auth/register", json=admin_data)
-        if resp.status_code == 201:
-            user = resp.json()["user"]
-            user["password"] = admin_password
-            print("  Admin-Benutzer erstellt: admin")
-            return user
-
-        # Admin existiert bereits - einloggen
-        login_resp = client.post(
-            "/api/auth/login",
-            json={"username": "admin", "password": admin_password},
-        )
-        if login_resp.status_code == 200:
-            user = login_resp.json()["user"]
-            user["password"] = admin_password
-            print("  Admin-Benutzer vorhanden: admin (uebersprungen)")
-            return user
-
-        print("  WARNUNG: Admin-Benutzer konnte nicht erstellt/gefunden werden.")
-        print("           Erstellen Sie den Admin mit create_admin.py")
-        return None
+    print("  FEHLER: Admin-Login fehlgeschlagen.")
+    print("          Erstellen Sie den Admin mit create_admin.py")
+    return None, None
 
 
 def main():
@@ -167,13 +153,16 @@ def main():
     print(f"  Praefix: {args.prefix}, Passwort: {args.password}")
     print()
 
-    # 1. Admin-Benutzer erstellen/finden
-    print("Admin-Benutzer ...")
-    admin_user = ensure_admin(args.base_url, args.admin_password)
+    with httpx.Client(base_url=args.base_url, timeout=30.0) as client:
+        # 1. Admin anmelden
+        print("Admin-Benutzer ...")
+        admin_user, admin_token = login_admin(client, args.admin_password)
+        if not admin_token:
+            sys.exit(1)
 
-    # 2. Testbenutzer erstellen
-    print()
-    users = create_users(args.base_url, args.count, args.prefix, args.password)
+        # 2. Testbenutzer ueber Admin-API erstellen
+        print()
+        users = create_users(client, admin_token, args.count, args.prefix, args.password)
 
     # 3. user.txt schreiben
     print()
