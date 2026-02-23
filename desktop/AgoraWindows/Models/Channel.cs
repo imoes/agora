@@ -25,6 +25,9 @@ public class Channel
     [JsonPropertyName("member_count")]
     public int MemberCount { get; set; }
 
+    [JsonIgnore]
+    public string MemberCountDisplay => $"{MemberCount} {Services.Translations.T("chat.members")}";
+
     [JsonPropertyName("unread_count")]
     public int UnreadCount { get; set; }
 

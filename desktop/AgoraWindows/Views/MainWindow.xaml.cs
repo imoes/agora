@@ -1095,7 +1095,7 @@ function insertText(text) {
             });
             nameStack.Children.Add(new TextBlock
             {
-                Text = $"{team.MemberCount} members", FontSize = 11,
+                Text = $"{team.MemberCount} {Translations.T("chat.members")}", FontSize = 11,
                 Foreground = (Brush)FindResource("TextSecondaryBrush")
             });
             header.Children.Add(nameStack);
@@ -1858,6 +1858,17 @@ function insertText(text) {
                 case "channel_deleted":
                     HandleChannelDeleted(msg);
                     break;
+                case "member_added":
+                case "member_left":
+                    HandleMemberChange(msg);
+                    break;
+                case "status_change":
+                    HandleChatStatusChange(msg);
+                    break;
+                case "user_statuses":
+                case "user_joined":
+                    HandleUserStatuses(msg);
+                    break;
             }
         });
     }
@@ -2019,6 +2030,77 @@ function insertText(text) {
                 ChatView.Visibility = Visibility.Collapsed;
                 _messages.Clear();
             }
+        }
+    }
+
+    private void HandleMemberChange(JsonElement msg)
+    {
+        var memberCount = msg.TryGetProperty("member_count", out var mc) ? mc.GetInt32() : -1;
+        var channelId = msg.TryGetProperty("channel_id", out var cid) ? cid.GetString() : _currentChannelId;
+
+        if (memberCount >= 0 && channelId != null)
+        {
+            var channel = _channels.FirstOrDefault(c => c.Id == channelId);
+            if (channel != null)
+            {
+                channel.MemberCount = memberCount;
+                var idx = _channels.IndexOf(channel);
+                _channels.RemoveAt(idx);
+                _channels.Insert(idx, channel);
+            }
+
+            if (channelId == _currentChannelId)
+            {
+                ChatSubtitle.Text = $"{memberCount} {Translations.T("chat.members")}";
+            }
+        }
+
+        _ = LoadChannelsAsync();
+    }
+
+    private void HandleChatStatusChange(JsonElement msg)
+    {
+        var userId = msg.TryGetProperty("user_id", out var uid) ? uid.GetString() : null;
+        var status = msg.TryGetProperty("status", out var st) ? st.GetString() : "offline";
+        if (userId != null)
+        {
+            _userStatuses[userId] = status ?? "offline";
+            UpdateChatStatusIndicator();
+            for (int i = 0; i < _messages.Count; i++)
+            {
+                if (_messages[i].SenderId == userId)
+                {
+                    _messages[i].SenderStatus = status ?? "offline";
+                    var m = _messages[i];
+                    _messages.RemoveAt(i);
+                    _messages.Insert(i, m);
+                }
+            }
+        }
+    }
+
+    private void HandleUserStatuses(JsonElement msg)
+    {
+        if (msg.TryGetProperty("user_statuses", out var statuses) &&
+            statuses.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var prop in statuses.EnumerateObject())
+            {
+                var userId = prop.Name;
+                var status = prop.Value.GetString() ?? "offline";
+                _userStatuses[userId] = status;
+                for (int i = 0; i < _messages.Count; i++)
+                {
+                    if (_messages[i].SenderId == userId)
+                    {
+                        _messages[i].SenderStatus = status;
+                        var m = _messages[i];
+                        _messages.RemoveAt(i);
+                        _messages.Insert(i, m);
+                    }
+                }
+            }
+            UpdateChatStatusIndicator();
         }
     }
 

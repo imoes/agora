@@ -2622,6 +2622,17 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
             g_free(notif_body);
         }
     }
+    else if (g_strcmp0(msg_type, "member_added") == 0 ||
+             g_strcmp0(msg_type, "member_left") == 0) {
+        /* Update member count display and reload channel list */
+        if (json_object_has_member(root, "member_count") && win->chat_subtitle) {
+            gint64 new_count = json_object_get_int_member(root, "member_count");
+            char *count_text = g_strdup_printf("%ld %s", (long)new_count, T("chat.members"));
+            gtk_label_set_text(win->chat_subtitle, count_text);
+            g_free(count_text);
+        }
+        load_channels(win);
+    }
     else if (g_strcmp0(msg_type, "typing") == 0) {
         const char *display_name = json_object_has_member(root, "display_name")
             ? json_object_get_string_member(root, "display_name") : NULL;
@@ -2631,6 +2642,13 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
             gtk_widget_show(GTK_WIDGET(win->typing_label));
             g_free(typing_text);
         }
+    }
+    else if (g_strcmp0(msg_type, "status_change") == 0 ||
+             g_strcmp0(msg_type, "user_statuses") == 0 ||
+             g_strcmp0(msg_type, "user_joined") == 0) {
+        /* Reload messages to update status dots */
+        if (win->current_channel_id)
+            load_messages(win, win->current_channel_id);
     }
 
     g_object_unref(parser);
