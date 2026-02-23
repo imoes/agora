@@ -201,9 +201,8 @@
                                                            Foreground="{StaticResource TextPrimaryBrush}"
                                                            TextTrimming="CharacterEllipsis" />
                                             </DockPanel>
-                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
-                                                <Run Text="{Binding MemberCount}" /><Run Text=" members" />
-                                            </TextBlock>
+                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Text="{Binding MemberCountDisplay}" />
                                         </StackPanel>
                                     </DockPanel>
                                 </DataTemplate>

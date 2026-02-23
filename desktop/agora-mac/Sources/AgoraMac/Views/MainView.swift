@@ -402,7 +402,7 @@ extension AppState: WebSocketClientDelegate {
         case "member_added", "member_left":
             handleMemberChange(data)
         case "user_joined", "user_statuses":
-            break // Status updates handled in UI
+            handleUserStatuses(data)
         case "status_change":
             handleStatusChange(data)
         case "video_call_invite":
@@ -548,6 +548,19 @@ extension AppState: WebSocketClientDelegate {
             title: T("notify.incoming_call"),
             body: "\(displayName) \(T("notify.calling"))"
         )
+    }
+
+    private func handleUserStatuses(_ data: [String: Any]) {
+        guard let statuses = data["user_statuses"] as? [String: String] else { return }
+        for (userId, status) in statuses {
+            userStatuses[userId] = status
+            if let idx = currentChannelMembers.firstIndex(where: { $0.id == userId }) {
+                currentChannelMembers[idx].status = status
+            }
+            for i in messages.indices where messages[i].senderId == userId {
+                messages[i].senderStatus = status
+            }
+        }
     }
 
     private func handleStatusChange(_ data: [String: Any]) {
