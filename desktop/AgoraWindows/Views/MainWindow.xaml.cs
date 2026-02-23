@@ -1286,7 +1286,7 @@ function insertText(text) {
         var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var addBtn = new Button { Content = Translations.T("chat.add_member_btn"), Padding = new Thickness(16, 6, 16, 6),
             Margin = new Thickness(0, 0, 8, 0), IsEnabled = false,
-            Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)), Foreground = Brushes.White,
+            Background = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)), Foreground = Brushes.White,
             BorderThickness = new Thickness(0) };
         var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6) };
         btnPanel.Children.Add(addBtn);
@@ -1313,6 +1313,9 @@ function insertText(text) {
         resultsList.SelectionChanged += (s, ev) =>
         {
             addBtn.IsEnabled = resultsList.SelectedItem != null;
+            addBtn.Background = addBtn.IsEnabled
+                ? new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7))
+                : new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
         };
 
         // Helper to add selected member
@@ -1326,6 +1329,7 @@ function insertText(text) {
                 ShowToast(Translations.T("chat.add_member"), $"{selected.DisplayLabel}");
                 resultsList.Items.Remove(resultsList.SelectedItem);
                 addBtn.IsEnabled = false;
+                addBtn.Background = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
             }
             catch { }
         }

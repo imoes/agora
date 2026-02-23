@@ -458,9 +458,6 @@ import Quill from 'quill';
       display: flex;
       gap: 4px;
     }
-    .header-actions mat-icon {
-      color: #757575;
-    }
     .files-panel {
       position: absolute;
       right: 0;
