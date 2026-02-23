@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.channel import Channel, ChannelMember
 from app.models.feed import FeedEvent
-from app.models.team import Team
+from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
 from app.schemas.user import UserOut as _UserOut
@@ -490,6 +490,24 @@ async def add_channel_member(
 
     member = ChannelMember(channel_id=channel_id, user_id=user_id)
     db.add(member)
+
+    # If the channel belongs to a team, ensure the user is also a team member
+    if channel.team_id is not None:
+        existing_team_member = await db.execute(
+            select(TeamMember).where(
+                and_(
+                    TeamMember.team_id == channel.team_id,
+                    TeamMember.user_id == user_id,
+                )
+            )
+        )
+        if not existing_team_member.scalar_one_or_none():
+            db.add(TeamMember(
+                team_id=channel.team_id,
+                user_id=user_id,
+                role="member",
+            ))
+
     await db.flush()
 
     # Update channel name dynamically
@@ -519,6 +537,16 @@ async def add_channel_member(
             "channel_name": channel.name,
         },
     )
+
+    # If the user was auto-added to a team, notify them so their UI refreshes
+    if channel.team_id is not None:
+        team_result = await db.execute(select(Team).where(Team.id == channel.team_id))
+        team = team_result.scalar_one_or_none()
+        await manager.send_to_user(str(user_id), {
+            "type": "team_member_added",
+            "team_id": str(channel.team_id),
+            "team_name": team.name if team else "",
+        })
 
     return {"status": "ok", "member_count": new_count}
 
