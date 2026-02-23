@@ -880,16 +880,25 @@
                                             </Style>
                                         </Border.Style>
                                         <DockPanel>
-                                            <!-- Avatar circle -->
-                                            <Border DockPanel.Dock="Left" Width="36" Height="36"
-                                                    CornerRadius="18" Margin="0,2,10,0"
-                                                    Background="{Binding AvatarColor}"
-                                                    VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding AvatarInitial}" FontSize="15"
-                                                           FontWeight="SemiBold" Foreground="White"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center" />
-                                            </Border>
+                                            <!-- Avatar circle with status dot -->
+                                            <Grid DockPanel.Dock="Left" Width="40" Height="40"
+                                                  Margin="0,2,6,0" VerticalAlignment="Top">
+                                                <Border Width="36" Height="36"
+                                                        CornerRadius="18"
+                                                        Background="{Binding AvatarColor}"
+                                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                    <TextBlock Text="{Binding AvatarInitial}" FontSize="15"
+                                                               FontWeight="SemiBold" Foreground="White"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+                                                <Ellipse Width="10" Height="10"
+                                                         Fill="{Binding StatusDotColor}"
+                                                         Stroke="White" StrokeThickness="2"
+                                                         HorizontalAlignment="Right"
+                                                         VerticalAlignment="Bottom"
+                                                         Margin="0,0,2,0" />
+                                            </Grid>
                                             <!-- Content column -->
                                             <StackPanel>
                                                 <!-- Reply quote -->

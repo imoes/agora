@@ -184,7 +184,7 @@ struct MessageBubbleView: View {
 
             // Message header
             HStack(alignment: .firstTextBaseline) {
-                // Avatar
+                // Avatar with status dot
                 Circle()
                     .fill(avatarColor)
                     .frame(width: 28, height: 28)
@@ -193,6 +193,17 @@ struct MessageBubbleView: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.white)
                     )
+                    .overlay(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(messageStatusColor)
+                            .frame(width: 10, height: 10)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white, lineWidth: 2)
+                                    .frame(width: 10, height: 10)
+                            )
+                            .offset(x: 1, y: 1)
+                    }
 
                 Text(message.senderName)
                     .font(.system(size: 13, weight: .semibold))
@@ -289,5 +300,14 @@ struct MessageBubbleView: View {
         let hash = abs(message.senderId.hashValue)
         let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint]
         return colors[hash % colors.count]
+    }
+
+    private var messageStatusColor: Color {
+        switch message.senderStatus {
+        case "online": return Color(red: 0, green: 0.784, blue: 0.318)
+        case "busy", "dnd": return Color(red: 0.769, green: 0.192, blue: 0.294)
+        case "away": return Color(red: 0.988, green: 0.729, blue: 0.016)
+        default: return Color(red: 0.576, green: 0.576, blue: 0.561)
+        }
     }
 }

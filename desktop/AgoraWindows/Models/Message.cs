@@ -84,6 +84,21 @@ public class Message
     public string AvatarInitial { get; set; } = "?";
 
     [JsonIgnore]
+    public Brush StatusDotColor
+    {
+        get
+        {
+            return SenderStatus switch
+            {
+                "online" => new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x51)),
+                "busy" or "dnd" => new SolidColorBrush(Color.FromRgb(0xC4, 0x31, 0x4B)),
+                "away" => new SolidColorBrush(Color.FromRgb(0xFC, 0xBA, 0x04)),
+                _ => new SolidColorBrush(Color.FromRgb(0x93, 0x93, 0x8F)),
+            };
+        }
+    }
+
+    [JsonIgnore]
     public string FormattedTime { get; set; } = "";
 
     [JsonIgnore]

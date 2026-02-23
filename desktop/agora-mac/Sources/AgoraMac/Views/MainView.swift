@@ -558,6 +558,10 @@ extension AppState: WebSocketClientDelegate {
         if let idx = currentChannelMembers.firstIndex(where: { $0.id == userId }) {
             currentChannelMembers[idx].status = status
         }
+        // Update status dots on existing messages
+        for i in messages.indices where messages[i].senderId == userId {
+            messages[i].senderStatus = status
+        }
     }
 }
 
