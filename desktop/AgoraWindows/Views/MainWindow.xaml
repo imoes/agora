@@ -250,8 +250,16 @@
                         <!-- Team channels (shown when a team is selected) -->
                         <Border x:Name="TeamChannelsBorder" Padding="8,4,8,8" Visibility="Collapsed">
                             <StackPanel>
-                                <TextBlock x:Name="TeamChannelsHeader" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{StaticResource PrimaryBrush}" Margin="8,4,0,4" />
+                                <DockPanel Margin="8,4,0,4">
+                                    <TextBlock x:Name="TeamChannelsHeader" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" />
+                                    <Button DockPanel.Dock="Right" Content="+" FontSize="14"
+                                            Click="NewTeamChannel_Click" Cursor="Hand"
+                                            ToolTip="New Channel" HorizontalAlignment="Right"
+                                            Width="24" Height="24" Padding="0"
+                                            Background="Transparent" BorderThickness="0"
+                                            Foreground="{StaticResource TextSecondaryBrush}" />
+                                </DockPanel>
                                 <ListBox x:Name="TeamChannelList" BorderThickness="0"
                                          SelectionChanged="TeamChannelList_SelectionChanged"
                                          Background="Transparent">
