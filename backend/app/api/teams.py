@@ -390,7 +390,6 @@ async def leave_team(
 @router.get("/debug/all-memberships")
 async def debug_all_memberships(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Temporary debug endpoint to inspect all team memberships."""
     result = await db.execute(
