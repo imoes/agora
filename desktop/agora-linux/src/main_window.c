@@ -63,6 +63,10 @@ struct _AgoraMainWindow {
     SoupWebsocketConnection *ws_conn;
     SoupSession *ws_session;
 
+    /* Notification WebSocket */
+    SoupWebsocketConnection *notif_ws_conn;
+    SoupSession *notif_ws_session;
+
     /* Event reminder */
     GtkWidget *reminder_bar;
     GtkLabel *reminder_title_label;
@@ -95,6 +99,8 @@ G_DEFINE_TYPE(AgoraMainWindow, agora_main_window, GTK_TYPE_APPLICATION_WINDOW)
 /* Forward declarations */
 static void connect_channel_ws(AgoraMainWindow *win, const char *channel_id);
 static void disconnect_channel_ws(AgoraMainWindow *win);
+static void connect_notification_ws(AgoraMainWindow *win);
+static void disconnect_notification_ws(AgoraMainWindow *win);
 static void play_notification_sound(AgoraMainWindow *win);
 static void download_notification_sound(AgoraMainWindow *win);
 static void show_notification(const char *title, const char *body);
@@ -2731,6 +2737,125 @@ static void disconnect_channel_ws(AgoraMainWindow *win)
     }
 }
 
+/* --- Notification WebSocket --- */
+
+static void on_notif_ws_message(SoupWebsocketConnection *conn,
+                                 SoupWebsocketDataType type,
+                                 GBytes *message,
+                                 gpointer user_data)
+{
+    (void)conn;
+    if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
+
+    gsize len;
+    const char *data = g_bytes_get_data(message, &len);
+
+    JsonParser *parser = json_parser_new();
+    if (!json_parser_load_from_data(parser, data, (gssize)len, NULL)) {
+        g_object_unref(parser);
+        return;
+    }
+
+    JsonNode *root_node = json_parser_get_root(parser);
+    if (!root_node || !JSON_NODE_HOLDS_OBJECT(root_node)) {
+        g_object_unref(parser);
+        return;
+    }
+
+    JsonObject *root = json_node_get_object(root_node);
+    const char *msg_type = json_object_get_string_member(root, "type");
+
+    if (g_strcmp0(msg_type, "team_member_added") == 0) {
+        /* User was added to a team – reload teams and channels */
+        load_teams(win);
+        load_channels(win);
+    }
+    else if (g_strcmp0(msg_type, "status_change") == 0) {
+        /* Reload messages to update status dots */
+        if (win->current_channel_id)
+            load_messages(win, win->current_channel_id);
+    }
+
+    g_object_unref(parser);
+}
+
+static void on_notif_ws_closed(SoupWebsocketConnection *conn, gpointer user_data)
+{
+    (void)conn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
+    if (win->notif_ws_conn) {
+        g_object_unref(win->notif_ws_conn);
+        win->notif_ws_conn = NULL;
+    }
+}
+
+static void on_notif_ws_connected(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    (void)source;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(user_data);
+    GError *error = NULL;
+
+    win->notif_ws_conn = soup_session_websocket_connect_finish(win->notif_ws_session, result, &error);
+    if (!win->notif_ws_conn) {
+        if (error) {
+            g_warning("Notification WebSocket connection failed: %s", error->message);
+            g_error_free(error);
+        }
+        return;
+    }
+
+    g_signal_connect(win->notif_ws_conn, "message", G_CALLBACK(on_notif_ws_message), win);
+    g_signal_connect(win->notif_ws_conn, "closed", G_CALLBACK(on_notif_ws_closed), win);
+}
+
+static void connect_notification_ws(AgoraMainWindow *win)
+{
+    disconnect_notification_ws(win);
+
+    AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
+    AgoraSession *session = agora_app_get_session(app);
+
+    /* Build WebSocket URL */
+    char *ws_url;
+    if (g_str_has_prefix(session->base_url, "https://")) {
+        ws_url = g_strdup_printf("wss://%s/ws/notifications?token=%s",
+            session->base_url + 8, session->token);
+    } else if (g_str_has_prefix(session->base_url, "http://")) {
+        ws_url = g_strdup_printf("ws://%s/ws/notifications?token=%s",
+            session->base_url + 7, session->token);
+    } else {
+        return;
+    }
+
+    if (!win->notif_ws_session) {
+        win->notif_ws_session = soup_session_new();
+    }
+
+    SoupMessage *msg = soup_message_new("GET", ws_url);
+    g_free(ws_url);
+    if (!msg) return;
+
+    g_signal_connect(msg, "accept-certificate",
+                     G_CALLBACK(accept_cert_cb), NULL);
+
+    soup_session_websocket_connect_async(win->notif_ws_session, msg,
+                                          NULL, NULL, G_PRIORITY_DEFAULT,
+                                          NULL, on_notif_ws_connected, win);
+    g_object_unref(msg);
+}
+
+static void disconnect_notification_ws(AgoraMainWindow *win)
+{
+    if (win->notif_ws_conn) {
+        if (soup_websocket_connection_get_state(win->notif_ws_conn) == SOUP_WEBSOCKET_STATE_OPEN) {
+            soup_websocket_connection_close(win->notif_ws_conn, SOUP_WEBSOCKET_CLOSE_NORMAL, NULL);
+        }
+        g_object_unref(win->notif_ws_conn);
+        win->notif_ws_conn = NULL;
+    }
+}
+
 /* --- Notification sound --- */
 
 static void on_gst_bus_message(GstBus *bus, GstMessage *msg, gpointer data)
@@ -4422,7 +4547,9 @@ static void agora_main_window_finalize(GObject *obj)
 {
     AgoraMainWindow *win = AGORA_MAIN_WINDOW(obj);
     disconnect_channel_ws(win);
+    disconnect_notification_ws(win);
     if (win->ws_session) g_object_unref(win->ws_session);
+    if (win->notif_ws_session) g_object_unref(win->notif_ws_session);
     agora_api_client_free(win->api);
     g_free(win->current_channel_id);
     g_free(win->current_channel_name);
@@ -5170,6 +5297,9 @@ GtkWidget *agora_main_window_new(AgoraApp *app)
 
     /* Download notification sound */
     download_notification_sound(win);
+
+    /* Connect notification WebSocket for real-time updates */
+    connect_notification_ws(win);
 
     /* Load channels, teams, and feed */
     load_channels(win);
