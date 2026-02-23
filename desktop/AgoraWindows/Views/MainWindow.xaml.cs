@@ -548,6 +548,7 @@ function insertText(text) {
     // === Feed ===
 
     private bool _feedUnreadOnly = false;
+    private int _feedUnreadCount = 0;
 
     private async System.Threading.Tasks.Task LoadFeedAsync()
     {
@@ -566,6 +567,8 @@ function insertText(text) {
             var unread = feed.UnreadCount;
             var total = _feedEvents.Count;
             FeedSidebarCount.Text = $"{total} Eintraege" + (unread > 0 ? $"\n{unread} ungelesen" : "");
+            _feedUnreadCount = unread;
+            UpdateNavBadges();
         }
         catch { }
     }
@@ -960,11 +963,38 @@ function insertText(text) {
                     continue;
                 _channels.Add(ch);
             }
+            UpdateNavBadges();
         }
         catch (Exception ex)
         {
             MessageBox.Show($"{Translations.T("chat.error_loading_chats")}: {ex.Message}", Translations.T("common.error"),
                 MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void UpdateNavBadges()
+    {
+        // Feed badge
+        if (_feedUnreadCount > 0)
+        {
+            NavFeedBadge.Text = _feedUnreadCount > 99 ? "99+" : _feedUnreadCount.ToString();
+            NavFeedBadge.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            NavFeedBadge.Visibility = Visibility.Collapsed;
+        }
+
+        // Chat badge: total unread across all non-team channels
+        var chatUnread = _channels.Sum(c => c.UnreadCount);
+        if (chatUnread > 0)
+        {
+            NavChatBadge.Text = chatUnread > 99 ? "99+" : chatUnread.ToString();
+            NavChatBadge.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            NavChatBadge.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -2465,16 +2495,30 @@ function insertText(text) {
         catch { }
     }
 
+    private bool _notificationSoundLoaded = false;
+
     private void PlayNotificationSound()
     {
         if (_notificationSoundPath == null || !File.Exists(_notificationSoundPath)) return;
 
         try
         {
-            _notificationPlayer ??= new MediaPlayer();
-            _notificationPlayer.Open(new Uri(_notificationSoundPath));
-            _notificationPlayer.Position = TimeSpan.Zero;
-            _notificationPlayer.Play();
+            if (_notificationPlayer == null)
+            {
+                _notificationPlayer = new MediaPlayer();
+                _notificationPlayer.MediaOpened += (_, _) =>
+                {
+                    _notificationSoundLoaded = true;
+                    _notificationPlayer.Play();
+                };
+                _notificationPlayer.Open(new Uri(_notificationSoundPath));
+            }
+            else if (_notificationSoundLoaded)
+            {
+                _notificationPlayer.Stop();
+                _notificationPlayer.Position = TimeSpan.Zero;
+                _notificationPlayer.Play();
+            }
         }
         catch { }
     }
