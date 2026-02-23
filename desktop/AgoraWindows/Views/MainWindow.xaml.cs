@@ -1017,11 +1017,13 @@ function insertText(text) {
     private async System.Threading.Tasks.Task BuildTeamTreeAsync()
     {
         TeamTreeList.Items.Clear();
+        var totalTeamUnread = 0;
+
         foreach (var team in _teams)
         {
             var expander = new System.Windows.Controls.Expander
             {
-                IsExpanded = false,
+                IsExpanded = true,
                 Margin = new Thickness(0, 0, 0, 2),
             };
 
@@ -1072,65 +1074,70 @@ function insertText(text) {
 
             expander.Header = header;
 
-            // Channel list content
+            // Channel list content - load immediately
             var channelStack = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
-            expander.Content = channelStack;
-
-            // Load channels when expanded
-            var teamCapture = team;
-            var channelStackCapture = channelStack;
-            expander.Expanded += async (s, ev) =>
+            try
             {
-                channelStackCapture.Children.Clear();
-                try
+                var channels = await _api.GetTeamChannelsAsync(team.Id);
+                foreach (var ch in channels)
                 {
-                    var channels = await _api.GetTeamChannelsAsync(teamCapture.Id);
-                    foreach (var ch in channels)
+                    totalTeamUnread += ch.UnreadCount;
+
+                    var chRow = new Border
                     {
-                        var chRow = new Border
+                        Padding = new Thickness(10, 6, 10, 6),
+                        Background = Brushes.Transparent,
+                        CornerRadius = new CornerRadius(4),
+                        Cursor = Cursors.Hand
+                    };
+                    var chPanel = new DockPanel();
+                    var chNameBlock = new TextBlock { FontSize = 12, Foreground = (Brush)FindResource("TextPrimaryBrush") };
+                    chNameBlock.Inlines.Add(new Run("# ") { Foreground = (Brush)FindResource("TextSecondaryBrush") });
+                    chNameBlock.Inlines.Add(new Run(ch.Name));
+                    chPanel.Children.Add(chNameBlock);
+
+                    if (ch.UnreadCount > 0)
+                    {
+                        var badge = new TextBlock
                         {
-                            Padding = new Thickness(10, 6, 10, 6),
-                            Background = Brushes.Transparent,
-                            CornerRadius = new CornerRadius(4),
-                            Cursor = Cursors.Hand
+                            Text = ch.UnreadCount.ToString(), FontSize = 10,
+                            Foreground = Brushes.White,
+                            Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)),
+                            Padding = new Thickness(4, 1, 4, 1),
+                            HorizontalAlignment = HorizontalAlignment.Right
                         };
-                        var chPanel = new DockPanel();
-                        var chNameBlock = new TextBlock { FontSize = 12, Foreground = (Brush)FindResource("TextPrimaryBrush") };
-                        chNameBlock.Inlines.Add(new Run("# ") { Foreground = (Brush)FindResource("TextSecondaryBrush") });
-                        chNameBlock.Inlines.Add(new Run(ch.Name));
-                        chPanel.Children.Add(chNameBlock);
-
-                        if (ch.UnreadCount > 0)
-                        {
-                            var badge = new TextBlock
-                            {
-                                Text = ch.UnreadCount.ToString(), FontSize = 10,
-                                Foreground = Brushes.White,
-                                Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)),
-                                Padding = new Thickness(4, 1, 4, 1),
-                                HorizontalAlignment = HorizontalAlignment.Right
-                            };
-                            DockPanel.SetDock(badge, Dock.Right);
-                            chPanel.Children.Insert(0, badge);
-                        }
-                        chRow.Child = chPanel;
-
-                        var channelCapture = ch;
-                        chRow.MouseLeftButtonUp += async (_, _) =>
-                        {
-                            ChannelList.SelectedIndex = -1;
-                            await OpenChannelAsync(channelCapture);
-                        };
-                        chRow.MouseEnter += (_, _) => chRow.Background = (Brush)FindResource("HoverBrush");
-                        chRow.MouseLeave += (_, _) => chRow.Background = Brushes.Transparent;
-
-                        channelStackCapture.Children.Add(chRow);
+                        DockPanel.SetDock(badge, Dock.Right);
+                        chPanel.Children.Insert(0, badge);
                     }
-                }
-                catch { }
-            };
+                    chRow.Child = chPanel;
 
+                    var channelCapture = ch;
+                    chRow.MouseLeftButtonUp += async (_, _) =>
+                    {
+                        ChannelList.SelectedIndex = -1;
+                        await OpenChannelAsync(channelCapture);
+                    };
+                    chRow.MouseEnter += (_, _) => chRow.Background = (Brush)FindResource("HoverBrush");
+                    chRow.MouseLeave += (_, _) => chRow.Background = Brushes.Transparent;
+
+                    channelStack.Children.Add(chRow);
+                }
+            }
+            catch { }
+
+            expander.Content = channelStack;
             TeamTreeList.Items.Add(expander);
+        }
+
+        // Update Teams nav badge
+        if (totalTeamUnread > 0)
+        {
+            NavTeamsBadge.Text = totalTeamUnread > 99 ? "99+" : totalTeamUnread.ToString();
+            NavTeamsBadge.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            NavTeamsBadge.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -1440,13 +1447,19 @@ function insertText(text) {
             dynamic selected = resultsList.SelectedItem;
             try
             {
-                await _api.AddChannelMemberAsync(_currentChannelId, selected.Id);
+                await _api.AddChannelMemberAsync(_currentChannelId!, selected.Id);
                 ShowToast(Translations.T("chat.add_member"), $"{selected.DisplayLabel}");
                 resultsList.Items.Remove(resultsList.SelectedItem);
                 addBtn.IsEnabled = false;
                 addBtn.Background = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
             }
-            catch { }
+            catch (HttpRequestException ex)
+            {
+                MessageBox.Show(
+                    $"{Translations.T("chat.add_member")}: {ex.Message}",
+                    Translations.T("common.error"),
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         // Click add button
