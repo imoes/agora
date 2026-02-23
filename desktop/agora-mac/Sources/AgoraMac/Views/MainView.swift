@@ -9,6 +9,7 @@ class AppState: ObservableObject {
     @Published var channels: [Channel] = []
     @Published var teams: [Team] = []
     @Published var teamChannels: [Channel] = []
+    @Published var teamChannelsMap: [String: [Channel]] = [:]
     @Published var selectedTeam: Team?
     @Published var selectedChannel: Channel?
     @Published var messages: [Message] = []
@@ -53,6 +54,7 @@ class AppState: ObservableObject {
         isLoggedIn = false
         currentUser = nil
         channels = []
+        teamChannelsMap = [:]
         selectedChannel = nil
         messages = []
         api = nil
@@ -92,11 +94,18 @@ class AppState: ObservableObject {
 
     func selectTeam(_ team: Team) {
         selectedTeam = team
+        loadTeamChannels(team)
+    }
+
+    func loadTeamChannels(_ team: Team) {
         guard let api = api else { return }
+        // Skip if already loaded
+        if teamChannelsMap[team.id] != nil { return }
         Task {
             do {
                 let channels = try await api.getTeamChannels(teamId: team.id)
                 await MainActor.run {
+                    self.teamChannelsMap[team.id] = channels
                     self.teamChannels = channels
                 }
             } catch {
@@ -785,18 +794,16 @@ struct SidebarView: View {
                 if !appState.teams.isEmpty {
                     Section(T("teams.teams")) {
                         ForEach(appState.teams) { team in
-                            TeamRowView(team: team)
-                                .onTapGesture {
-                                    appState.selectTeam(team)
+                            DisclosureGroup {
+                                ForEach(appState.teamChannelsMap[team.id] ?? []) { channel in
+                                    ChannelRowView(channel: channel)
+                                        .tag(channel)
                                 }
-                        }
-
-                        // Show channels for selected team
-                        if appState.selectedTeam != nil {
-                            ForEach(appState.teamChannels) { channel in
-                                ChannelRowView(channel: channel)
-                                    .tag(channel)
-                                    .padding(.leading, 16)
+                            } label: {
+                                TeamRowView(team: team)
+                            }
+                            .onAppear {
+                                appState.loadTeamChannels(team)
                             }
                         }
                     }

@@ -58,15 +58,39 @@
                                    VerticalAlignment="Center" />
                     </Border>
 
-                    <RadioButton x:Name="NavFeed" Style="{StaticResource NavButton}"
-                                 Content="&#xE71D;" Click="NavFeed_Click"
-                                 ToolTip="Feed" />
-                    <RadioButton x:Name="NavChat" Style="{StaticResource NavButton}"
-                                 Content="&#xE8BD;" Click="NavChat_Click"
-                                 IsChecked="True" ToolTip="Chat" />
-                    <RadioButton x:Name="NavTeams" Style="{StaticResource NavButton}"
-                                 Content="&#xE716;" Click="NavTeams_Click"
-                                 ToolTip="Teams" />
+                    <Grid>
+                        <RadioButton x:Name="NavFeed" Style="{StaticResource NavButton}"
+                                     Content="&#xE71D;" Click="NavFeed_Click"
+                                     ToolTip="Feed" />
+                        <TextBlock x:Name="NavFeedBadge" Visibility="Collapsed"
+                                   FontFamily="Segoe UI" FontSize="9" FontWeight="Bold"
+                                   Foreground="White" Background="#E74856"
+                                   Padding="4,1" MinWidth="16" TextAlignment="Center"
+                                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                                   Margin="0,4,4,0" IsHitTestVisible="False" />
+                    </Grid>
+                    <Grid>
+                        <RadioButton x:Name="NavChat" Style="{StaticResource NavButton}"
+                                     Content="&#xE8BD;" Click="NavChat_Click"
+                                     IsChecked="True" ToolTip="Chat" />
+                        <TextBlock x:Name="NavChatBadge" Visibility="Collapsed"
+                                   FontFamily="Segoe UI" FontSize="9" FontWeight="Bold"
+                                   Foreground="White" Background="#E74856"
+                                   Padding="4,1" MinWidth="16" TextAlignment="Center"
+                                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                                   Margin="0,4,4,0" IsHitTestVisible="False" />
+                    </Grid>
+                    <Grid>
+                        <RadioButton x:Name="NavTeams" Style="{StaticResource NavButton}"
+                                     Content="&#xE716;" Click="NavTeams_Click"
+                                     ToolTip="Teams" />
+                        <TextBlock x:Name="NavTeamsBadge" Visibility="Collapsed"
+                                   FontFamily="Segoe UI" FontSize="9" FontWeight="Bold"
+                                   Foreground="White" Background="#E74856"
+                                   Padding="4,1" MinWidth="16" TextAlignment="Center"
+                                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                                   Margin="0,4,4,0" IsHitTestVisible="False" />
+                    </Grid>
                     <RadioButton x:Name="NavCalendar" Style="{StaticResource NavButton}"
                                  Content="&#xE787;" Click="NavCalendar_Click"
                                  ToolTip="Calendar" />
@@ -204,122 +228,8 @@
                             </Button>
                         </DockPanel>
 
-                        <!-- Teams list (visible when Teams nav selected) -->
-                        <ListBox x:Name="TeamList" BorderThickness="0"
-                                 SelectionChanged="TeamList_SelectionChanged"
-                                 Background="Transparent" Visibility="Collapsed">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="14,8" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="ListBoxItem">
-                                                <Border x:Name="Bd" Padding="{TemplateBinding Padding}"
-                                                        Background="Transparent">
-                                                    <ContentPresenter />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background"
-                                                                Value="{StaticResource HoverBrush}" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background"
-                                                                Value="{StaticResource PrimaryLightBrush}" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <DockPanel>
-                                        <Border DockPanel.Dock="Left" Width="32" Height="32"
-                                                CornerRadius="4" Background="{StaticResource PrimaryBrush}"
-                                                Margin="0,0,10,0">
-                                            <TextBlock Text="{Binding Name, Converter={x:Static local:Converters.FirstChar}}"
-                                                       FontSize="14" FontWeight="Bold"
-                                                       Foreground="White"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center" />
-                                        </Border>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
-                                                <Run Text="{Binding MemberCount}" /><Run Text=" members" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-
-                        <!-- Team channels (shown when a team is selected) -->
-                        <Border x:Name="TeamChannelsBorder" Padding="8,4,8,8" Visibility="Collapsed">
-                            <StackPanel>
-                                <DockPanel Margin="8,4,0,4">
-                                    <TextBlock x:Name="TeamChannelsHeader" FontSize="12" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" />
-                                    <Button DockPanel.Dock="Right" Click="NewTeamChannel_Click" Cursor="Hand"
-                                            HorizontalAlignment="Right" Padding="4,2"
-                                            Background="Transparent" BorderThickness="0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets"
-                                                       FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                            <TextBlock x:Name="NewChannelBtnLabel" Text="Neuer Channel" FontSize="11"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                        </StackPanel>
-                                    </Button>
-                                </DockPanel>
-                                <ListBox x:Name="TeamChannelList" BorderThickness="0"
-                                         SelectionChanged="TeamChannelList_SelectionChanged"
-                                         Background="Transparent">
-                                    <ListBox.ItemContainerStyle>
-                                        <Style TargetType="ListBoxItem">
-                                            <Setter Property="Padding" Value="10,6" />
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="ListBoxItem">
-                                                        <Border x:Name="Bd" Padding="{TemplateBinding Padding}"
-                                                                Background="Transparent" CornerRadius="4">
-                                                            <ContentPresenter />
-                                                        </Border>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="Bd" Property="Background"
-                                                                        Value="{StaticResource HoverBrush}" />
-                                                            </Trigger>
-                                                            <Trigger Property="IsSelected" Value="True">
-                                                                <Setter TargetName="Bd" Property="Background"
-                                                                        Value="{StaticResource PrimaryLightBrush}" />
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                        </Style>
-                                    </ListBox.ItemContainerStyle>
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <DockPanel>
-                                                <TextBlock FontSize="12" Foreground="{StaticResource TextPrimaryBrush}">
-                                                    <Run Text="# " Foreground="{StaticResource TextSecondaryBrush}" /><Run Text="{Binding Name}" />
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding UnreadCount}" FontSize="10"
-                                                           Foreground="White" Background="#6264A7"
-                                                           Padding="4,1" HorizontalAlignment="Right"
-                                                           Visibility="{Binding UnreadCount, Converter={x:Static local:Converters.IntToVisibility}}" />
-                                            </DockPanel>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </StackPanel>
-                        </Border>
+                        <!-- Teams tree (visible when Teams nav selected) -->
+                        <ItemsControl x:Name="TeamTreeList" Visibility="Collapsed" />
 
                         <!-- Feed sidebar info (visible when Feed nav selected) -->
                         <StackPanel x:Name="FeedSidebarInfo" Visibility="Collapsed" Margin="14,8">
