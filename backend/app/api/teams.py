@@ -222,6 +222,10 @@ async def add_member(
     added_user_result = await db.execute(select(User).where(User.id == data.user_id))
     added_user = added_user_result.scalar_one_or_none()
 
+    # Commit BEFORE sending WebSocket notifications so that when clients
+    # reload their team/channel lists the new data is already visible.
+    await db.commit()
+
     # Notify added user to refresh their team/channel list
     await manager.send_to_user(str(data.user_id), {
         "type": "team_member_added",
