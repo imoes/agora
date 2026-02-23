@@ -507,7 +507,7 @@ function insertText(text) {
         }
     }
 
-    private void NavTeams_Click(object sender, RoutedEventArgs e)
+    private async void NavTeams_Click(object sender, RoutedEventArgs e)
     {
         _activeNav = "teams";
         SidebarHeader.Text = Translations.T("teams.teams");
@@ -525,6 +525,7 @@ function insertText(text) {
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("teams.teams");
         EmptyStateSubtitle.Text = Translations.T("teams.subtitle");
+        await LoadTeamsAsync();
     }
 
     private void NavCalendar_Click(object sender, RoutedEventArgs e)

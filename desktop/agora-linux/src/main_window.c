@@ -102,6 +102,7 @@ static void disconnect_channel_ws(AgoraMainWindow *win);
 static void connect_notification_ws(AgoraMainWindow *win);
 static void disconnect_notification_ws(AgoraMainWindow *win);
 static void play_notification_sound(AgoraMainWindow *win);
+static void update_chat_subtitle_status(AgoraMainWindow *win, const char *channel_id);
 static void download_notification_sound(AgoraMainWindow *win);
 static void show_notification(const char *title, const char *body);
 static void set_active_nav(AgoraMainWindow *win, GtkWidget *active_btn);
