@@ -138,7 +138,7 @@ public static class Converters
 public partial class MainWindow : Window
 {
     private readonly ApiClient _api;
-    private readonly WebSocketClient _notificationWs = new();
+    private WebSocketClient _notificationWs = new();
     private WebSocketClient? _chatWs;
     private ObservableCollection<Channel> _channels = new();
     private ObservableCollection<Team> _teams = new();
@@ -1296,13 +1296,38 @@ function insertText(text) {
                 .Replace("https://", "wss://")
                 .Replace("http://", "ws://");
             wsUrl = wsUrl.Replace("/api", "") + "/ws/notifications";
+            _notificationWs.OnMessage -= OnNotificationMessage;
             _notificationWs.OnMessage += OnNotificationMessage;
+            _notificationWs.OnDisconnected -= OnNotificationWsDisconnected;
+            _notificationWs.OnDisconnected += OnNotificationWsDisconnected;
             await _notificationWs.ConnectAsync(wsUrl, _api.Token!);
         }
         catch
         {
-            // Notification WS is optional
+            // Notification WS is optional – schedule a reconnect attempt
+            ScheduleNotificationWsReconnect();
         }
+    }
+
+    private void OnNotificationWsDisconnected()
+    {
+        ScheduleNotificationWsReconnect();
+    }
+
+    private void ScheduleNotificationWsReconnect()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        timer.Tick += async (_, _) =>
+        {
+            timer.Stop();
+            try { _notificationWs.Dispose(); } catch { }
+            _notificationWs = new Services.WebSocketClient();
+            await ConnectNotificationWsAsync();
+            // Reload data that may have been missed while disconnected
+            _ = LoadTeamsAsync();
+            _ = LoadChannelsAsync();
+        };
+        timer.Start();
     }
 
     private void OnNotificationMessage(JsonElement msg)
