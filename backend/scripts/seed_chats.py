@@ -2,14 +2,15 @@
 """
 Seed-Skript: Erstellt Chats und Nachrichten ueber die REST-API.
 
-Voraussetzung: Benutzer muessen bereits existieren (z.B. via seed_users.py).
+Liest die Benutzerdaten aus user.txt (erstellt von seed_users.py).
 
 Verwendung:
     python seed_chats.py --chats 5 --messages 20
-    python seed_chats.py --chats 10 --messages 50 --base-url http://localhost:8000
-    python seed_chats.py --chats 3 --messages 100 --user-prefix user --user-password Test1234!
+    python seed_chats.py --chats 10 --messages 50 --user-file user.txt
+    python seed_chats.py --chats 3 --messages 100 --base-url http://localhost:8000
 """
 import argparse
+import os
 import random
 import sys
 
@@ -54,6 +55,34 @@ CHAT_NAMES = [
 ]
 
 
+def read_user_file(filepath: str) -> list[dict]:
+    """Liest Benutzer aus user.txt (TSV-Format von seed_users.py)."""
+    users = []
+    if not os.path.exists(filepath):
+        print(f"FEHLER: Datei '{filepath}' nicht gefunden.")
+        print("  Fuehre zuerst seed_users.py aus, um user.txt zu erzeugen.")
+        sys.exit(1)
+
+    with open(filepath, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 5:
+                continue
+            users.append({
+                "username": parts[0],
+                "password": parts[1],
+                "display_name": parts[2],
+                "email": parts[3],
+                "id": parts[4],
+                "role": parts[5] if len(parts) > 5 else "user",
+            })
+
+    return users
+
+
 def login_user(client: httpx.Client, username: str, password: str) -> dict | None:
     resp = client.post(
         "/api/auth/login",
@@ -72,37 +101,51 @@ def seed_chats_and_messages(
     base_url: str,
     num_chats: int,
     num_messages_per_chat: int,
-    user_prefix: str,
-    user_password: str,
-    num_users: int,
+    user_file: str,
 ) -> None:
+    # 1. Benutzer aus user.txt lesen
+    file_users = read_user_file(user_file)
+    print(f"  {len(file_users)} Benutzer aus {user_file} gelesen.")
+
+    if len(file_users) < 2:
+        print("FEHLER: Mindestens 2 Benutzer in user.txt erforderlich.")
+        sys.exit(1)
+
     with httpx.Client(base_url=base_url, timeout=30.0) as client:
-        # 1. Login aller verfuegbaren User
-        print("Melde Benutzer an ...")
+        # 2. Alle Benutzer einloggen
+        print("\nMelde Benutzer an ...")
         users = []
-        for i in range(1, num_users + 1):
-            username = f"{user_prefix}{i:04d}"
-            auth = login_user(client, username, user_password)
+        for fu in file_users:
+            auth = login_user(client, fu["username"], fu["password"])
             if auth:
                 users.append({
                     "id": auth["user"]["id"],
                     "username": auth["user"]["username"],
+                    "display_name": auth["user"].get("display_name", fu["display_name"]),
                     "token": auth["access_token"],
+                    "role": fu.get("role", "user"),
                 })
+                print(f"    Angemeldet: {fu['username']} ({fu.get('role', 'user')})")
+            else:
+                print(f"    FEHLER: Login fehlgeschlagen fuer {fu['username']}")
+
         print(f"  {len(users)} Benutzer angemeldet.")
 
         if len(users) < 2:
-            print("FEHLER: Mindestens 2 Benutzer erforderlich. "
-                  "Fuehre zuerst seed_users.py aus.")
+            print("FEHLER: Mindestens 2 Benutzer muessen eingeloggt sein.")
             sys.exit(1)
 
-        # 2. Chats erstellen
+        # 3. Chats erstellen (nur mit normalen Benutzern, nicht Admin)
+        normal_users = [u for u in users if u["role"] != "admin"]
+        if len(normal_users) < 2:
+            normal_users = users  # Fallback: alle Benutzer verwenden
+
         print(f"\nErstelle {num_chats} Chats ...")
         channels = []
         for i in range(num_chats):
-            creator = random.choice(users)
+            creator = random.choice(normal_users)
             # 2-6 zufaellige Teilnehmer (ohne Creator)
-            other_users = [u for u in users if u["id"] != creator["id"]]
+            other_users = [u for u in normal_users if u["id"] != creator["id"]]
             members = random.sample(
                 other_users,
                 min(random.randint(2, 6), len(other_users)),
@@ -139,7 +182,7 @@ def seed_chats_and_messages(
             else:
                 print(f"  [{i + 1}/{num_chats}] FEHLER: {resp.status_code} - {resp.text}")
 
-        # 3. Nachrichten erstellen
+        # 4. Nachrichten erstellen
         total = num_chats * num_messages_per_chat
         print(f"\nErstelle {num_messages_per_chat} Nachrichten pro Chat "
               f"({total} gesamt) ...")
@@ -169,7 +212,7 @@ def seed_chats_and_messages(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Erstellt Testchats und Nachrichten in Agora"
+        description="Erstellt Testchats und Nachrichten in Agora (liest Benutzer aus user.txt)"
     )
     parser.add_argument(
         "--chats", "-c",
@@ -190,37 +233,23 @@ def main():
         help="Backend-URL (Standard: http://localhost:8000)",
     )
     parser.add_argument(
-        "--user-prefix",
+        "--user-file", "-f",
         type=str,
-        default="user",
-        help="Praefix der Benutzer (Standard: user)",
-    )
-    parser.add_argument(
-        "--user-password",
-        type=str,
-        default="Test1234!",
-        help="Passwort der Benutzer (Standard: Test1234!)",
-    )
-    parser.add_argument(
-        "--num-users",
-        type=int,
-        default=10,
-        help="Anzahl der Benutzer die eingeloggt werden (Standard: 10)",
+        default="user.txt",
+        help="Pfad zur user.txt Datei (Standard: user.txt)",
     )
     args = parser.parse_args()
 
     print(f"Seed: {args.chats} Chats mit je {args.messages} Nachrichten")
     print(f"  Backend: {args.base_url}")
-    print(f"  Benutzer: {args.user_prefix}0001 - {args.user_prefix}{args.num_users:04d}")
+    print(f"  Benutzerdatei: {args.user_file}")
     print()
 
     seed_chats_and_messages(
         base_url=args.base_url,
         num_chats=args.chats,
         num_messages_per_chat=args.messages,
-        user_prefix=args.user_prefix,
-        user_password=args.user_password,
-        num_users=args.num_users,
+        user_file=args.user_file,
     )
 
 
