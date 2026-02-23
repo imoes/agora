@@ -84,6 +84,25 @@ struct _AgoraMainWindow {
 
     /* Currently selected team */
     char *current_team_id;
+    char *current_team_name;
+
+    /* Team detail view */
+    GtkWidget *team_detail_box;
+    GtkLabel  *team_detail_title;
+    GtkLabel  *team_detail_subtitle;
+    GtkNotebook *team_detail_notebook;
+
+    /* Team detail – Channels tab */
+    GtkListBox *team_channels_list;
+
+    /* Team detail – Members tab */
+    GtkListBox *team_members_list;
+    GtkEntry   *team_member_search_entry;
+    GtkListBox *team_member_search_results;
+    GtkWidget  *team_member_search_box;
+
+    /* Team detail – Files tab */
+    GtkListBox *team_files_list;
 
     /* Reply / Edit state */
     char *reply_to_id;
@@ -120,6 +139,10 @@ static void on_calendar_join_clicked(GtkButton *btn, gpointer data);
 static void on_calendar_new_event_clicked(GtkButton *btn, gpointer data);
 static void on_video_call_clicked(GtkButton *btn, gpointer data);
 static void ws_send_json(AgoraMainWindow *win, const char *json_str);
+static void show_team_detail(AgoraMainWindow *win, const char *team_id, const char *team_name);
+static void load_team_detail_channels(AgoraMainWindow *win);
+static void load_team_detail_members(AgoraMainWindow *win);
+static void load_team_detail_files(AgoraMainWindow *win);
 
 /* Safely clear all children from a GtkListBox, avoiding dangling
    cursor/selection pointers that cause GTK_IS_WIDGET assertions. */
@@ -567,6 +590,14 @@ static void clear_team_tree(AgoraMainWindow *win)
     g_list_free(children);
 }
 
+static void on_team_settings_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *w = AGORA_MAIN_WINDOW(data);
+    const char *tid = g_object_get_data(G_OBJECT(btn), "team-id");
+    const char *tname = g_object_get_data(G_OBJECT(btn), "team-name");
+    if (tid) show_team_detail(w, tid, tname ? tname : "");
+}
+
 static void load_teams(AgoraMainWindow *win)
 {
     GError *error = NULL;
@@ -618,6 +649,15 @@ static void load_teams(AgoraMainWindow *win)
         gtk_box_pack_start(GTK_BOX(text_col), members_label, FALSE, FALSE, 0);
 
         gtk_box_pack_start(GTK_BOX(header_box), text_col, TRUE, TRUE, 0);
+
+        /* Settings button to open team detail view */
+        GtkWidget *settings_btn = gtk_button_new_with_label("\xE2\x9A\x99"); /* ⚙ */
+        gtk_widget_set_valign(settings_btn, GTK_ALIGN_CENTER);
+        gtk_widget_set_tooltip_text(settings_btn, T("teams.team_settings"));
+        g_object_set_data_full(G_OBJECT(settings_btn), "team-id", g_strdup(id), g_free);
+        g_object_set_data_full(G_OBJECT(settings_btn), "team-name", g_strdup(name), g_free);
+        g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_team_settings_clicked), win);
+        gtk_box_pack_end(GTK_BOX(header_box), settings_btn, FALSE, FALSE, 0);
 
         /* Expander with team header */
         GtkWidget *expander = gtk_expander_new(NULL);
@@ -3108,6 +3148,497 @@ static void on_channel_selected(GtkListBox *list_box, GtkListBoxRow *row,
     gtk_widget_grab_focus(GTK_WIDGET(win->message_entry));
 }
 
+/* =====================================================================
+ * Team Detail View
+ * ===================================================================== */
+
+static void on_team_remove_member_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *w = AGORA_MAIN_WINDOW(data);
+    const char *user_id = g_object_get_data(G_OBJECT(btn), "user-id");
+    const char *dname = g_object_get_data(G_OBJECT(btn), "display-name");
+    if (!user_id || !w->current_team_id) return;
+
+    char *msg = g_strdup_printf("%s %s?", T("teams.remove_member_confirm"), dname);
+    GtkWidget *dlg = gtk_message_dialog_new(GTK_WINDOW(w),
+        GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO, "%s", msg);
+    g_free(msg);
+    int resp = gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+    if (resp != GTK_RESPONSE_YES) return;
+
+    char *p = g_strdup_printf("/api/teams/%s/members/%s", w->current_team_id, user_id);
+    GError *e = NULL;
+    JsonNode *r = agora_api_client_delete(w->api, p, &e);
+    g_free(p);
+    if (r) json_node_unref(r);
+    if (e) g_error_free(e);
+    load_team_detail_members(w);
+}
+
+static void on_team_add_member_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *w = AGORA_MAIN_WINDOW(data);
+    const char *user_id = g_object_get_data(G_OBJECT(btn), "user-id");
+    if (!user_id || !w->current_team_id) return;
+
+    char *body = g_strdup_printf("{\"user_id\":\"%s\",\"role\":\"member\"}", user_id);
+    char *p = g_strdup_printf("/api/teams/%s/members", w->current_team_id);
+    GError *e = NULL;
+    JsonNode *r = agora_api_client_post(w->api, p, body, &e);
+    g_free(body);
+    g_free(p);
+    if (r) json_node_unref(r);
+    if (e) g_error_free(e);
+
+    /* Refresh members and clear search */
+    load_team_detail_members(w);
+    gtk_entry_set_text(w->team_member_search_entry, "");
+    gtk_widget_hide(w->team_member_search_box);
+}
+
+static void load_team_detail_channels(AgoraMainWindow *win)
+{
+    if (!win->current_team_id) return;
+    clear_list_box(win->team_channels_list);
+
+    char *path = g_strdup_printf("/api/channels/?team_id=%s", win->current_team_id);
+    GError *err = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &err);
+    g_free(path);
+    if (!result) { if (err) g_error_free(err); return; }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+    for (guint i = 0; i < len; i++) {
+        JsonObject *ch = json_array_get_object_element(arr, i);
+        const char *name = json_object_get_string_member(ch, "name");
+        const char *id = json_object_get_string_member(ch, "id");
+        gint64 mc = json_object_has_member(ch, "member_count")
+            ? json_object_get_int_member(ch, "member_count") : 0;
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_margin_start(row_box, 12);
+        gtk_widget_set_margin_end(row_box, 12);
+        gtk_widget_set_margin_top(row_box, 6);
+        gtk_widget_set_margin_bottom(row_box, 6);
+
+        GtkWidget *icon = gtk_label_new("#");
+        PangoAttrList *ia = pango_attr_list_new();
+        pango_attr_list_insert(ia, pango_attr_foreground_new(0x6600, 0x6400, 0xa700));
+        pango_attr_list_insert(ia, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+        gtk_label_set_attributes(GTK_LABEL(icon), ia);
+        pango_attr_list_unref(ia);
+        gtk_box_pack_start(GTK_BOX(row_box), icon, FALSE, FALSE, 0);
+
+        GtkWidget *text_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+        GtkWidget *name_lbl = gtk_label_new(name);
+        gtk_widget_set_halign(name_lbl, GTK_ALIGN_START);
+        PangoAttrList *ba = pango_attr_list_new();
+        pango_attr_list_insert(ba, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+        gtk_label_set_attributes(GTK_LABEL(name_lbl), ba);
+        pango_attr_list_unref(ba);
+        gtk_box_pack_start(GTK_BOX(text_col), name_lbl, FALSE, FALSE, 0);
+
+        char *mc_text = g_strdup_printf("%ld %s", (long)mc, T("chat.members"));
+        GtkWidget *mc_lbl = gtk_label_new(mc_text);
+        g_free(mc_text);
+        gtk_widget_set_halign(mc_lbl, GTK_ALIGN_START);
+        PangoAttrList *sa = pango_attr_list_new();
+        pango_attr_list_insert(sa, pango_attr_scale_new(0.85));
+        pango_attr_list_insert(sa, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(mc_lbl), sa);
+        pango_attr_list_unref(sa);
+        gtk_box_pack_start(GTK_BOX(text_col), mc_lbl, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), text_col, TRUE, TRUE, 0);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_channels_list, row, -1);
+    }
+    gtk_widget_show_all(GTK_WIDGET(win->team_channels_list));
+    json_node_unref(result);
+}
+
+static void on_team_detail_channel_clicked(GtkListBox *list, GtkListBoxRow *row, gpointer data)
+{
+    (void)list;
+    if (!row) return;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *ch_id = g_object_get_data(G_OBJECT(row), "channel-id");
+    if (!ch_id) return;
+
+    g_free(win->current_channel_id);
+    win->current_channel_id = g_strdup(ch_id);
+    load_messages(win, ch_id);
+    connect_channel_ws(win, ch_id);
+    gtk_stack_set_visible_child_name(win->content_stack, "chat");
+}
+
+static void load_team_detail_members(AgoraMainWindow *win)
+{
+    if (!win->current_team_id) return;
+    clear_list_box(win->team_members_list);
+
+    char *path = g_strdup_printf("/api/teams/%s/members", win->current_team_id);
+    GError *err = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &err);
+    g_free(path);
+    if (!result) { if (err) g_error_free(err); return; }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+    for (guint i = 0; i < len; i++) {
+        JsonObject *m = json_array_get_object_element(arr, i);
+        const char *role = json_object_get_string_member(m, "role");
+        JsonObject *user = json_object_get_object_member(m, "user");
+        const char *display_name = json_object_get_string_member(user, "display_name");
+        const char *email = json_object_has_member(user, "email")
+            ? json_object_get_string_member(user, "email") : "";
+        const char *uid = json_object_get_string_member(user, "id");
+        const char *user_status = json_object_has_member(user, "status")
+            ? json_object_get_string_member(user, "status") : "offline";
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_widget_set_margin_start(row_box, 12);
+        gtk_widget_set_margin_end(row_box, 12);
+        gtk_widget_set_margin_top(row_box, 6);
+        gtk_widget_set_margin_bottom(row_box, 6);
+
+        /* Avatar */
+        GtkWidget *avatar = create_avatar_widget(display_name, 32);
+        gtk_box_pack_start(GTK_BOX(row_box), avatar, FALSE, FALSE, 0);
+
+        /* Status dot on avatar */
+        (void)user_status; /* status shown in text */
+
+        /* Name + role/email */
+        GtkWidget *info_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+        GtkWidget *name_lbl = gtk_label_new(display_name);
+        gtk_widget_set_halign(name_lbl, GTK_ALIGN_START);
+        PangoAttrList *ba = pango_attr_list_new();
+        pango_attr_list_insert(ba, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+        gtk_label_set_attributes(GTK_LABEL(name_lbl), ba);
+        pango_attr_list_unref(ba);
+        gtk_box_pack_start(GTK_BOX(info_col), name_lbl, FALSE, FALSE, 0);
+
+        char *sub_text = g_strdup_printf("%s \xC2\xB7 %s", role, email);
+        GtkWidget *sub_lbl = gtk_label_new(sub_text);
+        g_free(sub_text);
+        gtk_widget_set_halign(sub_lbl, GTK_ALIGN_START);
+        PangoAttrList *sa = pango_attr_list_new();
+        pango_attr_list_insert(sa, pango_attr_scale_new(0.85));
+        pango_attr_list_insert(sa, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(sub_lbl), sa);
+        pango_attr_list_unref(sa);
+        gtk_box_pack_start(GTK_BOX(info_col), sub_lbl, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), info_col, TRUE, TRUE, 0);
+
+        /* Remove button (only for non-admin members) */
+        if (g_strcmp0(role, "admin") != 0) {
+            GtkWidget *rm_btn = gtk_button_new_with_label("\xE2\x9C\x95"); /* ✕ */
+            gtk_widget_set_tooltip_text(rm_btn, T("teams.remove_member"));
+            gtk_widget_set_valign(rm_btn, GTK_ALIGN_CENTER);
+            g_object_set_data_full(G_OBJECT(rm_btn), "user-id", g_strdup(uid), g_free);
+            g_object_set_data_full(G_OBJECT(rm_btn), "display-name", g_strdup(display_name), g_free);
+            g_signal_connect(rm_btn, "clicked", G_CALLBACK(on_team_remove_member_clicked), win);
+            gtk_box_pack_end(GTK_BOX(row_box), rm_btn, FALSE, FALSE, 0);
+        }
+
+        GtkWidget *row = gtk_list_box_row_new();
+        g_object_set_data_full(G_OBJECT(row), "user-id", g_strdup(uid), g_free);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_members_list, row, -1);
+    }
+    gtk_widget_show_all(GTK_WIDGET(win->team_members_list));
+    json_node_unref(result);
+}
+
+static void on_team_member_search_changed(GtkEntry *entry, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *query = gtk_entry_get_text(entry);
+
+    clear_list_box(win->team_member_search_results);
+
+    if (!query || strlen(query) < 2) {
+        gtk_widget_hide(win->team_member_search_box);
+        return;
+    }
+
+    char *path = g_strdup_printf("/api/users/?search=%s", query);
+    GError *err = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &err);
+    g_free(path);
+    if (!result) { if (err) g_error_free(err); return; }
+
+    /* Collect existing member IDs to filter them out */
+    GHashTable *existing = g_hash_table_new(g_str_hash, g_str_equal);
+    GList *rows = gtk_container_get_children(GTK_CONTAINER(win->team_members_list));
+    for (GList *l = rows; l; l = l->next) {
+        const char *uid = g_object_get_data(G_OBJECT(l->data), "user-id");
+        if (uid) g_hash_table_add(existing, (gpointer)uid);
+    }
+    g_list_free(rows);
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+    guint shown = 0;
+    for (guint i = 0; i < len; i++) {
+        JsonObject *u = json_array_get_object_element(arr, i);
+        const char *uid = json_object_get_string_member(u, "id");
+        if (g_hash_table_contains(existing, uid)) continue;
+
+        const char *display_name = json_object_get_string_member(u, "display_name");
+        const char *email = json_object_has_member(u, "email")
+            ? json_object_get_string_member(u, "email") : "";
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_widget_set_margin_start(row_box, 12);
+        gtk_widget_set_margin_end(row_box, 12);
+        gtk_widget_set_margin_top(row_box, 4);
+        gtk_widget_set_margin_bottom(row_box, 4);
+
+        GtkWidget *avatar = create_avatar_widget(display_name, 28);
+        gtk_box_pack_start(GTK_BOX(row_box), avatar, FALSE, FALSE, 0);
+
+        GtkWidget *info_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+        GtkWidget *name_lbl = gtk_label_new(display_name);
+        gtk_widget_set_halign(name_lbl, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(info_col), name_lbl, FALSE, FALSE, 0);
+        GtkWidget *email_lbl = gtk_label_new(email);
+        gtk_widget_set_halign(email_lbl, GTK_ALIGN_START);
+        PangoAttrList *sa = pango_attr_list_new();
+        pango_attr_list_insert(sa, pango_attr_scale_new(0.85));
+        pango_attr_list_insert(sa, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(email_lbl), sa);
+        pango_attr_list_unref(sa);
+        gtk_box_pack_start(GTK_BOX(info_col), email_lbl, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(row_box), info_col, TRUE, TRUE, 0);
+
+        GtkWidget *add_btn = gtk_button_new_with_label(T("chat.add_member_btn"));
+        gtk_widget_set_valign(add_btn, GTK_ALIGN_CENTER);
+        g_object_set_data_full(G_OBJECT(add_btn), "user-id", g_strdup(uid), g_free);
+        g_signal_connect(add_btn, "clicked", G_CALLBACK(on_team_add_member_clicked), win);
+        gtk_box_pack_end(GTK_BOX(row_box), add_btn, FALSE, FALSE, 0);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_member_search_results, row, -1);
+        shown++;
+    }
+
+    g_hash_table_destroy(existing);
+    json_node_unref(result);
+
+    if (shown > 0) {
+        gtk_widget_show_all(win->team_member_search_box);
+    } else {
+        gtk_widget_hide(win->team_member_search_box);
+    }
+}
+
+static void load_team_detail_files(AgoraMainWindow *win)
+{
+    if (!win->current_team_id) return;
+    clear_list_box(win->team_files_list);
+
+    char *path = g_strdup_printf("/api/files/team/%s", win->current_team_id);
+    GError *err = NULL;
+    JsonNode *result = agora_api_client_get(win->api, path, &err);
+    g_free(path);
+    if (!result) {
+        if (err) g_error_free(err);
+        /* Show "no files" message */
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        gtk_widget_set_margin_top(row_box, 32);
+        gtk_widget_set_margin_bottom(row_box, 32);
+        GtkWidget *lbl = gtk_label_new(T("teams.no_files"));
+        PangoAttrList *sa = pango_attr_list_new();
+        pango_attr_list_insert(sa, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(lbl), sa);
+        pango_attr_list_unref(sa);
+        gtk_box_pack_start(GTK_BOX(row_box), lbl, FALSE, FALSE, 0);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_files_list, row, -1);
+        gtk_widget_show_all(GTK_WIDGET(win->team_files_list));
+        return;
+    }
+
+    JsonArray *arr = json_node_get_array(result);
+    guint len = json_array_get_length(arr);
+
+    if (len == 0) {
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        gtk_widget_set_margin_top(row_box, 32);
+        gtk_widget_set_margin_bottom(row_box, 32);
+        GtkWidget *lbl = gtk_label_new(T("teams.no_files"));
+        PangoAttrList *sa = pango_attr_list_new();
+        pango_attr_list_insert(sa, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(lbl), sa);
+        pango_attr_list_unref(sa);
+        gtk_box_pack_start(GTK_BOX(row_box), lbl, FALSE, FALSE, 0);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_files_list, row, -1);
+    }
+
+    for (guint i = 0; i < len; i++) {
+        JsonObject *f = json_array_get_object_element(arr, i);
+        const char *filename = json_object_has_member(f, "original_filename")
+            ? json_object_get_string_member(f, "original_filename") : "file";
+        const char *created = json_object_has_member(f, "created_at")
+            ? json_object_get_string_member(f, "created_at") : "";
+
+        gint64 file_size = 0;
+        if (json_object_has_member(f, "file") && !json_object_get_null_member(f, "file")) {
+            JsonObject *fobj = json_object_get_object_member(f, "file");
+            if (json_object_has_member(fobj, "file_size"))
+                file_size = json_object_get_int_member(fobj, "file_size");
+        }
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_widget_set_margin_start(row_box, 12);
+        gtk_widget_set_margin_end(row_box, 12);
+        gtk_widget_set_margin_top(row_box, 6);
+        gtk_widget_set_margin_bottom(row_box, 6);
+
+        GtkWidget *icon_lbl = gtk_label_new("\xF0\x9F\x93\x84"); /* 📄 */
+        gtk_box_pack_start(GTK_BOX(row_box), icon_lbl, FALSE, FALSE, 0);
+
+        GtkWidget *info_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+        GtkWidget *fn_lbl = gtk_label_new(filename);
+        gtk_widget_set_halign(fn_lbl, GTK_ALIGN_START);
+        PangoAttrList *ba = pango_attr_list_new();
+        pango_attr_list_insert(ba, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+        gtk_label_set_attributes(GTK_LABEL(fn_lbl), ba);
+        pango_attr_list_unref(ba);
+        gtk_label_set_ellipsize(GTK_LABEL(fn_lbl), PANGO_ELLIPSIZE_MIDDLE);
+        gtk_box_pack_start(GTK_BOX(info_col), fn_lbl, FALSE, FALSE, 0);
+
+        char *size_str;
+        if (file_size < 1024)
+            size_str = g_strdup_printf("%ld B", (long)file_size);
+        else if (file_size < 1048576)
+            size_str = g_strdup_printf("%.1f KB", file_size / 1024.0);
+        else
+            size_str = g_strdup_printf("%.1f MB", file_size / 1048576.0);
+
+        char *time_str = format_relative_time(created);
+        char *meta = g_strdup_printf("%s \xC2\xB7 %s", size_str, time_str);
+        g_free(size_str);
+        g_free(time_str);
+        GtkWidget *meta_lbl = gtk_label_new(meta);
+        g_free(meta);
+        gtk_widget_set_halign(meta_lbl, GTK_ALIGN_START);
+        PangoAttrList *sa = pango_attr_list_new();
+        pango_attr_list_insert(sa, pango_attr_scale_new(0.85));
+        pango_attr_list_insert(sa, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(meta_lbl), sa);
+        pango_attr_list_unref(sa);
+        gtk_box_pack_start(GTK_BOX(info_col), meta_lbl, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), info_col, TRUE, TRUE, 0);
+
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
+        gtk_list_box_insert(win->team_files_list, row, -1);
+    }
+
+    gtk_widget_show_all(GTK_WIDGET(win->team_files_list));
+    json_node_unref(result);
+}
+
+static void on_team_leave_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    if (!win->current_team_id) return;
+
+    char *msg = g_strdup_printf("%s \"%s\"?", T("teams.leave_confirm"),
+                                win->current_team_name ? win->current_team_name : "");
+    GtkWidget *dlg = gtk_message_dialog_new(GTK_WINDOW(win),
+        GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO, "%s", msg);
+    g_free(msg);
+    int resp = gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+    if (resp != GTK_RESPONSE_YES) return;
+
+    char *path = g_strdup_printf("/api/teams/%s/leave", win->current_team_id);
+    GError *err = NULL;
+    JsonNode *r = agora_api_client_post(win->api, path, "{}", &err);
+    g_free(path);
+    if (r) json_node_unref(r);
+    if (err) g_error_free(err);
+
+    /* Go back to the team list */
+    gtk_stack_set_visible_child_name(win->content_stack, "empty");
+    g_free(win->current_team_id);
+    win->current_team_id = NULL;
+    g_free(win->current_team_name);
+    win->current_team_name = NULL;
+    load_teams(win);
+}
+
+static void show_team_detail(AgoraMainWindow *win, const char *team_id, const char *team_name)
+{
+    g_free(win->current_team_id);
+    win->current_team_id = g_strdup(team_id);
+    g_free(win->current_team_name);
+    win->current_team_name = g_strdup(team_name);
+
+    /* Update header */
+    char *title_markup = g_strdup_printf("<span size='x-large' weight='bold'>%s</span>", team_name);
+    gtk_label_set_markup(win->team_detail_title, title_markup);
+    g_free(title_markup);
+
+    /* Load team detail info for subtitle */
+    char *detail_path = g_strdup_printf("/api/teams/%s", team_id);
+    GError *err = NULL;
+    JsonNode *team_node = agora_api_client_get(win->api, detail_path, &err);
+    g_free(detail_path);
+    if (team_node) {
+        JsonObject *tobj = json_node_get_object(team_node);
+        gint64 mc = json_object_has_member(tobj, "member_count")
+            ? json_object_get_int_member(tobj, "member_count") : 0;
+        const char *desc = json_object_has_member(tobj, "description") &&
+            !json_object_get_null_member(tobj, "description")
+            ? json_object_get_string_member(tobj, "description") : "";
+        char *sub;
+        if (desc && *desc)
+            sub = g_strdup_printf("%ld %s \xC2\xB7 %s", (long)mc, T("chat.members"), desc);
+        else
+            sub = g_strdup_printf("%ld %s", (long)mc, T("chat.members"));
+        gtk_label_set_text(win->team_detail_subtitle, sub);
+        g_free(sub);
+        json_node_unref(team_node);
+    } else {
+        gtk_label_set_text(win->team_detail_subtitle, "");
+        if (err) g_error_free(err);
+    }
+
+    /* Reset to first tab */
+    gtk_notebook_set_current_page(win->team_detail_notebook, 0);
+
+    /* Load all tabs */
+    load_team_detail_channels(win);
+    load_team_detail_members(win);
+    load_team_detail_files(win);
+
+    /* Clear search */
+    gtk_entry_set_text(win->team_member_search_entry, "");
+    gtk_widget_hide(win->team_member_search_box);
+
+    gtk_stack_set_visible_child_name(win->content_stack, "team_detail");
+}
+
 static void on_new_team_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
@@ -4568,6 +5099,7 @@ static void agora_main_window_finalize(GObject *obj)
     g_free(win->current_channel_id);
     g_free(win->current_channel_name);
     g_free(win->current_team_id);
+    g_free(win->current_team_name);
     if (win->reminder_poll_timer) g_source_remove(win->reminder_poll_timer);
     if (win->reminder_tick_timer) g_source_remove(win->reminder_tick_timer);
     g_free(win->reminder_event_id);
@@ -5204,6 +5736,133 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_box_pack_start(GTK_BOX(win->chat_box), input_area, FALSE, FALSE, 0);
 
     gtk_stack_add_named(win->content_stack, win->chat_box, "chat");
+
+    /* ===================== Team detail page ===================== */
+    win->team_detail_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Header bar */
+    GtkWidget *td_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_style_context_add_class(gtk_widget_get_style_context(td_header), "chat-header");
+    gtk_widget_set_margin_start(td_header, 16);
+    gtk_widget_set_margin_end(td_header, 16);
+    gtk_widget_set_margin_top(td_header, 12);
+    gtk_widget_set_margin_bottom(td_header, 12);
+
+    GtkWidget *td_info = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    win->team_detail_title = GTK_LABEL(gtk_label_new(NULL));
+    gtk_widget_set_halign(GTK_WIDGET(win->team_detail_title), GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(td_info), GTK_WIDGET(win->team_detail_title), FALSE, FALSE, 0);
+
+    win->team_detail_subtitle = GTK_LABEL(gtk_label_new(NULL));
+    gtk_widget_set_halign(GTK_WIDGET(win->team_detail_subtitle), GTK_ALIGN_START);
+    PangoAttrList *td_sub_attrs = pango_attr_list_new();
+    pango_attr_list_insert(td_sub_attrs, pango_attr_scale_new(0.9));
+    pango_attr_list_insert(td_sub_attrs, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+    gtk_label_set_attributes(win->team_detail_subtitle, td_sub_attrs);
+    pango_attr_list_unref(td_sub_attrs);
+    gtk_box_pack_start(GTK_BOX(td_info), GTK_WIDGET(win->team_detail_subtitle), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(td_header), td_info, TRUE, TRUE, 0);
+
+    /* Leave team button */
+    GtkWidget *td_leave_btn = gtk_button_new_with_label(T("teams.leave_team"));
+    gtk_style_context_add_class(gtk_widget_get_style_context(td_leave_btn), "destructive-action");
+    gtk_widget_set_valign(td_leave_btn, GTK_ALIGN_CENTER);
+    g_signal_connect(td_leave_btn, "clicked", G_CALLBACK(on_team_leave_clicked), win);
+    gtk_box_pack_end(GTK_BOX(td_header), td_leave_btn, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(win->team_detail_box), td_header, FALSE, FALSE, 0);
+
+    /* Separator */
+    GtkWidget *td_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_pack_start(GTK_BOX(win->team_detail_box), td_sep, FALSE, FALSE, 0);
+
+    /* Notebook (tabs) */
+    win->team_detail_notebook = GTK_NOTEBOOK(gtk_notebook_new());
+    gtk_notebook_set_tab_pos(win->team_detail_notebook, GTK_POS_TOP);
+
+    /* --- Tab 1: Channels --- */
+    GtkWidget *ch_tab_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* New channel button */
+    GtkWidget *ch_btn_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_start(ch_btn_bar, 12);
+    gtk_widget_set_margin_top(ch_btn_bar, 8);
+    gtk_widget_set_margin_bottom(ch_btn_bar, 4);
+    GtkWidget *new_ch_btn = gtk_button_new_with_label(T("teams.new_channel"));
+    g_signal_connect(new_ch_btn, "clicked", G_CALLBACK(on_new_team_channel_clicked), win);
+    gtk_box_pack_start(GTK_BOX(ch_btn_bar), new_ch_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(ch_tab_box), ch_btn_bar, FALSE, FALSE, 0);
+
+    GtkWidget *ch_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ch_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->team_channels_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(win->team_channels_list, GTK_SELECTION_SINGLE);
+    g_signal_connect(win->team_channels_list, "row-selected", G_CALLBACK(on_team_detail_channel_clicked), win);
+    gtk_container_add(GTK_CONTAINER(ch_scroll), GTK_WIDGET(win->team_channels_list));
+    gtk_box_pack_start(GTK_BOX(ch_tab_box), ch_scroll, TRUE, TRUE, 0);
+
+    gtk_notebook_append_page(win->team_detail_notebook, ch_tab_box,
+        gtk_label_new(T("teams.tab_channels")));
+
+    /* --- Tab 2: Members --- */
+    GtkWidget *mem_tab_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Search bar */
+    GtkWidget *mem_search_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_start(mem_search_bar, 12);
+    gtk_widget_set_margin_end(mem_search_bar, 12);
+    gtk_widget_set_margin_top(mem_search_bar, 8);
+    gtk_widget_set_margin_bottom(mem_search_bar, 4);
+    win->team_member_search_entry = GTK_ENTRY(gtk_entry_new());
+    gtk_entry_set_placeholder_text(win->team_member_search_entry, T("teams.search_add_user"));
+    g_signal_connect(win->team_member_search_entry, "changed",
+                     G_CALLBACK(on_team_member_search_changed), win);
+    gtk_box_pack_start(GTK_BOX(mem_search_bar), GTK_WIDGET(win->team_member_search_entry), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(mem_tab_box), mem_search_bar, FALSE, FALSE, 0);
+
+    /* Search results dropdown */
+    win->team_member_search_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_margin_start(win->team_member_search_box, 12);
+    gtk_widget_set_margin_end(win->team_member_search_box, 12);
+    win->team_member_search_results = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(win->team_member_search_results, GTK_SELECTION_NONE);
+    gtk_container_add(GTK_CONTAINER(win->team_member_search_box),
+                      GTK_WIDGET(win->team_member_search_results));
+    gtk_box_pack_start(GTK_BOX(mem_tab_box), win->team_member_search_box, FALSE, FALSE, 0);
+    gtk_widget_set_no_show_all(win->team_member_search_box, TRUE);
+
+    /* Separator */
+    GtkWidget *mem_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_margin_top(mem_sep, 4);
+    gtk_box_pack_start(GTK_BOX(mem_tab_box), mem_sep, FALSE, FALSE, 0);
+
+    /* Members list */
+    GtkWidget *mem_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(mem_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->team_members_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(win->team_members_list, GTK_SELECTION_NONE);
+    gtk_container_add(GTK_CONTAINER(mem_scroll), GTK_WIDGET(win->team_members_list));
+    gtk_box_pack_start(GTK_BOX(mem_tab_box), mem_scroll, TRUE, TRUE, 0);
+
+    gtk_notebook_append_page(win->team_detail_notebook, mem_tab_box,
+        gtk_label_new(T("teams.tab_members")));
+
+    /* --- Tab 3: Files --- */
+    GtkWidget *files_tab_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *files_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(files_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    win->team_files_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(win->team_files_list, GTK_SELECTION_NONE);
+    gtk_container_add(GTK_CONTAINER(files_scroll), GTK_WIDGET(win->team_files_list));
+    gtk_box_pack_start(GTK_BOX(files_tab_box), files_scroll, TRUE, TRUE, 0);
+
+    gtk_notebook_append_page(win->team_detail_notebook, files_tab_box,
+        gtk_label_new(T("teams.tab_files")));
+
+    gtk_box_pack_start(GTK_BOX(win->team_detail_box), GTK_WIDGET(win->team_detail_notebook), TRUE, TRUE, 0);
+
+    gtk_stack_add_named(win->content_stack, win->team_detail_box, "team_detail");
     gtk_stack_set_visible_child_name(win->content_stack, "empty");
 
     /* Wrap content_stack in a GtkOverlay so video can cover it completely */
