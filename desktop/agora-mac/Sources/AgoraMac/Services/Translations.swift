@@ -86,7 +86,24 @@ class Translations {
             "reminder.now": "Now!",
             "reminder.join": "Join",
             "reminder.dismiss": "Dismiss",
-            "teams.teams": "Teams"
+            "teams.teams": "Teams",
+            "teams.team_settings": "Team Settings",
+            "teams.channels": "Channels",
+            "teams.members_tab": "Members",
+            "teams.files": "Files",
+            "teams.add_member": "Add Member",
+            "teams.remove_member": "Remove",
+            "teams.remove_confirm": "Remove this member?",
+            "teams.search_users": "Search users to add...",
+            "teams.no_channels": "No channels in this team",
+            "teams.no_members": "No members",
+            "teams.no_files": "No files in this team",
+            "teams.leave_team": "Leave Team",
+            "teams.leave_confirm": "Leave this team?",
+            "teams.member_added": "Member added",
+            "teams.member_removed": "Member removed",
+            "chat.cancel": "Cancel",
+            "chat.create": "Create"
         ]
 
         // German
@@ -124,7 +141,24 @@ class Translations {
             "reminder.now": "Jetzt!",
             "reminder.join": "Beitreten",
             "reminder.dismiss": "Schliessen",
-            "teams.teams": "Teams"
+            "teams.teams": "Teams",
+            "teams.team_settings": "Team-Einstellungen",
+            "teams.channels": "Kanaele",
+            "teams.members_tab": "Mitglieder",
+            "teams.files": "Dateien",
+            "teams.add_member": "Mitglied hinzufuegen",
+            "teams.remove_member": "Entfernen",
+            "teams.remove_confirm": "Dieses Mitglied entfernen?",
+            "teams.search_users": "Benutzer suchen...",
+            "teams.no_channels": "Keine Kanaele in diesem Team",
+            "teams.no_members": "Keine Mitglieder",
+            "teams.no_files": "Keine Dateien in diesem Team",
+            "teams.leave_team": "Team verlassen",
+            "teams.leave_confirm": "Dieses Team verlassen?",
+            "teams.member_added": "Mitglied hinzugefuegt",
+            "teams.member_removed": "Mitglied entfernt",
+            "chat.cancel": "Abbrechen",
+            "chat.create": "Erstellen"
         ]
 
         // French
