@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using System.Windows.Threading;
 using AgoraWindows.Models;
 using AgoraWindows.Services;
+using System.Windows.Documents;
 using Microsoft.Win32;
 
 namespace AgoraWindows.Views;
@@ -234,7 +235,6 @@ public partial class MainWindow : Window
         CtxDelete.Content = Translations.T("ctx.delete");
         NewChatBtnLabel.Text = Translations.T("chat.new_channel");
         NewTeamBtnLabel.Text = Translations.T("teams.new_team");
-        NewChannelBtnLabel.Text = Translations.T("teams.new_channel");
         CalendarNewEventBtn.Text = Translations.T("calendar.new_event");
     }
 
