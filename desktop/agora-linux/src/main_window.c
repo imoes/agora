@@ -1611,6 +1611,57 @@ static GtkWidget *create_avatar_widget(const char *name, int size)
     return da;
 }
 
+/* --- Status dot for message avatars --- */
+
+typedef struct {
+    double r, g, b;
+} StatusDotData;
+
+static gboolean draw_status_dot_cb(GtkWidget *widget, cairo_t *cr, gpointer data)
+{
+    StatusDotData *sd = (StatusDotData *)data;
+    int w = gtk_widget_get_allocated_width(widget);
+    int h = gtk_widget_get_allocated_height(widget);
+    double radius = MIN(w, h) / 2.0;
+    double cx = w / 2.0, cy = h / 2.0;
+
+    /* White border */
+    cairo_arc(cr, cx, cy, radius, 0, 2 * G_PI);
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_fill(cr);
+
+    /* Colored dot */
+    cairo_arc(cr, cx, cy, radius - 1.5, 0, 2 * G_PI);
+    cairo_set_source_rgb(cr, sd->r, sd->g, sd->b);
+    cairo_fill(cr);
+
+    return FALSE;
+}
+
+static GtkWidget *create_status_dot(const char *status)
+{
+    StatusDotData *data = g_new0(StatusDotData, 1);
+
+    if (status && g_strcmp0(status, "online") == 0) {
+        data->r = 0.0; data->g = 0.784; data->b = 0.318;  /* #00c851 */
+    } else if (status && (g_strcmp0(status, "busy") == 0 || g_strcmp0(status, "dnd") == 0)) {
+        data->r = 0.769; data->g = 0.192; data->b = 0.294; /* #c4314b */
+    } else if (status && g_strcmp0(status, "away") == 0) {
+        data->r = 0.988; data->g = 0.729; data->b = 0.016; /* #fcba04 */
+    } else {
+        data->r = 0.576; data->g = 0.576; data->b = 0.561; /* #93938f */
+    }
+
+    GtkWidget *da = gtk_drawing_area_new();
+    gtk_widget_set_size_request(da, 10, 10);
+    gtk_widget_set_halign(da, GTK_ALIGN_END);
+    gtk_widget_set_valign(da, GTK_ALIGN_END);
+    g_signal_connect(da, "draw", G_CALLBACK(draw_status_dot_cb), data);
+    g_object_set_data_full(G_OBJECT(da), "status-dot-data", data, g_free);
+
+    return da;
+}
+
 /* --- Day separator (Teams-style centered date label between lines) --- */
 
 static GtkWidget *create_day_separator(const char *date_str)
@@ -2190,6 +2241,10 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
         !json_object_get_null_member(msg, "file_reference_id")
         ? json_object_get_string_member(msg, "file_reference_id") : NULL;
 
+    const char *sender_status = json_object_has_member(msg, "sender_status") &&
+        !json_object_get_null_member(msg, "sender_status")
+        ? json_object_get_string_member(msg, "sender_status") : "offline";
+
     /* Teams-style: [Avatar 36px] [Content area] -- all left-aligned */
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_style_context_add_class(gtk_widget_get_style_context(outer), "msg-flat");
@@ -2198,10 +2253,14 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
     gtk_widget_set_margin_top(outer, 2);
     gtk_widget_set_margin_bottom(outer, 2);
 
-    /* Avatar circle */
+    /* Avatar circle with status dot overlay */
     GtkWidget *avatar = create_avatar_widget(sender, 36);
     gtk_widget_set_margin_top(avatar, 2);
-    gtk_box_pack_start(GTK_BOX(outer), avatar, FALSE, FALSE, 0);
+    GtkWidget *avatar_overlay = gtk_overlay_new();
+    gtk_container_add(GTK_CONTAINER(avatar_overlay), avatar);
+    GtkWidget *status_dot = create_status_dot(sender_status);
+    gtk_overlay_add_overlay(GTK_OVERLAY(avatar_overlay), status_dot);
+    gtk_box_pack_start(GTK_BOX(outer), avatar_overlay, FALSE, FALSE, 0);
 
     /* Right content column */
     GtkWidget *content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);

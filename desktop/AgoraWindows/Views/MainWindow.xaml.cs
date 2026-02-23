@@ -1323,6 +1323,18 @@ function insertText(text) {
                 {
                     _userStatuses[userId] = status ?? "offline";
                     UpdateChatStatusIndicator();
+                    // Update status dots on existing messages
+                    for (int i = 0; i < _messages.Count; i++)
+                    {
+                        if (_messages[i].SenderId == userId)
+                        {
+                            _messages[i].SenderStatus = status ?? "offline";
+                            var idx = i;
+                            var m = _messages[idx];
+                            _messages.RemoveAt(idx);
+                            _messages.Insert(idx, m);
+                        }
+                    }
                 }
             }
         });

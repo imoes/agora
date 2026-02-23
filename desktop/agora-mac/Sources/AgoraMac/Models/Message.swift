@@ -17,7 +17,7 @@ struct Message: Codable, Identifiable, Equatable {
     let senderId: String
     let senderName: String
     let senderAvatarPath: String?
-    let senderStatus: String?
+    var senderStatus: String?
     var content: String
     let messageType: String
     let fileReferenceId: String?
