@@ -226,8 +226,24 @@ async def add_member(
         select(Channel).where(Channel.team_id == team_id)
     )
     team_channels = channels_result.scalars().all()
-    logger.warning("[add_member] Adding user to %d team channels", len(team_channels))
-    for channel in team_channels:
+
+    # Find channels the user is already a member of to avoid duplicate inserts
+    if team_channels:
+        existing_memberships = await db.execute(
+            select(ChannelMember.channel_id).where(
+                and_(
+                    ChannelMember.channel_id.in_([ch.id for ch in team_channels]),
+                    ChannelMember.user_id == data.user_id,
+                )
+            )
+        )
+        existing_channel_ids = set(existing_memberships.scalars().all())
+    else:
+        existing_channel_ids = set()
+
+    channels_to_add = [ch for ch in team_channels if ch.id not in existing_channel_ids]
+    logger.warning("[add_member] Adding user to %d team channels", len(channels_to_add))
+    for channel in channels_to_add:
         ch_member = ChannelMember(
             channel_id=channel.id,
             user_id=data.user_id,
