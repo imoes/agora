@@ -99,8 +99,6 @@ class AppState: ObservableObject {
 
     func loadTeamChannels(_ team: Team) {
         guard let api = api else { return }
-        // Skip if already loaded
-        if teamChannelsMap[team.id] != nil { return }
         Task {
             do {
                 let channels = try await api.getTeamChannels(teamId: team.id)
@@ -744,6 +742,7 @@ struct WelcomeView: View {
 
 struct SidebarView: View {
     @ObservedObject var appState: AppState
+    @State private var expandedTeams: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -794,7 +793,18 @@ struct SidebarView: View {
                 if !appState.teams.isEmpty {
                     Section(T("teams.teams")) {
                         ForEach(appState.teams) { team in
-                            DisclosureGroup {
+                            DisclosureGroup(
+                                isExpanded: Binding(
+                                    get: { expandedTeams.contains(team.id) },
+                                    set: { isExpanded in
+                                        if isExpanded {
+                                            expandedTeams.insert(team.id)
+                                        } else {
+                                            expandedTeams.remove(team.id)
+                                        }
+                                    }
+                                )
+                            ) {
                                 ForEach(appState.teamChannelsMap[team.id] ?? []) { channel in
                                     ChannelRowView(channel: channel)
                                         .tag(channel)
@@ -803,6 +813,7 @@ struct SidebarView: View {
                                 TeamRowView(team: team)
                             }
                             .onAppear {
+                                expandedTeams.insert(team.id)
                                 appState.loadTeamChannels(team)
                             }
                         }

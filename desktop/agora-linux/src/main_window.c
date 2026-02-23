@@ -490,19 +490,40 @@ static void load_team_channels_into_expander(AgoraMainWindow *win, const char *t
         JsonObject *ch = json_array_get_object_element(arr, i);
         const char *id = json_object_get_string_member(ch, "id");
         const char *name = json_object_get_string_member(ch, "name");
+        gint64 unread = json_object_has_member(ch, "unread_count")
+            ? json_object_get_int_member(ch, "unread_count") : 0;
+
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        gtk_widget_set_margin_start(row_box, 16);
+        gtk_widget_set_margin_top(row_box, 4);
+        gtk_widget_set_margin_bottom(row_box, 4);
+        gtk_widget_set_margin_end(row_box, 8);
 
         char *display = g_strdup_printf("# %s", name);
         GtkWidget *label = gtk_label_new(display);
         g_free(display);
         gtk_widget_set_halign(label, GTK_ALIGN_START);
-        gtk_widget_set_margin_start(label, 16);
-        gtk_widget_set_margin_top(label, 4);
-        gtk_widget_set_margin_bottom(label, 4);
+        gtk_box_pack_start(GTK_BOX(row_box), label, TRUE, TRUE, 0);
+
+        if (unread > 0) {
+            char *badge_text = g_strdup_printf("%ld", (long)unread);
+            GtkWidget *badge = gtk_label_new(badge_text);
+            g_free(badge_text);
+            gtk_style_context_add_class(gtk_widget_get_style_context(badge), "unread-badge");
+            PangoAttrList *badge_attrs = pango_attr_list_new();
+            pango_attr_list_insert(badge_attrs, pango_attr_scale_new(0.8));
+            pango_attr_list_insert(badge_attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+            gtk_label_set_attributes(GTK_LABEL(badge), badge_attrs);
+            pango_attr_list_unref(badge_attrs);
+            gtk_widget_set_halign(badge, GTK_ALIGN_END);
+            gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+            gtk_box_pack_end(GTK_BOX(row_box), badge, FALSE, FALSE, 0);
+        }
 
         GtkWidget *row = gtk_list_box_row_new();
         g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
         g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(name), g_free);
-        gtk_container_add(GTK_CONTAINER(row), label);
+        gtk_container_add(GTK_CONTAINER(row), row_box);
         gtk_list_box_insert(GTK_LIST_BOX(channel_list_box), row, -1);
     }
 
@@ -607,6 +628,10 @@ static void load_teams(AgoraMainWindow *win)
 
         g_object_set_data_full(G_OBJECT(expander), "team-id", g_strdup(id), g_free);
         g_object_set_data(G_OBJECT(expander), "channel-list", ch_list);
+
+        /* Load channels immediately and expand */
+        load_team_channels_into_expander(win, id, ch_list);
+        gtk_expander_set_expanded(GTK_EXPANDER(expander), TRUE);
 
         g_signal_connect(expander, "notify::expanded", G_CALLBACK(on_team_expander_toggled), win);
 
