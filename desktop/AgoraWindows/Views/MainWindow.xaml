@@ -98,11 +98,17 @@
                 <Border DockPanel.Dock="Top" Padding="14,8"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                     <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="+" FontSize="16" FontWeight="Bold"
-                                Click="NewChat_Click" Cursor="Hand"
+                        <Button DockPanel.Dock="Right" Click="NewChat_Click" Cursor="Hand"
                                 Background="Transparent" BorderThickness="0"
-                                Foreground="{StaticResource PrimaryBrush}"
-                                Padding="6,0" VerticalAlignment="Center" />
+                                Padding="6,2" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"
+                                           Foreground="{StaticResource PrimaryBrush}" />
+                                <TextBlock x:Name="NewChatBtnLabel" Text="Neuer Chat" FontSize="12"
+                                           Foreground="{StaticResource PrimaryBrush}" />
+                            </StackPanel>
+                        </Button>
                         <TextBlock x:Name="SidebarHeader" Text="Chats" FontSize="13" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" />
                     </DockPanel>
@@ -185,12 +191,17 @@
                             <TextBlock Text="Teams" FontSize="13" FontWeight="SemiBold"
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        VerticalAlignment="Center" />
-                            <Button DockPanel.Dock="Right" Content="+" FontSize="16"
-                                    Click="NewTeamButton_Click" Cursor="Hand"
-                                    ToolTip="New Team" HorizontalAlignment="Right"
-                                    Width="28" Height="28" Padding="0"
-                                    Background="Transparent" BorderThickness="0"
-                                    Foreground="{StaticResource TextSecondaryBrush}" />
+                            <Button DockPanel.Dock="Right" Click="NewTeamButton_Click" Cursor="Hand"
+                                    HorizontalAlignment="Right" Padding="4,2"
+                                    Background="Transparent" BorderThickness="0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets"
+                                               FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock x:Name="NewTeamBtnLabel" Text="Neues Team" FontSize="12"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                </StackPanel>
+                            </Button>
                         </DockPanel>
 
                         <!-- Teams list (visible when Teams nav selected) -->
@@ -250,8 +261,21 @@
                         <!-- Team channels (shown when a team is selected) -->
                         <Border x:Name="TeamChannelsBorder" Padding="8,4,8,8" Visibility="Collapsed">
                             <StackPanel>
-                                <TextBlock x:Name="TeamChannelsHeader" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{StaticResource PrimaryBrush}" Margin="8,4,0,4" />
+                                <DockPanel Margin="8,4,0,4">
+                                    <TextBlock x:Name="TeamChannelsHeader" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" />
+                                    <Button DockPanel.Dock="Right" Click="NewTeamChannel_Click" Cursor="Hand"
+                                            HorizontalAlignment="Right" Padding="4,2"
+                                            Background="Transparent" BorderThickness="0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock x:Name="NewChannelBtnLabel" Text="Neuer Channel" FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Button>
+                                </DockPanel>
                                 <ListBox x:Name="TeamChannelList" BorderThickness="0"
                                          SelectionChanged="TeamChannelList_SelectionChanged"
                                          Background="Transparent">

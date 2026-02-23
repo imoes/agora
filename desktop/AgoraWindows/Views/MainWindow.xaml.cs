@@ -234,6 +234,10 @@ public partial class MainWindow : Window
         CtxReply.Content = Translations.T("ctx.reply");
         CtxEdit.Content = Translations.T("ctx.edit");
         CtxDelete.Content = Translations.T("ctx.delete");
+        NewChatBtnLabel.Text = Translations.T("chat.new_channel");
+        NewTeamBtnLabel.Text = Translations.T("teams.new_team");
+        NewChannelBtnLabel.Text = Translations.T("teams.new_channel");
+        CalendarNewEventBtn.Text = Translations.T("calendar.new_event");
     }
 
     // === WYSIWYG Editor ===
@@ -1053,6 +1057,61 @@ function insertText(text) {
                 var teams = await _api.GetTeamsAsync();
                 _teams.Clear();
                 foreach (var t in teams) _teams.Add(t);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"{Translations.T("teams.error_loading")}: {ex.Message}",
+                    Translations.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+    }
+
+    private async void NewTeamChannel_Click(object sender, RoutedEventArgs e)
+    {
+        if (TeamList.SelectedItem is not Team team) return;
+
+        var dialog = new System.Windows.Window
+        {
+            Title = Translations.T("teams.new_channel"),
+            Width = 360,
+            Height = 220,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize
+        };
+
+        var stack = new StackPanel { Margin = new Thickness(16) };
+
+        stack.Children.Add(new TextBlock { Text = Translations.T("teams.channel_name"), Margin = new Thickness(0, 0, 0, 4) });
+        var nameBox = new TextBox { Padding = new Thickness(8, 6, 8, 6) };
+        stack.Children.Add(nameBox);
+
+        stack.Children.Add(new TextBlock { Text = Translations.T("teams.description"), Margin = new Thickness(0, 12, 0, 4) });
+        var descBox = new TextBox { Padding = new Thickness(8, 6, 8, 6) };
+        stack.Children.Add(descBox);
+
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var createBtn = new Button { Content = Translations.T("chat.create"), Padding = new Thickness(16, 6, 16, 6), IsDefault = true };
+        var cancelBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        btnPanel.Children.Add(createBtn);
+        btnPanel.Children.Add(cancelBtn);
+        stack.Children.Add(btnPanel);
+
+        createBtn.Click += (_, _) => { dialog.DialogResult = true; };
+        cancelBtn.Click += (_, _) => { dialog.DialogResult = false; };
+
+        dialog.Content = stack;
+
+        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(nameBox.Text))
+        {
+            try
+            {
+                var desc = string.IsNullOrWhiteSpace(descBox.Text) ? null : descBox.Text.Trim();
+                await _api.CreateChannelAsync(nameBox.Text.Trim(), "team", desc, team.Id);
+                // Reload team channels
+                var channels = await _api.GetTeamChannelsAsync(team.Id);
+                _teamChannels.Clear();
+                foreach (var ch in channels) _teamChannels.Add(ch);
             }
             catch (Exception ex)
             {
