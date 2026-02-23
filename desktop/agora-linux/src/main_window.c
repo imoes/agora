@@ -133,6 +133,9 @@ static void clear_list_box(GtkListBox *list)
 }
 
 static void load_channels(AgoraMainWindow *win); /* forward decl */
+static GtkWidget *create_avatar_widget(const char *name, int size); /* forward decl */
+static char *format_msg_time(const char *iso_str); /* forward decl */
+static char *format_relative_time(const char *iso_str); /* forward decl */
 
 /* Idle callback: reload channel list outside of signal handlers so that
    GTK's internal click processing has finished and no row pointers dangle. */
@@ -226,6 +229,25 @@ static const char *app_css =
     ".feed-filter-btn:checked { background-image: none; background-color: #6264a7; "
     "  color: #ffffff; border-color: #6264a7; font-weight: bold; }"
     ".feed-filter-btn:checked label { color: #ffffff; }"
+    /* Day separator */
+    ".day-sep-box { margin: 12px 16px; }"
+    ".day-sep-line { background-color: #e0e0e0; min-height: 1px; }"
+    ".day-sep-label { color: #616161; font-size: 12px; padding: 0 12px; }"
+    /* Message Teams-style flat layout */
+    ".msg-flat { padding: 8px 16px 4px 16px; }"
+    ".msg-flat:hover { background-color: #f5f5f5; }"
+    /* Calendar week view */
+    ".cal-week-header { background-color: #fafafa; border-bottom: 1px solid #e0e0e0; padding: 6px 0; }"
+    ".cal-day-col { border-right: 1px solid #f0f0f0; }"
+    ".cal-today-col { background-color: #F5F3FF; }"
+    ".cal-hour-row { border-bottom: 1px solid #f5f5f5; min-height: 48px; }"
+    ".cal-hour-label { color: #888888; padding: 2px 8px; }"
+    ".cal-event-pill { background-color: #6264a7; color: #ffffff; border-radius: 4px; "
+    "  padding: 2px 6px; margin: 1px 2px; }"
+    ".cal-now-line { background-color: #e74856; min-height: 2px; }"
+    /* Teams sidebar tree style */
+    ".team-tree-row { padding: 4px 8px 4px 16px; }"
+    ".team-tree-channel { padding: 3px 8px 3px 32px; }"
 ;
 
 /* --- Leave channel --- */
@@ -324,8 +346,25 @@ static void load_channels(AgoraMainWindow *win)
         if (json_object_has_member(ch, "unread_count"))
             unread = json_object_get_int_member(ch, "unread_count");
 
-        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        /* Last message preview (if available from API) */
+        const char *last_msg_preview = json_object_has_member(ch, "last_message_preview") &&
+            !json_object_get_null_member(ch, "last_message_preview")
+            ? json_object_get_string_member(ch, "last_message_preview") : NULL;
+        const char *last_msg_time = json_object_has_member(ch, "last_message_time") &&
+            !json_object_get_null_member(ch, "last_message_time")
+            ? json_object_get_string_member(ch, "last_message_time") : NULL;
+
+        /* Teams-style row: [Avatar 32px] [Name + preview] [Time + badge] */
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
         gtk_container_set_border_width(GTK_CONTAINER(row_box), 8);
+
+        /* Avatar circle */
+        GtkWidget *ch_avatar = create_avatar_widget(name, 32);
+        gtk_widget_set_valign(ch_avatar, GTK_ALIGN_CENTER);
+        gtk_box_pack_start(GTK_BOX(row_box), ch_avatar, FALSE, FALSE, 0);
+
+        /* Text column */
+        GtkWidget *text_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
 
         /* Channel name + unread */
         GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
@@ -333,29 +372,64 @@ static void load_channels(AgoraMainWindow *win)
         gtk_label_set_ellipsize(GTK_LABEL(name_label), PANGO_ELLIPSIZE_END);
         gtk_widget_set_halign(name_label, GTK_ALIGN_START);
         PangoAttrList *attrs = pango_attr_list_new();
-        pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
+        if (unread > 0)
+            pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+        else
+            pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
         gtk_label_set_attributes(GTK_LABEL(name_label), attrs);
         pango_attr_list_unref(attrs);
         gtk_box_pack_start(GTK_BOX(hbox), name_label, TRUE, TRUE, 0);
 
-        if (unread > 0) {
-            char *badge = g_strdup_printf("  %ld  ", (long)unread);
-            GtkWidget *badge_label = gtk_label_new(badge);
-            g_free(badge);
-            gtk_box_pack_end(GTK_BOX(hbox), badge_label, FALSE, FALSE, 0);
+        /* Time on the right of the name row */
+        if (last_msg_time) {
+            char *rel_time = format_relative_time(last_msg_time);
+            GtkWidget *time_label = gtk_label_new(rel_time);
+            g_free(rel_time);
+            PangoAttrList *time_attrs = pango_attr_list_new();
+            pango_attr_list_insert(time_attrs, pango_attr_scale_new(0.8));
+            pango_attr_list_insert(time_attrs, pango_attr_foreground_new(0x9900, 0x9900, 0x9900));
+            gtk_label_set_attributes(GTK_LABEL(time_label), time_attrs);
+            pango_attr_list_unref(time_attrs);
+            gtk_box_pack_end(GTK_BOX(hbox), time_label, FALSE, FALSE, 0);
         }
-        gtk_box_pack_start(GTK_BOX(row_box), hbox, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(text_col), hbox, FALSE, FALSE, 0);
 
-        /* Member count */
-        char *members_text = g_strdup_printf("%ld %s", (long)member_count, T("chat.members"));
-        GtkWidget *members_label = gtk_label_new(members_text);
-        g_free(members_text);
-        gtk_widget_set_halign(members_label, GTK_ALIGN_START);
+        /* Preview line: last message or member count */
+        GtkWidget *preview_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        char *preview_display;
+        if (last_msg_preview && strlen(last_msg_preview) > 0) {
+            preview_display = g_strdup(last_msg_preview);
+        } else {
+            preview_display = g_strdup_printf("%ld %s", (long)member_count, T("chat.members"));
+        }
+        GtkWidget *preview_label = gtk_label_new(preview_display);
+        g_free(preview_display);
+        gtk_label_set_ellipsize(GTK_LABEL(preview_label), PANGO_ELLIPSIZE_END);
+        gtk_label_set_max_width_chars(GTK_LABEL(preview_label), 30);
+        gtk_widget_set_halign(preview_label, GTK_ALIGN_START);
         PangoAttrList *small_attrs = pango_attr_list_new();
         pango_attr_list_insert(small_attrs, pango_attr_scale_new(0.85));
-        gtk_label_set_attributes(GTK_LABEL(members_label), small_attrs);
+        pango_attr_list_insert(small_attrs, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+        gtk_label_set_attributes(GTK_LABEL(preview_label), small_attrs);
         pango_attr_list_unref(small_attrs);
-        gtk_box_pack_start(GTK_BOX(row_box), members_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(preview_hbox), preview_label, TRUE, TRUE, 0);
+
+        /* Unread badge */
+        if (unread > 0) {
+            char *badge = g_strdup_printf(" %ld ", (long)unread);
+            GtkWidget *badge_label = gtk_label_new(badge);
+            g_free(badge);
+            PangoAttrList *badge_attrs = pango_attr_list_new();
+            pango_attr_list_insert(badge_attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+            pango_attr_list_insert(badge_attrs, pango_attr_foreground_new(0x6200, 0x6400, 0xa700));
+            pango_attr_list_insert(badge_attrs, pango_attr_scale_new(0.8));
+            gtk_label_set_attributes(GTK_LABEL(badge_label), badge_attrs);
+            pango_attr_list_unref(badge_attrs);
+            gtk_box_pack_end(GTK_BOX(preview_hbox), badge_label, FALSE, FALSE, 0);
+        }
+        gtk_box_pack_start(GTK_BOX(text_col), preview_hbox, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), text_col, TRUE, TRUE, 0);
 
         GtkWidget *row = gtk_list_box_row_new();
         g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
@@ -400,9 +474,17 @@ static void load_teams(AgoraMainWindow *win)
         gint64 member_count = json_object_has_member(team, "member_count")
             ? json_object_get_int_member(team, "member_count") : 0;
 
-        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-        gtk_container_set_border_width(GTK_CONTAINER(row_box), 8);
+        /* Teams-style: [Avatar 28px] [Team Name + member count] */
+        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_container_set_border_width(GTK_CONTAINER(row_box), 6);
 
+        /* Team avatar */
+        GtkWidget *team_avatar = create_avatar_widget(name, 28);
+        gtk_widget_set_valign(team_avatar, GTK_ALIGN_CENTER);
+        gtk_box_pack_start(GTK_BOX(row_box), team_avatar, FALSE, FALSE, 0);
+
+        /* Text column */
+        GtkWidget *text_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
         GtkWidget *name_label = gtk_label_new(name);
         gtk_label_set_ellipsize(GTK_LABEL(name_label), PANGO_ELLIPSIZE_END);
         gtk_widget_set_halign(name_label, GTK_ALIGN_START);
@@ -410,17 +492,20 @@ static void load_teams(AgoraMainWindow *win)
         pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_SEMIBOLD));
         gtk_label_set_attributes(GTK_LABEL(name_label), attrs);
         pango_attr_list_unref(attrs);
-        gtk_box_pack_start(GTK_BOX(row_box), name_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(text_col), name_label, FALSE, FALSE, 0);
 
         char *members_text = g_strdup_printf("%ld %s", (long)member_count, T("chat.members"));
         GtkWidget *members_label = gtk_label_new(members_text);
         g_free(members_text);
         gtk_widget_set_halign(members_label, GTK_ALIGN_START);
         PangoAttrList *small_attrs = pango_attr_list_new();
-        pango_attr_list_insert(small_attrs, pango_attr_scale_new(0.85));
+        pango_attr_list_insert(small_attrs, pango_attr_scale_new(0.8));
+        pango_attr_list_insert(small_attrs, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
         gtk_label_set_attributes(GTK_LABEL(members_label), small_attrs);
         pango_attr_list_unref(small_attrs);
-        gtk_box_pack_start(GTK_BOX(row_box), members_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(text_col), members_label, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(row_box), text_col, TRUE, TRUE, 0);
 
         GtkWidget *row = gtk_list_box_row_new();
         g_object_set_data_full(G_OBJECT(row), "team-id", g_strdup(id), g_free);
@@ -516,7 +601,6 @@ static void on_feed_row_activated(GtkListBox *list_box, GtkListBoxRow *row, gpoi
 
     const char *channel_id = g_object_get_data(G_OBJECT(row), "channel-id");
     const char *channel_name = g_object_get_data(G_OBJECT(row), "channel-name");
-    const char *event_id = g_object_get_data(G_OBJECT(row), "event-id");
     if (!channel_id) return;
 
     /* Mark feed events for this channel as read */
@@ -607,8 +691,6 @@ static void load_feed(AgoraMainWindow *win)
             ? json_object_get_string_member(ev, "channel_name") : "";
         const char *channel_id = json_object_has_member(ev, "channel_id")
             ? json_object_get_string_member(ev, "channel_id") : NULL;
-        const char *event_type = json_object_has_member(ev, "event_type")
-            ? json_object_get_string_member(ev, "event_type") : "message";
         const char *preview = json_object_has_member(ev, "preview_text") &&
             !json_object_get_null_member(ev, "preview_text")
             ? json_object_get_string_member(ev, "preview_text") : "";
@@ -617,7 +699,7 @@ static void load_feed(AgoraMainWindow *win)
         const char *created_at = json_object_has_member(ev, "created_at")
             ? json_object_get_string_member(ev, "created_at") : NULL;
 
-        /* Build row */
+        /* Build row with avatar */
         GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
         gtk_container_set_border_width(GTK_CONTAINER(row_box), 10);
 
@@ -631,14 +713,10 @@ static void load_feed(AgoraMainWindow *win)
             gtk_box_pack_start(GTK_BOX(row_box), dot, FALSE, FALSE, 0);
         }
 
-        /* Icon based on event type */
-        const char *icon = "\xF0\x9F\x92\xAC"; /* 💬 message */
-        if (g_strcmp0(event_type, "call") == 0) icon = "\xF0\x9F\x93\xB9"; /* 📹 */
-        else if (g_strcmp0(event_type, "reaction") == 0) icon = "\xF0\x9F\x91\x8D"; /* 👍 */
-        else if (g_strcmp0(event_type, "mention") == 0) icon = "@";
-
-        GtkWidget *icon_lbl = gtk_label_new(icon);
-        gtk_box_pack_start(GTK_BOX(row_box), icon_lbl, FALSE, FALSE, 0);
+        /* Sender avatar instead of icon */
+        GtkWidget *feed_avatar = create_avatar_widget(sender_name, 32);
+        gtk_widget_set_valign(feed_avatar, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(row_box), feed_avatar, FALSE, FALSE, 0);
 
         /* Text content */
         GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
@@ -1384,7 +1462,199 @@ static gboolean is_image_content(const char *content)
     return is_img;
 }
 
-/* --- Message loading (bubble-style) --- */
+/* --- Avatar drawing (Teams-style colored circle with initials) --- */
+
+static const double avatar_palette[][3] = {
+    {0.384, 0.392, 0.655},  /* #6264a7 - purple */
+    {0.761, 0.224, 0.702},  /* #c239b3 - magenta */
+    {0.169, 0.533, 0.847},  /* #2b88d8 - blue */
+    {0.000, 0.647, 0.686},  /* #00a5af - teal */
+    {0.906, 0.282, 0.337},  /* #e74856 - red */
+    {0.290, 0.082, 0.294},  /* #4a154b - dark purple */
+    {0.000, 0.471, 0.831},  /* #0078d4 - blue */
+    {0.286, 0.510, 0.020},  /* #498205 - green */
+    {0.792, 0.314, 0.063},  /* #ca5010 - orange */
+    {0.529, 0.392, 0.722},  /* #8764b8 - violet */
+};
+
+typedef struct {
+    char initials[8];
+    double r, g, b;
+} AvatarDrawData;
+
+static gboolean draw_avatar_cb(GtkWidget *widget, cairo_t *cr, gpointer data)
+{
+    AvatarDrawData *av = (AvatarDrawData *)data;
+    int w = gtk_widget_get_allocated_width(widget);
+    int h = gtk_widget_get_allocated_height(widget);
+    double radius = MIN(w, h) / 2.0;
+    double cx = w / 2.0, cy = h / 2.0;
+
+    /* Draw circle */
+    cairo_arc(cr, cx, cy, radius, 0, 2 * G_PI);
+    cairo_set_source_rgb(cr, av->r, av->g, av->b);
+    cairo_fill(cr);
+
+    /* Draw initials text */
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, radius * 0.9);
+    cairo_text_extents_t extents;
+    cairo_text_extents(cr, av->initials, &extents);
+    cairo_move_to(cr, cx - extents.width / 2.0 - extents.x_bearing,
+                      cy - extents.height / 2.0 - extents.y_bearing);
+    cairo_show_text(cr, av->initials);
+
+    return FALSE;
+}
+
+static GtkWidget *create_avatar_widget(const char *name, int size)
+{
+    AvatarDrawData *data = g_new0(AvatarDrawData, 1);
+
+    /* Get first initial */
+    if (name && name[0]) {
+        gunichar first = g_utf8_get_char(name);
+        first = g_unichar_toupper(first);
+        int len = g_unichar_to_utf8(first, data->initials);
+        data->initials[len] = '\0';
+    } else {
+        data->initials[0] = '?';
+        data->initials[1] = '\0';
+    }
+
+    /* Pick color from palette based on name hash */
+    guint hash = name ? g_str_hash(name) : 0;
+    int idx = hash % G_N_ELEMENTS(avatar_palette);
+    data->r = avatar_palette[idx][0];
+    data->g = avatar_palette[idx][1];
+    data->b = avatar_palette[idx][2];
+
+    GtkWidget *da = gtk_drawing_area_new();
+    gtk_widget_set_size_request(da, size, size);
+    gtk_widget_set_halign(da, GTK_ALIGN_START);
+    gtk_widget_set_valign(da, GTK_ALIGN_START);
+    g_signal_connect(da, "draw", G_CALLBACK(draw_avatar_cb), data);
+    g_object_set_data_full(G_OBJECT(da), "avatar-data", data, g_free);
+
+    return da;
+}
+
+/* --- Day separator (Teams-style centered date label between lines) --- */
+
+static GtkWidget *create_day_separator(const char *date_str)
+{
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_style_context_add_class(gtk_widget_get_style_context(outer), "day-sep-box");
+    gtk_widget_set_margin_top(outer, 8);
+    gtk_widget_set_margin_bottom(outer, 4);
+    gtk_widget_set_margin_start(outer, 16);
+    gtk_widget_set_margin_end(outer, 16);
+
+    /* Left line */
+    GtkWidget *line1 = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_valign(line1, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(outer), line1, TRUE, TRUE, 0);
+
+    /* Date label */
+    GtkWidget *label = gtk_label_new(date_str);
+    gtk_style_context_add_class(gtk_widget_get_style_context(label), "day-sep-label");
+    gtk_widget_set_margin_start(label, 12);
+    gtk_widget_set_margin_end(label, 12);
+    PangoAttrList *attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_scale_new(0.85));
+    pango_attr_list_insert(attrs, pango_attr_foreground_new(0x6100, 0x6100, 0x6100));
+    gtk_label_set_attributes(GTK_LABEL(label), attrs);
+    pango_attr_list_unref(attrs);
+    gtk_box_pack_start(GTK_BOX(outer), label, FALSE, FALSE, 0);
+
+    /* Right line */
+    GtkWidget *line2 = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_valign(line2, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(outer), line2, TRUE, TRUE, 0);
+
+    return outer;
+}
+
+/* Format a date for the day separator label (e.g. "Montag, 24. Februar 2026") */
+static char *format_day_label(const char *iso_str)
+{
+    if (!iso_str) return g_strdup("");
+    GDateTime *dt = g_date_time_new_from_iso8601(iso_str, NULL);
+    if (!dt) return g_strdup("");
+    GDateTime *local = g_date_time_to_local(dt);
+    g_date_time_unref(dt);
+
+    GDateTime *now = g_date_time_new_now_local();
+    gint now_y = g_date_time_get_year(now);
+    gint now_m = g_date_time_get_month(now);
+    gint now_d = g_date_time_get_day_of_month(now);
+
+    gint msg_y = g_date_time_get_year(local);
+    gint msg_m = g_date_time_get_month(local);
+    gint msg_d = g_date_time_get_day_of_month(local);
+
+    char *result;
+    if (now_y == msg_y && now_m == msg_m && now_d == msg_d) {
+        const char *lang = agora_translations_get_lang();
+        if (g_strcmp0(lang, "de") == 0) result = g_strdup("Heute");
+        else if (g_strcmp0(lang, "fr") == 0) result = g_strdup("Aujourd'hui");
+        else if (g_strcmp0(lang, "es") == 0) result = g_strdup("Hoy");
+        else result = g_strdup("Today");
+    } else {
+        /* Yesterday check */
+        GDateTime *yesterday = g_date_time_add_days(now, -1);
+        gint y_y = g_date_time_get_year(yesterday);
+        gint y_m = g_date_time_get_month(yesterday);
+        gint y_d = g_date_time_get_day_of_month(yesterday);
+        g_date_time_unref(yesterday);
+
+        if (y_y == msg_y && y_m == msg_m && y_d == msg_d) {
+            const char *lang = agora_translations_get_lang();
+            if (g_strcmp0(lang, "de") == 0) result = g_strdup("Gestern");
+            else if (g_strcmp0(lang, "fr") == 0) result = g_strdup("Hier");
+            else if (g_strcmp0(lang, "es") == 0) result = g_strdup("Ayer");
+            else result = g_strdup("Yesterday");
+        } else {
+            /* Full date: "Montag, 24. Februar 2026" or "Monday, February 24, 2026" */
+            result = g_date_time_format(local, "%A, %e. %B %Y");
+        }
+    }
+
+    g_date_time_unref(local);
+    g_date_time_unref(now);
+    return result;
+}
+
+/* Extract just the date part (year, month, day) from an ISO string for comparison */
+static void extract_date_parts(const char *iso_str, int *year, int *month, int *day)
+{
+    *year = 0; *month = 0; *day = 0;
+    if (!iso_str) return;
+    GDateTime *dt = g_date_time_new_from_iso8601(iso_str, NULL);
+    if (!dt) return;
+    GDateTime *local = g_date_time_to_local(dt);
+    *year = g_date_time_get_year(local);
+    *month = g_date_time_get_month(local);
+    *day = g_date_time_get_day_of_month(local);
+    g_date_time_unref(local);
+    g_date_time_unref(dt);
+}
+
+/* Format a time string from ISO to "HH:MM" */
+static char *format_msg_time(const char *iso_str)
+{
+    if (!iso_str) return g_strdup("");
+    GDateTime *dt = g_date_time_new_from_iso8601(iso_str, NULL);
+    if (!dt) return g_strdup("");
+    GDateTime *local = g_date_time_to_local(dt);
+    char *result = g_date_time_format(local, "%H:%M");
+    g_date_time_unref(local);
+    g_date_time_unref(dt);
+    return result;
+}
+
+/* --- Message loading (Teams-style flat layout) --- */
 
 static void send_reaction(AgoraMainWindow *win, const char *emoji, const char *msg_id)
 {
@@ -1800,30 +2070,32 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
     gboolean has_edited = json_object_has_member(msg, "edited_at") &&
                           !json_object_get_null_member(msg, "edited_at");
 
-    /* Outer alignment: own messages right, others left */
-    GtkWidget *align_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_margin_start(align_box, 12);
-    gtk_widget_set_margin_end(align_box, 12);
-    gtk_widget_set_margin_top(align_box, 3);
-    gtk_widget_set_margin_bottom(align_box, 3);
+    const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
+        !json_object_get_null_member(msg, "file_reference_id")
+        ? json_object_get_string_member(msg, "file_reference_id") : NULL;
 
-    if (is_own)
-        gtk_box_pack_start(GTK_BOX(align_box),
-            gtk_label_new(""), TRUE, TRUE, 0); /* spacer left */
+    /* Teams-style: [Avatar 36px] [Content area] -- all left-aligned */
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_style_context_add_class(gtk_widget_get_style_context(outer), "msg-flat");
+    gtk_widget_set_margin_start(outer, 16);
+    gtk_widget_set_margin_end(outer, 16);
+    gtk_widget_set_margin_top(outer, 2);
+    gtk_widget_set_margin_bottom(outer, 2);
 
-    /* Bubble container */
-    GtkWidget *bubble = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_widget_set_name(bubble, is_own ? "msg-bubble-own" : "msg-bubble-other");
-    gtk_style_context_add_class(gtk_widget_get_style_context(bubble),
-                                is_own ? "msg-own" : "msg-other");
-    gtk_container_set_border_width(GTK_CONTAINER(bubble), 8);
+    /* Avatar circle */
+    GtkWidget *avatar = create_avatar_widget(sender, 36);
+    gtk_widget_set_margin_top(avatar, 2);
+    gtk_box_pack_start(GTK_BOX(outer), avatar, FALSE, FALSE, 0);
 
-    /* Reply quote */
+    /* Right content column */
+    GtkWidget *content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+
+    /* Reply quote (if replying to a message) */
     if (json_object_has_member(msg, "reply_to_sender") &&
         !json_object_get_null_member(msg, "reply_to_sender")) {
         const char *reply_sender = json_object_get_string_member(msg, "reply_to_sender");
         const char *reply_content = json_object_get_string_member(msg, "reply_to_content");
-        char *quote = g_strdup_printf("<small><b>%s</b>\n%s</small>",
+        char *quote = g_strdup_printf("<small><b>%s</b>  %s</small>",
                                        reply_sender ? reply_sender : "?",
                                        reply_content ? reply_content : "");
         GtkWidget *quote_lbl = gtk_label_new(NULL);
@@ -1831,19 +2103,20 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
         g_free(quote);
         gtk_widget_set_halign(quote_lbl, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(quote_lbl), TRUE);
-        gtk_label_set_max_width_chars(GTK_LABEL(quote_lbl), 50);
+        gtk_label_set_max_width_chars(GTK_LABEL(quote_lbl), 60);
         gtk_style_context_add_class(gtk_widget_get_style_context(quote_lbl), "msg-reply");
-        gtk_box_pack_start(GTK_BOX(bubble), quote_lbl, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(content_box), quote_lbl, FALSE, FALSE, 0);
     }
 
-    /* Header: sender + time */
+    /* Header line: Sender Name    HH:MM */
     GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    char *header_markup = g_strdup_printf(
-        "<span weight='bold' color='#6264A7'>%s</span>",
-        sender ? sender : "?");
+
+    char *sender_markup = g_strdup_printf(
+        "<b>%s</b>", sender ? sender : "?");
     GtkWidget *sender_lbl = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(sender_lbl), header_markup);
-    g_free(header_markup);
+    gtk_label_set_markup(GTK_LABEL(sender_lbl), sender_markup);
+    g_free(sender_markup);
+    gtk_widget_set_halign(sender_lbl, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(header), sender_lbl, FALSE, FALSE, 0);
 
     if (has_edited) {
@@ -1855,23 +2128,19 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
         gtk_box_pack_start(GTK_BOX(header), ed_lbl, FALSE, FALSE, 0);
     }
 
-    /* Format time nicely */
-    char *time_str = format_relative_time(created);
+    /* Absolute time HH:MM */
+    char *time_str = format_msg_time(created);
     GtkWidget *time_lbl = gtk_label_new(NULL);
     char *time_markup = g_strdup_printf(
-        "<span size='small' foreground='#999999'>%s</span>", time_str);
+        "<small><span foreground='#999999'>%s</span></small>", time_str);
     gtk_label_set_markup(GTK_LABEL(time_lbl), time_markup);
     g_free(time_markup);
     g_free(time_str);
-    gtk_box_pack_end(GTK_BOX(header), time_lbl, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(header), time_lbl, FALSE, FALSE, 0);
 
-    gtk_box_pack_start(GTK_BOX(bubble), header, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content_box), header, FALSE, FALSE, 0);
 
-    /* Content */
-    const char *file_ref_id = json_object_has_member(msg, "file_reference_id") &&
-        !json_object_get_null_member(msg, "file_reference_id")
-        ? json_object_get_string_member(msg, "file_reference_id") : NULL;
-
+    /* Message content */
     if (msg_type && g_strcmp0(msg_type, "system") == 0) {
         char *sys = g_strdup_printf("<i>%s</i>", content ? content : "");
         GtkWidget *sys_lbl = gtk_label_new(NULL);
@@ -1879,23 +2148,23 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
         g_free(sys);
         gtk_widget_set_halign(sys_lbl, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(sys_lbl), TRUE);
-        gtk_box_pack_start(GTK_BOX(bubble), sys_lbl, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(content_box), sys_lbl, FALSE, FALSE, 0);
     } else if (file_ref_id && msg_type && g_strcmp0(msg_type, "file") == 0 &&
                is_image_content(content)) {
         GdkPixbuf *pixbuf = download_inline_image(win, file_ref_id, 300);
         if (pixbuf) {
             GtkWidget *img = gtk_image_new_from_pixbuf(pixbuf);
             gtk_widget_set_halign(img, GTK_ALIGN_START);
-            gtk_box_pack_start(GTK_BOX(bubble), img, FALSE, FALSE, 2);
+            gtk_box_pack_start(GTK_BOX(content_box), img, FALSE, FALSE, 2);
             g_object_unref(pixbuf);
         }
     } else {
         GtkWidget *content_lbl = gtk_label_new(content ? content : "");
         gtk_widget_set_halign(content_lbl, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(content_lbl), TRUE);
-        gtk_label_set_max_width_chars(GTK_LABEL(content_lbl), 60);
+        gtk_label_set_max_width_chars(GTK_LABEL(content_lbl), 80);
         gtk_label_set_selectable(GTK_LABEL(content_lbl), TRUE);
-        gtk_box_pack_start(GTK_BOX(bubble), content_lbl, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(content_box), content_lbl, FALSE, FALSE, 0);
     }
 
     /* Reactions display */
@@ -1930,14 +2199,16 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
                 }
                 gtk_box_pack_start(GTK_BOX(reaction_box), badge, FALSE, FALSE, 0);
             }
-            gtk_box_pack_start(GTK_BOX(bubble), reaction_box, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(content_box), reaction_box, FALSE, FALSE, 0);
             g_hash_table_destroy(counts);
         }
     }
 
-    /* Wrap bubble in GtkEventBox for right-click context menu */
+    gtk_box_pack_start(GTK_BOX(outer), content_box, TRUE, TRUE, 0);
+
+    /* Wrap in GtkEventBox for right-click context menu */
     GtkWidget *evbox = gtk_event_box_new();
-    gtk_container_add(GTK_CONTAINER(evbox), bubble);
+    gtk_container_add(GTK_CONTAINER(evbox), outer);
     if (msg_id) {
         g_object_set_data_full(G_OBJECT(evbox), "message-id",
                                g_strdup(msg_id), g_free);
@@ -1955,13 +2226,7 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
                          G_CALLBACK(on_message_right_click), win);
     }
 
-    gtk_box_pack_start(GTK_BOX(align_box), evbox, FALSE, FALSE, 0);
-
-    if (!is_own)
-        gtk_box_pack_start(GTK_BOX(align_box),
-            gtk_label_new(""), TRUE, TRUE, 0); /* spacer right */
-
-    return align_box;
+    return evbox;
 }
 
 static void load_messages(AgoraMainWindow *win, const char *channel_id)
@@ -1985,12 +2250,33 @@ static void load_messages(AgoraMainWindow *win, const char *channel_id)
     AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
     AgoraSession *session = agora_app_get_session(app);
 
+    int prev_year = 0, prev_month = 0, prev_day = 0;
+
     for (guint i = 0; i < len; i++) {
         JsonObject *msg = json_array_get_object_element(arr, i);
         const char *sender_id = json_object_has_member(msg, "sender_id")
             ? json_object_get_string_member(msg, "sender_id") : NULL;
+        const char *created_at = json_object_has_member(msg, "created_at")
+            ? json_object_get_string_member(msg, "created_at") : NULL;
         gboolean is_own = (sender_id && session->user_id &&
                            g_strcmp0(sender_id, session->user_id) == 0);
+
+        /* Insert day separator if date changed */
+        int msg_y, msg_m, msg_d;
+        extract_date_parts(created_at, &msg_y, &msg_m, &msg_d);
+        if (msg_y != prev_year || msg_m != prev_month || msg_d != prev_day) {
+            if (i > 0 || (msg_y != 0)) {  /* Skip separator before very first msg if no date */
+                char *day_text = format_day_label(created_at);
+                GtkWidget *sep_widget = create_day_separator(day_text);
+                g_free(day_text);
+                GtkWidget *sep_row = gtk_list_box_row_new();
+                gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(sep_row), FALSE);
+                gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(sep_row), FALSE);
+                gtk_container_add(GTK_CONTAINER(sep_row), sep_widget);
+                gtk_list_box_insert(win->message_list, sep_row, -1);
+            }
+            prev_year = msg_y; prev_month = msg_m; prev_day = msg_d;
+        }
 
         GtkWidget *bubble = create_message_bubble(win, msg, is_own);
         GtkWidget *row = gtk_list_box_row_new();
@@ -4212,10 +4498,10 @@ static void agora_main_window_init(AgoraMainWindow *win)
 
     gtk_stack_add_named(win->content_stack, feed_box, "feed");
 
-    /* --- Calendar view --- */
+    /* --- Calendar view (Teams-style with week grid + side panel) --- */
     GtkWidget *calendar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
-    /* Calendar header */
+    /* Calendar header with week navigation */
     GtkWidget *cal_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_container_set_border_width(GTK_CONTAINER(cal_header), 0);
     gtk_style_context_add_class(gtk_widget_get_style_context(cal_header), "chat-header");
@@ -4226,56 +4512,186 @@ static void agora_main_window_init(AgoraMainWindow *win)
     gtk_widget_set_margin_start(cal_title, 16);
     gtk_widget_set_margin_top(cal_title, 12);
     gtk_widget_set_margin_bottom(cal_title, 12);
-    gtk_box_pack_start(GTK_BOX(cal_header), cal_title, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(cal_header), cal_title, FALSE, FALSE, 0);
     gtk_widget_set_halign(cal_title, GTK_ALIGN_START);
 
+    /* View label "Arbeitswoche" (Work week) */
+    GtkWidget *view_label = gtk_label_new(NULL);
+    {
+        const char *lang = agora_translations_get_lang();
+        const char *view_text = (g_strcmp0(lang, "de") == 0) ? "Arbeitswoche" : "Work week";
+        char *view_markup = g_strdup_printf(
+            "<span foreground='#888888' size='small'>%s</span>", view_text);
+        gtk_label_set_markup(GTK_LABEL(view_label), view_markup);
+        g_free(view_markup);
+    }
+    gtk_widget_set_margin_start(view_label, 8);
+    gtk_widget_set_valign(view_label, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(cal_header), view_label, FALSE, FALSE, 0);
+
+    /* Spacer */
+    GtkWidget *cal_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(cal_header), cal_spacer, TRUE, TRUE, 0);
+
     /* Calendar config button */
-    GtkWidget *cal_config_btn = gtk_button_new_with_label("\xE2\x9A\x99 Konfiguration");
+    GtkWidget *cal_config_btn = gtk_button_new_with_label("\xE2\x9A\x99");
+    gtk_widget_set_tooltip_text(cal_config_btn, "Konfiguration");
+    gtk_style_context_add_class(gtk_widget_get_style_context(cal_config_btn), "chat-header-btn");
     gtk_widget_set_margin_end(cal_config_btn, 4);
-    gtk_widget_set_margin_top(cal_config_btn, 8);
-    gtk_widget_set_margin_bottom(cal_config_btn, 8);
+    gtk_widget_set_valign(cal_config_btn, GTK_ALIGN_CENTER);
     g_signal_connect(cal_config_btn, "clicked",
                      G_CALLBACK(on_calendar_config_clicked), win);
     gtk_box_pack_end(GTK_BOX(cal_header), cal_config_btn, FALSE, FALSE, 0);
 
     /* New event button */
     GtkWidget *cal_new_btn = gtk_button_new_with_label("+ Neuer Termin");
-    gtk_style_context_add_class(gtk_widget_get_style_context(cal_new_btn), "suggested-action");
+    gtk_style_context_add_class(gtk_widget_get_style_context(cal_new_btn), "send-btn");
     gtk_widget_set_margin_end(cal_new_btn, 8);
-    gtk_widget_set_margin_top(cal_new_btn, 8);
-    gtk_widget_set_margin_bottom(cal_new_btn, 8);
+    gtk_widget_set_valign(cal_new_btn, GTK_ALIGN_CENTER);
     g_signal_connect(cal_new_btn, "clicked",
                      G_CALLBACK(on_calendar_new_event_clicked), win);
     gtk_box_pack_end(GTK_BOX(cal_header), cal_new_btn, FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(calendar_box), cal_header, FALSE, FALSE, 0);
 
-    /* GtkCalendar month grid widget */
+    /* Split view: [Mini calendar + event list on left] | [Week grid on right] */
+    GtkWidget *cal_split = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+
+    /* Left panel: mini calendar + day events */
+    GtkWidget *cal_left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(cal_left, 260, -1);
+
+    /* GtkCalendar mini month picker */
     win->gtk_calendar = gtk_calendar_new();
     gtk_calendar_set_display_options(GTK_CALENDAR(win->gtk_calendar),
         GTK_CALENDAR_SHOW_HEADING | GTK_CALENDAR_SHOW_DAY_NAMES);
-    gtk_widget_set_margin_start(win->gtk_calendar, 16);
-    gtk_widget_set_margin_end(win->gtk_calendar, 16);
+    gtk_widget_set_margin_start(win->gtk_calendar, 8);
+    gtk_widget_set_margin_end(win->gtk_calendar, 8);
     gtk_widget_set_margin_top(win->gtk_calendar, 8);
     gtk_widget_set_margin_bottom(win->gtk_calendar, 4);
     g_signal_connect(win->gtk_calendar, "day-selected",
                      G_CALLBACK(on_calendar_day_selected), win);
     g_signal_connect(win->gtk_calendar, "month-changed",
                      G_CALLBACK(on_calendar_month_changed), win);
-    gtk_box_pack_start(GTK_BOX(calendar_box), win->gtk_calendar, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(cal_left), win->gtk_calendar, FALSE, FALSE, 0);
 
-    /* Separator between calendar and event list */
-    gtk_box_pack_start(GTK_BOX(calendar_box),
+    /* Separator */
+    gtk_box_pack_start(GTK_BOX(cal_left),
                        gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
 
-    /* Scrollable calendar event list for selected day */
+    /* Event list for selected day */
     win->calendar_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(win->calendar_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     win->calendar_list = GTK_LIST_BOX(gtk_list_box_new());
     gtk_list_box_set_selection_mode(win->calendar_list, GTK_SELECTION_NONE);
     gtk_container_add(GTK_CONTAINER(win->calendar_scroll), GTK_WIDGET(win->calendar_list));
-    gtk_box_pack_start(GTK_BOX(calendar_box), win->calendar_scroll, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(cal_left), win->calendar_scroll, TRUE, TRUE, 0);
+
+    gtk_box_pack_start(GTK_BOX(cal_split), cal_left, FALSE, FALSE, 0);
+
+    /* Vertical separator between left panel and week grid */
+    gtk_box_pack_start(GTK_BOX(cal_split),
+                       gtk_separator_new(GTK_ORIENTATION_VERTICAL), FALSE, FALSE, 0);
+
+    /* Right panel: Week grid view */
+    GtkWidget *week_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(week_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+
+    GtkWidget *week_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Week day headers (Mon-Fri) */
+    {
+        GtkWidget *week_header = gtk_grid_new();
+        gtk_style_context_add_class(gtk_widget_get_style_context(week_header), "cal-week-header");
+        gtk_grid_set_column_homogeneous(GTK_GRID(week_header), TRUE);
+
+        /* Empty cell for time column */
+        GtkWidget *time_spacer = gtk_label_new("");
+        gtk_widget_set_size_request(time_spacer, 60, -1);
+        gtk_grid_attach(GTK_GRID(week_header), time_spacer, 0, 0, 1, 1);
+
+        GDateTime *now = g_date_time_new_now_local();
+        /* Find Monday of current week */
+        int dow = g_date_time_get_day_of_week(now); /* 1=Mon ... 7=Sun */
+        GDateTime *monday = g_date_time_add_days(now, -(dow - 1));
+
+        const char *day_names_de[] = {"Mo", "Di", "Mi", "Do", "Fr"};
+        const char *day_names_en[] = {"Mon", "Tue", "Wed", "Thu", "Fri"};
+        const char *lang = agora_translations_get_lang();
+        const char **day_names = (g_strcmp0(lang, "de") == 0) ? day_names_de : day_names_en;
+
+        for (int d = 0; d < 5; d++) {
+            GDateTime *day_dt = g_date_time_add_days(monday, d);
+            int day_num = g_date_time_get_day_of_month(day_dt);
+            char *day_text = g_strdup_printf("<b>%s %d</b>", day_names[d], day_num);
+            GtkWidget *day_lbl = gtk_label_new(NULL);
+            gtk_label_set_markup(GTK_LABEL(day_lbl), day_text);
+            g_free(day_text);
+            gtk_widget_set_margin_top(day_lbl, 8);
+            gtk_widget_set_margin_bottom(day_lbl, 8);
+
+            /* Highlight today */
+            if (g_date_time_get_day_of_month(day_dt) == g_date_time_get_day_of_month(now) &&
+                g_date_time_get_month(day_dt) == g_date_time_get_month(now) &&
+                g_date_time_get_year(day_dt) == g_date_time_get_year(now)) {
+                PangoAttrList *today_attrs = pango_attr_list_new();
+                pango_attr_list_insert(today_attrs, pango_attr_foreground_new(0x6200, 0x6400, 0xa700));
+                gtk_label_set_attributes(GTK_LABEL(day_lbl), today_attrs);
+                pango_attr_list_unref(today_attrs);
+            }
+
+            gtk_grid_attach(GTK_GRID(week_header), day_lbl, d + 1, 0, 1, 1);
+            g_date_time_unref(day_dt);
+        }
+        g_date_time_unref(monday);
+        g_date_time_unref(now);
+
+        gtk_box_pack_start(GTK_BOX(week_vbox), week_header, FALSE, FALSE, 0);
+    }
+
+    /* Time grid: hours 07:00 - 19:00 with grid lines */
+    {
+        GtkWidget *time_grid = gtk_grid_new();
+        gtk_grid_set_column_homogeneous(GTK_GRID(time_grid), FALSE);
+
+        for (int hour = 7; hour <= 19; hour++) {
+            int row = hour - 7;
+
+            /* Time label */
+            char *time_text = g_strdup_printf("%02d:00", hour);
+            GtkWidget *time_lbl = gtk_label_new(time_text);
+            g_free(time_text);
+            gtk_widget_set_size_request(time_lbl, 60, 48);
+            gtk_widget_set_valign(time_lbl, GTK_ALIGN_START);
+            gtk_widget_set_halign(time_lbl, GTK_ALIGN_END);
+            gtk_widget_set_margin_end(time_lbl, 8);
+            PangoAttrList *hr_attrs = pango_attr_list_new();
+            pango_attr_list_insert(hr_attrs, pango_attr_scale_new(0.8));
+            pango_attr_list_insert(hr_attrs, pango_attr_foreground_new(0x8800, 0x8800, 0x8800));
+            gtk_label_set_attributes(GTK_LABEL(time_lbl), hr_attrs);
+            pango_attr_list_unref(hr_attrs);
+            gtk_grid_attach(GTK_GRID(time_grid), time_lbl, 0, row, 1, 1);
+
+            /* Day columns (5 days, Mon-Fri) */
+            for (int d = 0; d < 5; d++) {
+                GtkWidget *cell = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+                gtk_widget_set_size_request(cell, -1, 48);
+                gtk_style_context_add_class(gtk_widget_get_style_context(cell), "cal-hour-row");
+                /* Use hexpand to distribute columns evenly */
+                gtk_widget_set_hexpand(cell, TRUE);
+                gtk_grid_attach(GTK_GRID(time_grid), cell, d + 1, row, 1, 1);
+            }
+        }
+
+        gtk_box_pack_start(GTK_BOX(week_vbox), time_grid, FALSE, FALSE, 0);
+    }
+
+    gtk_container_add(GTK_CONTAINER(week_scroll), week_vbox);
+    gtk_box_pack_start(GTK_BOX(cal_split), week_scroll, TRUE, TRUE, 0);
+
+    gtk_box_pack_start(GTK_BOX(calendar_box), cal_split, TRUE, TRUE, 0);
 
     gtk_stack_add_named(win->content_stack, calendar_box, "calendar");
 
