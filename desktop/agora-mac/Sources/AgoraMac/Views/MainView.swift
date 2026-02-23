@@ -22,6 +22,11 @@ class AppState: ObservableObject {
     @Published var videoURL: URL?
     @Published var userStatuses: [String: String] = [:]
     @Published var currentChannelMembers: [ChannelMember] = []
+    @Published var showTeamDetail = false
+    @Published var teamDetailTeam: Team?
+    @Published var teamDetailMembers: [TeamMember] = []
+    @Published var teamDetailChannels: [Channel] = []
+    @Published var teamDetailFiles: [[String: Any]] = []
 
     var api: ApiClient?
     var notificationWS: WebSocketClient?
@@ -116,8 +121,116 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Team Detail
+
+    func openTeamDetail(_ team: Team) {
+        teamDetailTeam = team
+        showTeamDetail = true
+        selectedChannel = nil
+        loadTeamDetailData(team)
+    }
+
+    func closeTeamDetail() {
+        showTeamDetail = false
+        teamDetailTeam = nil
+        teamDetailMembers = []
+        teamDetailChannels = []
+        teamDetailFiles = []
+    }
+
+    func loadTeamDetailData(_ team: Team) {
+        guard let api = api else { return }
+        Task {
+            do {
+                let channels = try await api.getTeamChannels(teamId: team.id)
+                let members = try await api.getTeamMembers(teamId: team.id)
+                let files = try await api.getTeamFiles(teamId: team.id)
+                await MainActor.run {
+                    self.teamDetailChannels = channels
+                    self.teamDetailMembers = members
+                    self.teamDetailFiles = files
+                }
+            } catch {
+                print("Failed to load team detail: \(error)")
+            }
+        }
+    }
+
+    func leaveTeam(_ team: Team) {
+        guard let api = api else { return }
+        Task {
+            do {
+                try await api.leaveTeam(teamId: team.id)
+                await MainActor.run {
+                    self.closeTeamDetail()
+                    self.loadTeams()
+                }
+            } catch {
+                print("Failed to leave team: \(error)")
+            }
+        }
+    }
+
+    func removeTeamMember(teamId: String, userId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                try await api.removeTeamMember(teamId: teamId, userId: userId)
+                await MainActor.run {
+                    self.teamDetailMembers.removeAll { $0.user.id == userId }
+                    self.loadTeams()
+                }
+            } catch {
+                print("Failed to remove team member: \(error)")
+            }
+        }
+    }
+
+    func addTeamMember(teamId: String, userId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                try await api.addTeamMember(teamId: teamId, userId: userId)
+                let members = try await api.getTeamMembers(teamId: teamId)
+                await MainActor.run {
+                    self.teamDetailMembers = members
+                    self.loadTeams()
+                }
+            } catch {
+                print("Failed to add team member: \(error)")
+            }
+        }
+    }
+
+    func createTeamChannel(teamId: String, name: String, description: String?) {
+        guard let api = api else { return }
+        Task {
+            do {
+                _ = try await api.createChannel(name: name, channelType: "team", teamId: teamId)
+                let channels = try await api.getTeamChannels(teamId: teamId)
+                await MainActor.run {
+                    self.teamDetailChannels = channels
+                    self.teamChannelsMap[teamId] = channels
+                    self.loadTeams()
+                }
+            } catch {
+                print("Failed to create team channel: \(error)")
+            }
+        }
+    }
+
+    func searchUsers(query: String) async -> [User] {
+        guard let api = api else { return [] }
+        do {
+            return try await api.searchUsers(query: query)
+        } catch {
+            return []
+        }
+    }
+
     func selectChannel(_ channel: Channel) {
         channelWS?.disconnect()
+        showTeamDetail = false
         selectedChannel = channel
         messages = []
         typingUsers = [:]
@@ -607,7 +720,9 @@ struct MainView: View {
                 SidebarView(appState: appState)
                     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
             } detail: {
-                if appState.selectedChannel != nil {
+                if appState.showTeamDetail, let team = appState.teamDetailTeam {
+                    TeamDetailView(appState: appState, team: team)
+                } else if appState.selectedChannel != nil {
                     ChatView(appState: appState)
                 } else {
                     WelcomeView()
@@ -872,7 +987,7 @@ struct SidebarView: View {
                                         .tag(channel)
                                 }
                             } label: {
-                                TeamRowView(team: team)
+                                TeamRowView(team: team, appState: appState)
                             }
                             .onAppear {
                                 expandedTeams.insert(team.id)
@@ -889,6 +1004,7 @@ struct SidebarView: View {
 
 struct TeamRowView: View {
     let team: Team
+    @ObservedObject var appState: AppState
 
     var body: some View {
         HStack(spacing: 8) {
@@ -912,8 +1028,382 @@ struct TeamRowView: View {
             }
 
             Spacer()
+
+            Button(action: {
+                appState.openTeamDetail(team)
+            }) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(T("teams.team_settings"))
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Team Detail View
+
+struct TeamDetailView: View {
+    @ObservedObject var appState: AppState
+    let team: Team
+    @State private var selectedTab = 0
+    @State private var searchQuery = ""
+    @State private var searchResults: [User] = []
+    @State private var showNewChannelSheet = false
+    @State private var newChannelName = ""
+    @State private var newChannelDescription = ""
+    @State private var showLeaveConfirm = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(team.name)
+                        .font(.system(size: 20, weight: .semibold))
+
+                    Text("\(team.memberCount) \(T("chat.members"))" +
+                         (team.description != nil ? " \u{00B7} \(team.description!)" : ""))
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: { showLeaveConfirm = true }) {
+                    Text(T("teams.leave_team"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color.red)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .alert(T("teams.leave_team"), isPresented: $showLeaveConfirm) {
+                    Button(T("teams.leave_team"), role: .destructive) {
+                        appState.leaveTeam(team)
+                    }
+                    Button(T("chat.cancel"), role: .cancel) {}
+                } message: {
+                    Text("\(T("teams.leave_confirm")) \"\(team.name)\"?")
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            Divider()
+
+            // Tab picker
+            Picker("", selection: $selectedTab) {
+                Text(T("teams.tab_channels")).tag(0)
+                Text(T("teams.tab_members")).tag(1)
+                Text(T("teams.tab_files")).tag(2)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+
+            // Tab content
+            switch selectedTab {
+            case 0:
+                TeamChannelsTab(appState: appState, teamId: team.id, channels: appState.teamDetailChannels)
+            case 1:
+                TeamMembersTab(appState: appState, teamId: team.id, members: appState.teamDetailMembers)
+            case 2:
+                TeamFilesTab(files: appState.teamDetailFiles)
+            default:
+                EmptyView()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct TeamChannelsTab: View {
+    @ObservedObject var appState: AppState
+    let teamId: String
+    let channels: [Channel]
+    @State private var showNewChannelSheet = false
+    @State private var newChannelName = ""
+    @State private var newChannelDescription = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // New channel button
+            HStack {
+                Button(action: { showNewChannelSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11))
+                        Text(T("teams.new_channel"))
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 8)
+
+            // Channel list
+            List {
+                ForEach(channels) { channel in
+                    HStack {
+                        Text("# \(channel.name)")
+                            .font(.system(size: 13))
+
+                        Spacer()
+
+                        Text("\(channel.memberCount) \(T("chat.members"))")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        appState.showTeamDetail = false
+                        appState.selectChannel(channel)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showNewChannelSheet) {
+            VStack(spacing: 16) {
+                Text(T("teams.new_channel"))
+                    .font(.headline)
+
+                TextField(T("teams.channel_name"), text: $newChannelName)
+                    .textFieldStyle(.roundedBorder)
+
+                TextField(T("teams.description"), text: $newChannelDescription)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    Button(T("chat.cancel")) { showNewChannelSheet = false }
+                    Spacer()
+                    Button(T("chat.create")) {
+                        let desc = newChannelDescription.isEmpty ? nil : newChannelDescription
+                        appState.createTeamChannel(teamId: teamId, name: newChannelName, description: desc)
+                        newChannelName = ""
+                        newChannelDescription = ""
+                        showNewChannelSheet = false
+                    }
+                    .disabled(newChannelName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(24)
+            .frame(width: 360)
+        }
+    }
+}
+
+struct TeamMembersTab: View {
+    @ObservedObject var appState: AppState
+    let teamId: String
+    let members: [TeamMember]
+    @State private var searchQuery = ""
+    @State private var searchResults: [User] = []
+    @State private var showRemoveConfirm = false
+    @State private var memberToRemove: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Search bar
+            HStack {
+                TextField(T("teams.search_add_user"), text: $searchQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .onChange(of: searchQuery) { newValue in
+                        Task {
+                            if newValue.count >= 2 {
+                                let results = await appState.searchUsers(query: newValue)
+                                await MainActor.run {
+                                    // Filter out already existing members
+                                    let memberIds = Set(members.map { $0.user.id })
+                                    searchResults = results.filter { !memberIds.contains($0.id) }
+                                }
+                            } else {
+                                searchResults = []
+                            }
+                        }
+                    }
+
+                Button(T("chat.add_member_btn")) {
+                    // This is handled per search result below
+                }
+                .disabled(true)
+                .font(.system(size: 12))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 8)
+
+            // Search results
+            if !searchResults.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(searchResults, id: \.id) { user in
+                        HStack {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Text(String(user.displayName.prefix(1).uppercased()))
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+
+                            Text("\(user.displayName) (@\(user.username))")
+                                .font(.system(size: 12))
+
+                            Spacer()
+
+                            Button(T("chat.add_member_btn")) {
+                                appState.addTeamMember(teamId: teamId, userId: user.id)
+                                searchQuery = ""
+                                searchResults = []
+                            }
+                            .font(.system(size: 11))
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 4)
+                    }
+                }
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(6)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
+            }
+
+            // Members list
+            List {
+                ForEach(members) { member in
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Text(String(member.user.displayName.prefix(1).uppercased()))
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(member.user.displayName)
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("(\(member.role))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            if !member.user.email.isEmpty {
+                                Text(member.user.email)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        if member.role != "admin" {
+                            Button(action: {
+                                memberToRemove = member.user.id
+                                showRemoveConfirm = true
+                            }) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help(T("teams.remove_member"))
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .alert(T("teams.remove_member"), isPresented: $showRemoveConfirm) {
+                Button(T("teams.remove_member"), role: .destructive) {
+                    if let userId = memberToRemove {
+                        appState.removeTeamMember(teamId: teamId, userId: userId)
+                    }
+                    memberToRemove = nil
+                }
+                Button(T("chat.cancel"), role: .cancel) {
+                    memberToRemove = nil
+                }
+            } message: {
+                Text(T("teams.remove_member_confirm"))
+            }
+        }
+    }
+}
+
+struct TeamFilesTab: View {
+    let files: [[String: Any]]
+
+    var body: some View {
+        if files.isEmpty {
+            VStack {
+                Spacer()
+                Text(T("teams.no_files"))
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            List {
+                ForEach(Array(files.enumerated()), id: \.offset) { _, file in
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary)
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file["original_filename"] as? String ?? "Unknown")
+                                .font(.system(size: 13))
+                                .lineLimit(1)
+
+                            if let fileInfo = file["file"] as? [String: Any],
+                               let size = fileInfo["file_size"] as? Int {
+                                Text(formatFileSize(size))
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        if let dateStr = file["created_at"] as? String {
+                            Text(formatDate(dateStr))
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private func formatFileSize(_ bytes: Int) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024.0) }
+        return String(format: "%.1f MB", Double(bytes) / (1024.0 * 1024.0))
+    }
+
+    private func formatDate(_ dateStr: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: dateStr) {
+            let display = DateFormatter()
+            display.dateFormat = "dd.MM.yyyy"
+            return display.string(from: date)
+        }
+        return ""
     }
 }
 

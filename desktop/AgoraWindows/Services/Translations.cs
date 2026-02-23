@@ -106,6 +106,16 @@ public static class Translations
             ["chat.forwarded_from"] = "Forwarded from",
             ["chat.forwarded_to"] = "Forwarded to",
             ["chat.unknown"] = "Unknown",
+            ["teams.team_settings"] = "Team Settings",
+            ["teams.tab_channels"] = "Channels",
+            ["teams.tab_members"] = "Members",
+            ["teams.tab_files"] = "Files",
+            ["teams.search_add_user"] = "Search and add users...",
+            ["teams.remove_member"] = "Remove",
+            ["teams.remove_member_confirm"] = "Remove from team:",
+            ["teams.no_files"] = "No files in this team",
+            ["teams.leave_team"] = "Leave Team",
+            ["teams.leave_confirm"] = "Do you really want to leave the team",
         },
         ["de"] = new()
         {
@@ -193,6 +203,16 @@ public static class Translations
             ["chat.forwarded_from"] = "Weitergeleitet von",
             ["chat.forwarded_to"] = "Weitergeleitet an",
             ["chat.unknown"] = "Unbekannt",
+            ["teams.team_settings"] = "Team-Einstellungen",
+            ["teams.tab_channels"] = "Kanaele",
+            ["teams.tab_members"] = "Mitglieder",
+            ["teams.tab_files"] = "Dateien",
+            ["teams.search_add_user"] = "Benutzer suchen und hinzufuegen...",
+            ["teams.remove_member"] = "Entfernen",
+            ["teams.remove_member_confirm"] = "Aus dem Team entfernen:",
+            ["teams.no_files"] = "Keine Dateien in diesem Team",
+            ["teams.leave_team"] = "Team verlassen",
+            ["teams.leave_confirm"] = "Moechtest du das Team wirklich verlassen",
         },
         ["fr"] = new()
         {

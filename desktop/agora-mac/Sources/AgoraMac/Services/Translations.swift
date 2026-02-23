@@ -86,7 +86,24 @@ class Translations {
             "reminder.now": "Now!",
             "reminder.join": "Join",
             "reminder.dismiss": "Dismiss",
-            "teams.teams": "Teams"
+            "teams.teams": "Teams",
+            "teams.team_settings": "Team Settings",
+            "teams.tab_channels": "Channels",
+            "teams.tab_members": "Members",
+            "teams.tab_files": "Files",
+            "teams.search_add_user": "Search and add users...",
+            "teams.remove_member": "Remove",
+            "teams.remove_member_confirm": "Remove from team:",
+            "teams.no_files": "No files in this team",
+            "teams.leave_team": "Leave Team",
+            "teams.leave_confirm": "Do you really want to leave the team",
+            "teams.new_channel": "New Channel",
+            "teams.new_team": "New Team",
+            "teams.channel_name": "Channel Name",
+            "teams.description": "Description",
+            "chat.add_member_btn": "Add",
+            "chat.create": "Create",
+            "chat.cancel": "Cancel"
         ]
 
         // German
@@ -124,7 +141,24 @@ class Translations {
             "reminder.now": "Jetzt!",
             "reminder.join": "Beitreten",
             "reminder.dismiss": "Schliessen",
-            "teams.teams": "Teams"
+            "teams.teams": "Teams",
+            "teams.team_settings": "Team-Einstellungen",
+            "teams.tab_channels": "Kanaele",
+            "teams.tab_members": "Mitglieder",
+            "teams.tab_files": "Dateien",
+            "teams.search_add_user": "Benutzer suchen und hinzufuegen...",
+            "teams.remove_member": "Entfernen",
+            "teams.remove_member_confirm": "Aus dem Team entfernen:",
+            "teams.no_files": "Keine Dateien in diesem Team",
+            "teams.leave_team": "Team verlassen",
+            "teams.leave_confirm": "Moechtest du das Team wirklich verlassen",
+            "teams.new_channel": "Neuer Channel",
+            "teams.new_team": "Neues Team",
+            "teams.channel_name": "Channel-Name",
+            "teams.description": "Beschreibung",
+            "chat.add_member_btn": "Hinzufuegen",
+            "chat.create": "Erstellen",
+            "chat.cancel": "Abbrechen"
         ]
 
         // French
