@@ -1288,7 +1288,9 @@ function insertText(text) {
             Margin = new Thickness(0, 0, 8, 0), IsEnabled = false,
             Background = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)), Foreground = Brushes.White,
             BorderThickness = new Thickness(0) };
-        var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6) };
+        var closeBtn = new Button { Content = Translations.T("chat.cancel"), Padding = new Thickness(16, 6, 16, 6),
+            Background = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)), Foreground = Brushes.White,
+            BorderThickness = new Thickness(0) };
         btnPanel.Children.Add(addBtn);
         btnPanel.Children.Add(closeBtn);
         stack.Children.Add(btnPanel);
