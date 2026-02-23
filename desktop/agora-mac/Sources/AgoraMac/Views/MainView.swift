@@ -407,6 +407,9 @@ extension AppState: WebSocketClientDelegate {
             handleStatusChange(data)
         case "video_call_invite":
             handleCallInvite(data)
+        case "team_member_added":
+            loadTeams()
+            loadChannels()
         default:
             break
         }

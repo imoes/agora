@@ -62,7 +62,7 @@ async def list_messages(
                 sender_info[sid] = {
                     "name": user.display_name,
                     "avatar_path": user.avatar_path,
-                    "status": user.status or "offline",
+                    "status": manager.get_user_status(sid) if manager.is_user_connected(sid) else "offline",
                 }
         except ValueError:
             pass
@@ -85,7 +85,7 @@ async def list_messages(
                 sender_info[rid] = {
                     "name": user.display_name,
                     "avatar_path": user.avatar_path,
-                    "status": user.status or "offline",
+                    "status": manager.get_user_status(rid) if manager.is_user_connected(rid) else "offline",
                 }
         except ValueError:
             pass
@@ -170,7 +170,7 @@ async def create_message(
     # Broadcast via WebSocket so all channel members see the message in real-time
     msg["sender_name"] = current_user.display_name
     msg["sender_avatar_path"] = current_user.avatar_path
-    msg["sender_status"] = current_user.status or "offline"
+    msg["sender_status"] = manager.get_user_status(str(current_user.id))
     notification_payload = {"type": "new_message", "message": msg, "channel_id": str(channel_id)}
     await manager.send_to_channel(
         str(channel_id),
@@ -194,7 +194,7 @@ async def create_message(
         sender_id=msg["sender_id"],
         sender_name=current_user.display_name,
         sender_avatar_path=current_user.avatar_path,
-        sender_status=current_user.status or "offline",
+        sender_status=manager.get_user_status(str(current_user.id)),
         content=msg["content"],
         message_type=msg["message_type"],
         file_reference_id=msg["file_reference_id"],
@@ -224,7 +224,7 @@ async def edit_message(
         sender_id=msg["sender_id"],
         sender_name=current_user.display_name,
         sender_avatar_path=current_user.avatar_path,
-        sender_status=current_user.status or "offline",
+        sender_status=manager.get_user_status(str(current_user.id)),
         content=msg["content"],
         message_type=msg["message_type"],
         file_reference_id=msg["file_reference_id"],

@@ -10,7 +10,7 @@ from app.models.feed import FeedEvent
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
-from app.schemas.user import UserOut
+from app.schemas.user import UserOut as _UserOut
 from app.services.auth import get_current_user
 from app.services.chat_db import init_chat_db
 from app.services.feed import mark_feed_read
@@ -407,13 +407,17 @@ async def list_channel_members(
         .where(ChannelMember.channel_id == channel_id)
     )
     rows = result.all()
-    return [
-        {
-            "user": UserOut.model_validate(user).model_dump(),
+    members = []
+    for cm, user in rows:
+        user_data = _UserOut.model_validate(user).model_dump()
+        # Override DB status with live in-memory status
+        uid = str(user.id)
+        user_data["status"] = manager.get_user_status(uid) if manager.is_user_connected(uid) else "offline"
+        members.append({
+            "user": user_data,
             "last_read_at": cm.last_read_at.isoformat(),
-        }
-        for cm, user in rows
-    ]
+        })
+    return members
 
 
 @router.post("/{channel_id}/members/{user_id}", status_code=status.HTTP_201_CREATED)

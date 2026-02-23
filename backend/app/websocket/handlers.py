@@ -95,6 +95,23 @@ async def notification_ws_endpoint(websocket: WebSocket):
             })
     except Exception:
         manager.disconnect_notification(user_id)
+        if not manager.is_user_connected(user_id):
+            async with async_session() as db:
+                result = await db.execute(
+                    select(User).where(User.id == user.id)
+                )
+                db_user = result.scalar_one_or_none()
+                if db_user:
+                    db_user.status = "offline"
+                    await db.commit()
+            try:
+                await manager.broadcast_to_user_channels(user_id, {
+                    "type": "status_change",
+                    "user_id": user_id,
+                    "status": "offline",
+                })
+            except Exception:
+                pass
 
 
 async def websocket_endpoint(websocket: WebSocket, channel_id: str):
@@ -160,7 +177,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                 )
                 msg["sender_name"] = user.display_name
                 msg["sender_avatar_path"] = user.avatar_path
-                msg["sender_status"] = user.status or "offline"
+                msg["sender_status"] = manager.get_user_status(user_id)
 
                 notification_payload = {"type": "new_message", "message": msg, "channel_id": channel_id}
 
@@ -489,4 +506,26 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
     except Exception as exc:
         import logging
         logging.getLogger(__name__).exception("WebSocket error for user=%s channel=%s: %s", user_id, channel_id, exc)
+        duration_secs = manager.leave_call(channel_id, user_id)
         manager.disconnect(user_id, channel_id)
+        if not manager.is_user_connected(user_id):
+            async with async_session() as db:
+                result = await db.execute(
+                    select(User).where(User.id == user.id)
+                )
+                db_user = result.scalar_one_or_none()
+                if db_user:
+                    db_user.status = "offline"
+                    await db.commit()
+        try:
+            await manager.send_to_channel(
+                channel_id,
+                {
+                    "type": "user_left",
+                    "user_id": user_id,
+                    "status": manager.get_user_status(user_id),
+                    "online_users": manager.get_online_users(channel_id),
+                },
+            )
+        except Exception:
+            pass

@@ -1337,6 +1337,12 @@ function insertText(text) {
                     }
                 }
             }
+            else if (type == "team_member_added")
+            {
+                // User was added to a team – reload teams and channels
+                _ = LoadTeamsAsync();
+                _ = LoadChannelsAsync();
+            }
         });
     }
 

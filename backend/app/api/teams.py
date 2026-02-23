@@ -13,6 +13,7 @@ from app.schemas.team import AddTeamMember, TeamCreate, TeamOut, TeamUpdate
 from app.schemas.user import UserOut
 from app.services.auth import get_current_user
 from app.services.chat_db import init_chat_db
+from app.websocket.manager import manager
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
@@ -199,10 +200,11 @@ async def add_member(
     db.add(member)
 
     # Add to all team channels (unsubscribed by default so they don't flood the feed)
-    channels = await db.execute(
+    channels_result = await db.execute(
         select(Channel).where(Channel.team_id == team_id)
     )
-    for channel in channels.scalars().all():
+    team_channels = channels_result.scalars().all()
+    for channel in team_channels:
         ch_member = ChannelMember(
             channel_id=channel.id,
             user_id=data.user_id,
@@ -211,6 +213,41 @@ async def add_member(
         db.add(ch_member)
 
     await db.flush()
+
+    # Fetch team name for notification
+    team_result = await db.execute(select(Team).where(Team.id == team_id))
+    team = team_result.scalar_one_or_none()
+
+    # Fetch added user's info
+    added_user_result = await db.execute(select(User).where(User.id == data.user_id))
+    added_user = added_user_result.scalar_one_or_none()
+
+    # Notify added user to refresh their team/channel list
+    await manager.send_to_user(str(data.user_id), {
+        "type": "team_member_added",
+        "team_id": str(team_id),
+        "team_name": team.name if team else "",
+    })
+
+    # Broadcast member_added to all team channels so existing members see updated counts
+    for channel in team_channels:
+        count_result = await db.execute(
+            select(func.count(ChannelMember.id)).where(
+                ChannelMember.channel_id == channel.id
+            )
+        )
+        count = count_result.scalar() or 0
+        await manager.send_to_channel(
+            str(channel.id),
+            {
+                "type": "member_added",
+                "user_id": str(data.user_id),
+                "display_name": added_user.display_name if added_user else "",
+                "member_count": count,
+                "channel_name": channel.name,
+            },
+        )
+
     return {"status": "ok"}
 
 
@@ -226,14 +263,18 @@ async def list_members(
         .where(TeamMember.team_id == team_id)
     )
     rows = result.all()
-    return [
-        {
-            "user": UserOut.model_validate(user).model_dump(),
+    members = []
+    for tm, user in rows:
+        user_data = UserOut.model_validate(user).model_dump()
+        # Override DB status with live in-memory status
+        uid = str(user.id)
+        user_data["status"] = manager.get_user_status(uid) if manager.is_user_connected(uid) else "offline"
+        members.append({
+            "user": user_data,
             "role": tm.role,
             "joined_at": tm.created_at.isoformat(),
-        }
-        for tm, user in rows
-    ]
+        })
+    return members
 
 
 @router.delete("/{team_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
