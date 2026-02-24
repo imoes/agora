@@ -1680,16 +1680,17 @@ function insertText(text) {
                 var infoCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                 infoCol.Children.Add(new TextBlock
                 {
-                    Text = file.Filename, FontSize = 13,
+                    Text = file.OriginalFilename, FontSize = 13,
                     Foreground = (Brush)FindResource("TextPrimaryBrush"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 });
-                var sizeStr = file.FileSize > 1_000_000
-                    ? $"{file.FileSize / 1_000_000.0:F1} MB"
-                    : $"{file.FileSize / 1_000.0:F1} KB";
+                var fileSize = file.File?.FileSize ?? 0;
+                var sizeStr = fileSize > 1_000_000
+                    ? $"{fileSize / 1_000_000.0:F1} MB"
+                    : $"{fileSize / 1_000.0:F1} KB";
                 infoCol.Children.Add(new TextBlock
                 {
-                    Text = $"{sizeStr} · {file.UploadedAt}",
+                    Text = $"{sizeStr} · {file.CreatedAt}",
                     FontSize = 11, Foreground = (Brush)FindResource("TextSecondaryBrush")
                 });
                 panel.Children.Add(infoCol);
