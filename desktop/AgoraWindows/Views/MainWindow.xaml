@@ -293,6 +293,78 @@
                            HorizontalAlignment="Center" Margin="0,8,0,0" />
             </StackPanel>
 
+            <!-- Team Detail view -->
+            <Border x:Name="TeamDetailView" Visibility="Collapsed" Background="{StaticResource BackgroundBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                            Padding="20,16">
+                        <DockPanel>
+                            <StackPanel>
+                                <TextBlock x:Name="TeamDetailTitle" FontSize="18" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock x:Name="TeamDetailSubtitle" FontSize="12"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                            <Button x:Name="TeamDetailLeaveBtn" DockPanel.Dock="Right"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Padding="12,6" Margin="8,0,0,0" Cursor="Hand"
+                                    Background="Transparent" BorderThickness="1"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    Click="TeamDetailLeave_Click">
+                                <TextBlock x:Name="TeamDetailLeaveBtnText" Text="Leave Team" FontSize="12"
+                                           Foreground="#E74856" />
+                            </Button>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Tab control -->
+                    <TabControl x:Name="TeamDetailTabs" Grid.Row="1" Margin="0">
+                        <!-- Channels tab -->
+                        <TabItem x:Name="TeamDetailChannelsTab" Header="Channels">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="TeamDetailChannelsList" Margin="8" />
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <!-- Members tab -->
+                        <TabItem x:Name="TeamDetailMembersTab" Header="Members">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Search to add members -->
+                                <StackPanel Grid.Row="0" Margin="12,8">
+                                    <TextBox x:Name="TeamDetailMemberSearch" Padding="8,6"
+                                             TextChanged="TeamDetailMemberSearch_Changed" />
+                                    <StackPanel x:Name="TeamDetailSearchResults" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <!-- Members list -->
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="TeamDetailMembersList" Margin="8,0" />
+                                </ScrollViewer>
+                            </Grid>
+                        </TabItem>
+
+                        <!-- Files tab -->
+                        <TabItem x:Name="TeamDetailFilesTab" Header="Files">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="TeamDetailFilesList" Margin="8" />
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+
             <!-- Feed view (3-column layout in main content area) -->
             <Border x:Name="FeedView" Visibility="Collapsed" Background="{StaticResource BackgroundBrush}">
                 <Grid>

@@ -187,6 +187,10 @@ public partial class MainWindow : Window
     // Calendar
     private ObservableCollection<CalendarEventItem> _calendarEvents = new();
 
+    // Team detail
+    private string? _teamDetailId;
+    private string? _teamDetailName;
+
     // WYSIWYG editor
     private bool _editorInitialized = false;
 
@@ -491,6 +495,7 @@ function insertText(text) {
         EmptyState.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
         CalendarView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Visible;
         FeedTitle.Text = Translations.T("nav.feed");
         _ = LoadFeedAsync();
@@ -511,6 +516,7 @@ function insertText(text) {
         CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Collapsed;
         if (_currentChannelId == null)
         {
             EmptyState.Visibility = Visibility.Visible;
@@ -538,6 +544,7 @@ function insertText(text) {
         FeedView.Visibility = Visibility.Collapsed;
         CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
         EmptyStateTitle.Text = Translations.T("teams.teams");
         EmptyStateSubtitle.Text = Translations.T("teams.subtitle");
@@ -559,6 +566,7 @@ function insertText(text) {
         SettingsView.Visibility = Visibility.Collapsed;
         FeedView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Collapsed;
         CalendarView.Visibility = Visibility.Visible;
         WpfCalendar.SelectedDate = DateTime.Today;
@@ -1135,6 +1143,19 @@ function insertText(text) {
             DockPanel.SetDock(addChBtn, Dock.Right);
             header.Children.Insert(0, addChBtn);
 
+            var settingsBtn = new Button
+            {
+                Content = new TextBlock { Text = "\u2699", FontSize = 12 }, // gear
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Padding = new Thickness(4, 2, 4, 2), Cursor = Cursors.Hand,
+                ToolTip = Translations.T("teams.team_settings"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Tag = team
+            };
+            settingsBtn.Click += TeamSettings_Click;
+            DockPanel.SetDock(settingsBtn, Dock.Right);
+            header.Children.Insert(0, settingsBtn);
+
             expander.Header = header;
 
             // Channel list content - load immediately
@@ -1305,6 +1326,403 @@ function insertText(text) {
             {
                 MessageBox.Show($"{Translations.T("teams.error_loading")}: {ex.Message}",
                     Translations.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+    }
+
+    private async void TeamSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not Team team) return;
+        await ShowTeamDetailAsync(team.Id, team.Name);
+    }
+
+    private async System.Threading.Tasks.Task ShowTeamDetailAsync(string teamId, string teamName)
+    {
+        _teamDetailId = teamId;
+        _teamDetailName = teamName;
+
+        TeamDetailTitle.Text = teamName;
+        TeamDetailLeaveBtnText.Text = Translations.T("teams.leave_team");
+        TeamDetailChannelsTab.Header = Translations.T("teams.channels");
+        TeamDetailMembersTab.Header = Translations.T("teams.members_tab");
+        TeamDetailFilesTab.Header = Translations.T("teams.files");
+        TeamDetailMemberSearch.Text = "";
+        TeamDetailSearchResults.Children.Clear();
+
+        // Hide other views, show team detail
+        EmptyState.Visibility = Visibility.Collapsed;
+        ChatView.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Collapsed;
+        FeedView.Visibility = Visibility.Collapsed;
+        CalendarView.Visibility = Visibility.Collapsed;
+        VideoCallView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Visible;
+
+        await LoadTeamDetailChannelsAsync();
+        await LoadTeamDetailMembersAsync();
+        await LoadTeamDetailFilesAsync();
+    }
+
+    private async System.Threading.Tasks.Task LoadTeamDetailChannelsAsync()
+    {
+        if (_teamDetailId == null) return;
+        TeamDetailChannelsList.Children.Clear();
+
+        try
+        {
+            var channels = await _api.GetTeamChannelsAsync(_teamDetailId);
+            if (channels.Count == 0)
+            {
+                TeamDetailChannelsList.Children.Add(new TextBlock
+                {
+                    Text = Translations.T("teams.no_channels"),
+                    Foreground = (Brush)FindResource("TextSecondaryBrush"),
+                    Margin = new Thickness(8), FontStyle = FontStyles.Italic
+                });
+                return;
+            }
+
+            foreach (var ch in channels)
+            {
+                var row = new Border
+                {
+                    Padding = new Thickness(12, 10, 12, 10),
+                    Background = Brushes.Transparent,
+                    CornerRadius = new CornerRadius(4),
+                    Cursor = Cursors.Hand,
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+
+                var panel = new DockPanel();
+
+                var icon = new TextBlock
+                {
+                    Text = "#", FontSize = 16, FontWeight = FontWeights.Bold,
+                    Foreground = (Brush)FindResource("PrimaryBrush"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 10, 0)
+                };
+                panel.Children.Add(icon);
+
+                var infoCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                infoCol.Children.Add(new TextBlock
+                {
+                    Text = ch.Name, FontSize = 13, FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush")
+                });
+                infoCol.Children.Add(new TextBlock
+                {
+                    Text = $"{ch.MemberCount} {Translations.T("chat.members")}",
+                    FontSize = 11, Foreground = (Brush)FindResource("TextSecondaryBrush")
+                });
+                panel.Children.Add(infoCol);
+
+                if (ch.UnreadCount > 0)
+                {
+                    var badge = new TextBlock
+                    {
+                        Text = ch.UnreadCount.ToString(), FontSize = 10,
+                        Foreground = Brushes.White,
+                        Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    DockPanel.SetDock(badge, Dock.Right);
+                    panel.Children.Insert(0, badge);
+                }
+
+                row.Child = panel;
+
+                var channelCapture = ch;
+                row.MouseLeftButtonUp += async (_, _) =>
+                {
+                    TeamDetailView.Visibility = Visibility.Collapsed;
+                    await OpenChannelAsync(channelCapture);
+                };
+                row.MouseEnter += (_, _) => row.Background = (Brush)FindResource("HoverBrush");
+                row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+
+                TeamDetailChannelsList.Children.Add(row);
+            }
+
+            TeamDetailSubtitle.Text = $"{channels.Count} {Translations.T("teams.channels")}";
+        }
+        catch { }
+    }
+
+    private async System.Threading.Tasks.Task LoadTeamDetailMembersAsync()
+    {
+        if (_teamDetailId == null) return;
+        TeamDetailMembersList.Children.Clear();
+
+        try
+        {
+            var members = await _api.GetTeamMembersAsync(_teamDetailId);
+
+            if (members.Count == 0)
+            {
+                TeamDetailMembersList.Children.Add(new TextBlock
+                {
+                    Text = Translations.T("teams.no_members"),
+                    Foreground = (Brush)FindResource("TextSecondaryBrush"),
+                    Margin = new Thickness(8), FontStyle = FontStyles.Italic
+                });
+                return;
+            }
+
+            foreach (var member in members)
+            {
+                if (member.User == null) continue;
+
+                var row = new Border
+                {
+                    Padding = new Thickness(12, 8, 12, 8),
+                    Background = Brushes.Transparent,
+                    CornerRadius = new CornerRadius(4),
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+
+                var panel = new DockPanel();
+
+                // Avatar
+                var avatar = new Border
+                {
+                    Width = 32, Height = 32, CornerRadius = new CornerRadius(16),
+                    Background = Converters.GetAvatarBrush(member.User.DisplayName ?? member.User.Username),
+                    Margin = new Thickness(0, 0, 10, 0)
+                };
+                avatar.Child = new TextBlock
+                {
+                    Text = Converters.GetAvatarInitial(member.User.DisplayName ?? member.User.Username),
+                    FontSize = 13, FontWeight = FontWeights.Bold,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                panel.Children.Add(avatar);
+
+                // Info
+                var infoCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                infoCol.Children.Add(new TextBlock
+                {
+                    Text = member.User.DisplayName ?? member.User.Username,
+                    FontSize = 13, FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush")
+                });
+                infoCol.Children.Add(new TextBlock
+                {
+                    Text = $"{member.Role} · {member.User.Email}",
+                    FontSize = 11, Foreground = (Brush)FindResource("TextSecondaryBrush")
+                });
+                panel.Children.Add(infoCol);
+
+                // Remove button (non-admin only)
+                if (member.Role != "admin")
+                {
+                    var removeBtn = new Button
+                    {
+                        Content = "\u2715", // X mark
+                        Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                        Foreground = new SolidColorBrush(Color.FromRgb(0xE7, 0x48, 0x56)),
+                        Padding = new Thickness(6, 4, 6, 4), Cursor = Cursors.Hand,
+                        ToolTip = Translations.T("teams.remove_member"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Tag = new { UserId = member.User.Id, Name = member.User.DisplayName ?? member.User.Username }
+                    };
+                    removeBtn.Click += TeamDetailRemoveMember_Click;
+                    DockPanel.SetDock(removeBtn, Dock.Right);
+                    panel.Children.Insert(0, removeBtn);
+                }
+
+                row.Child = panel;
+                TeamDetailMembersList.Children.Add(row);
+            }
+        }
+        catch { }
+    }
+
+    private async void TeamDetailRemoveMember_Click(object sender, RoutedEventArgs e)
+    {
+        if (_teamDetailId == null || sender is not Button btn) return;
+        dynamic tag = btn.Tag;
+        string userId = tag.UserId;
+        string name = tag.Name;
+
+        var result = MessageBox.Show(
+            $"{Translations.T("teams.remove_confirm")}\n{name}",
+            Translations.T("teams.remove_member"),
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                await _api.RemoveTeamMemberAsync(_teamDetailId, userId);
+                await LoadTeamDetailMembersAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, Translations.T("common.error"));
+            }
+        }
+    }
+
+    private async void TeamDetailMemberSearch_Changed(object sender, TextChangedEventArgs e)
+    {
+        var query = TeamDetailMemberSearch.Text;
+        TeamDetailSearchResults.Children.Clear();
+
+        if (string.IsNullOrEmpty(query) || query.Length < 2) return;
+
+        try
+        {
+            var users = await _api.SearchUsersAsync(query);
+            // Get current members to exclude
+            var currentMembers = await _api.GetTeamMembersAsync(_teamDetailId!);
+            var memberIds = new HashSet<string>(currentMembers.Where(m => m.User != null).Select(m => m.User!.Id));
+
+            foreach (var user in users)
+            {
+                if (memberIds.Contains(user.Id)) continue;
+
+                var row = new Border
+                {
+                    Padding = new Thickness(8, 6, 8, 6),
+                    Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5)),
+                    CornerRadius = new CornerRadius(4),
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+
+                var panel = new DockPanel();
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"{user.DisplayName ?? user.Username} (@{user.Username})",
+                    FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush")
+                });
+
+                var addBtn = new Button
+                {
+                    Content = Translations.T("teams.add_member"),
+                    Padding = new Thickness(8, 4, 8, 4),
+                    Background = new SolidColorBrush(Color.FromRgb(0x62, 0x64, 0xA7)),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tag = user.Id
+                };
+                addBtn.Click += async (s, ev) =>
+                {
+                    try
+                    {
+                        await _api.AddTeamMemberAsync(_teamDetailId!, user.Id);
+                        ShowToast(Translations.T("teams.add_member"), user.DisplayName ?? user.Username);
+                        TeamDetailMemberSearch.Text = "";
+                        TeamDetailSearchResults.Children.Clear();
+                        await LoadTeamDetailMembersAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, Translations.T("common.error"));
+                    }
+                };
+                DockPanel.SetDock(addBtn, Dock.Right);
+                panel.Children.Insert(0, addBtn);
+
+                row.Child = panel;
+                TeamDetailSearchResults.Children.Add(row);
+            }
+        }
+        catch { }
+    }
+
+    private async System.Threading.Tasks.Task LoadTeamDetailFilesAsync()
+    {
+        if (_teamDetailId == null) return;
+        TeamDetailFilesList.Children.Clear();
+
+        try
+        {
+            var files = await _api.GetTeamFilesAsync(_teamDetailId);
+            if (files.Count == 0)
+            {
+                TeamDetailFilesList.Children.Add(new TextBlock
+                {
+                    Text = Translations.T("teams.no_files"),
+                    Foreground = (Brush)FindResource("TextSecondaryBrush"),
+                    Margin = new Thickness(8), FontStyle = FontStyles.Italic
+                });
+                return;
+            }
+
+            foreach (var file in files)
+            {
+                var row = new Border
+                {
+                    Padding = new Thickness(12, 8, 12, 8),
+                    Background = Brushes.Transparent,
+                    CornerRadius = new CornerRadius(4),
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+
+                var panel = new DockPanel();
+
+                var icon = new TextBlock
+                {
+                    Text = "\uE7C3", FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 16, VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = (Brush)FindResource("PrimaryBrush"),
+                    Margin = new Thickness(0, 0, 10, 0)
+                };
+                panel.Children.Add(icon);
+
+                var infoCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                infoCol.Children.Add(new TextBlock
+                {
+                    Text = file.Filename, FontSize = 13,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                var sizeStr = file.FileSize > 1_000_000
+                    ? $"{file.FileSize / 1_000_000.0:F1} MB"
+                    : $"{file.FileSize / 1_000.0:F1} KB";
+                infoCol.Children.Add(new TextBlock
+                {
+                    Text = $"{sizeStr} · {file.UploadedAt}",
+                    FontSize = 11, Foreground = (Brush)FindResource("TextSecondaryBrush")
+                });
+                panel.Children.Add(infoCol);
+
+                row.Child = panel;
+                TeamDetailFilesList.Children.Add(row);
+            }
+        }
+        catch { }
+    }
+
+    private async void TeamDetailLeave_Click(object sender, RoutedEventArgs e)
+    {
+        if (_teamDetailId == null) return;
+
+        var result = MessageBox.Show(
+            Translations.T("teams.leave_confirm"),
+            Translations.T("teams.leave_team"),
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                await _api.RemoveTeamMemberAsync(_teamDetailId, _api.CurrentUser!.Id);
+                _teamDetailId = null;
+                TeamDetailView.Visibility = Visibility.Collapsed;
+                EmptyState.Visibility = Visibility.Visible;
+                await LoadTeamsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, Translations.T("common.error"));
             }
         }
     }
@@ -1646,6 +2064,7 @@ function insertText(text) {
         FeedView.Visibility = Visibility.Collapsed;
         CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Collapsed;
         ChatView.Visibility = Visibility.Visible;
 
         // Clear reply state
@@ -3110,6 +3529,7 @@ function insertText(text) {
         FeedView.Visibility = Visibility.Collapsed;
         CalendarView.Visibility = Visibility.Collapsed;
         VideoCallView.Visibility = Visibility.Collapsed;
+        TeamDetailView.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
         _ = LoadCalendarIntegrationAsync();
     }

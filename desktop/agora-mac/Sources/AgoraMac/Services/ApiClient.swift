@@ -127,6 +127,16 @@ class ApiClient {
         let _: EmptyResponse = try await post("/api/teams/\(teamId)/members", body: body)
     }
 
+    func removeTeamMember(teamId: String, userId: String) async throws {
+        try await delete("/api/teams/\(teamId)/members/\(userId)")
+    }
+
+    func getTeamFiles(teamId: String) async throws -> [[String: Any]] {
+        let data = try await downloadFile(path: "/api/files/team/\(teamId)")
+        let json = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
+        return json
+    }
+
     // MARK: - Profile
 
     func updateProfile(displayName: String? = nil, email: String? = nil, language: String? = nil,

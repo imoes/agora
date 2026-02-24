@@ -258,6 +258,18 @@ public class ApiClient : IDisposable
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task RemoveTeamMemberAsync(string teamId, string userId)
+    {
+        var response = await _http.DeleteAsync($"/api/teams/{teamId}/members/{userId}");
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<List<FileReference>> GetTeamFilesAsync(string teamId)
+    {
+        return await _http.GetFromJsonAsync<List<FileReference>>($"/api/files/team/{teamId}")
+               ?? new List<FileReference>();
+    }
+
     // --- Files ---
 
     public async Task<FileReference> UploadFileAsync(string channelId, Stream fileStream, string fileName)

@@ -22,6 +22,12 @@ class AppState: ObservableObject {
     @Published var videoURL: URL?
     @Published var userStatuses: [String: String] = [:]
     @Published var currentChannelMembers: [ChannelMember] = []
+    @Published var selectedTeamForDetail: Team?
+    @Published var teamDetailMembers: [TeamMember] = []
+    @Published var teamDetailChannels: [Channel] = []
+    @Published var teamDetailFiles: [[String: Any]] = []
+    @Published var memberSearchQuery = ""
+    @Published var memberSearchResults: [User] = []
 
     var api: ApiClient?
     var notificationWS: WebSocketClient?
@@ -113,6 +119,123 @@ class AppState: ObservableObject {
             } catch {
                 print("Failed to load team channels: \(error)")
             }
+        }
+    }
+
+    func selectTeamForDetail(_ team: Team) {
+        selectedTeamForDetail = team
+        selectedChannel = nil
+        loadTeamDetailData(teamId: team.id)
+    }
+
+    func closeTeamDetail() {
+        selectedTeamForDetail = nil
+        teamDetailMembers = []
+        teamDetailChannels = []
+        teamDetailFiles = []
+        memberSearchQuery = ""
+        memberSearchResults = []
+    }
+
+    func loadTeamDetailData(teamId: String) {
+        loadTeamDetailChannels(teamId: teamId)
+        loadTeamDetailMembers(teamId: teamId)
+        loadTeamDetailFiles(teamId: teamId)
+    }
+
+    func loadTeamDetailChannels(teamId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                let channels = try await api.getTeamChannels(teamId: teamId)
+                await MainActor.run { self.teamDetailChannels = channels }
+            } catch { print("Failed to load team detail channels: \(error)") }
+        }
+    }
+
+    func loadTeamDetailMembers(teamId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                let members = try await api.getTeamMembers(teamId: teamId)
+                await MainActor.run { self.teamDetailMembers = members }
+            } catch { print("Failed to load team detail members: \(error)") }
+        }
+    }
+
+    func loadTeamDetailFiles(teamId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                let files = try await api.getTeamFiles(teamId: teamId)
+                await MainActor.run { self.teamDetailFiles = files }
+            } catch { print("Failed to load team detail files: \(error)") }
+        }
+    }
+
+    func addMemberToTeam(userId: String) {
+        guard let api = api, let team = selectedTeamForDetail else { return }
+        Task {
+            do {
+                try await api.addTeamMember(teamId: team.id, userId: userId)
+                await MainActor.run {
+                    self.memberSearchQuery = ""
+                    self.memberSearchResults = []
+                    self.showToast(title: T("teams.member_added"), body: "")
+                }
+                loadTeamDetailMembers(teamId: team.id)
+                loadTeams()
+            } catch {
+                print("Failed to add team member: \(error)")
+            }
+        }
+    }
+
+    func removeMemberFromTeam(userId: String) {
+        guard let api = api, let team = selectedTeamForDetail else { return }
+        Task {
+            do {
+                try await api.removeTeamMember(teamId: team.id, userId: userId)
+                await MainActor.run {
+                    self.showToast(title: T("teams.member_removed"), body: "")
+                }
+                loadTeamDetailMembers(teamId: team.id)
+                loadTeams()
+            } catch {
+                print("Failed to remove team member: \(error)")
+            }
+        }
+    }
+
+    func leaveTeam() {
+        guard let api = api, let team = selectedTeamForDetail, let userId = currentUser?.id else { return }
+        Task {
+            do {
+                try await api.removeTeamMember(teamId: team.id, userId: userId)
+                await MainActor.run {
+                    self.closeTeamDetail()
+                }
+                loadTeams()
+                loadChannels()
+            } catch {
+                print("Failed to leave team: \(error)")
+            }
+        }
+    }
+
+    func searchUsersForTeam(query: String) {
+        guard let api = api, query.count >= 2 else {
+            memberSearchResults = []
+            return
+        }
+        Task {
+            do {
+                let users = try await api.searchUsers(query: query)
+                let memberIds = Set(teamDetailMembers.map { $0.user.id })
+                await MainActor.run {
+                    self.memberSearchResults = users.filter { !memberIds.contains($0.id) }
+                }
+            } catch { print("Failed to search users: \(error)") }
         }
     }
 
@@ -607,7 +730,9 @@ struct MainView: View {
                 SidebarView(appState: appState)
                     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
             } detail: {
-                if appState.selectedChannel != nil {
+                if appState.selectedTeamForDetail != nil {
+                    TeamDetailView(appState: appState)
+                } else if appState.selectedChannel != nil {
                     ChatView(appState: appState)
                 } else {
                     WelcomeView()
@@ -872,7 +997,18 @@ struct SidebarView: View {
                                         .tag(channel)
                                 }
                             } label: {
-                                TeamRowView(team: team)
+                                HStack {
+                                    TeamRowView(team: team)
+                                    Button(action: {
+                                        appState.selectTeamForDetail(team)
+                                    }) {
+                                        Image(systemName: "gearshape")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(T("teams.team_settings"))
+                                }
                             }
                             .onAppear {
                                 expandedTeams.insert(team.id)
