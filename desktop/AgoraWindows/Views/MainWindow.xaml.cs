@@ -2459,7 +2459,11 @@ function insertText(text) {
                 _messages.Insert(idx, existing);
             }
 
-            if (userId != _api.CurrentUser?.Id && action == "add")
+            var messageSenderId = msg.TryGetProperty("message_sender_id", out var senderProp)
+                ? senderProp.GetString()
+                : existing.SenderId;
+
+            if (userId != _api.CurrentUser?.Id && action == "add" && messageSenderId == _api.CurrentUser?.Id)
             {
                 ShowToast(
                     $"{displayName} {Translations.T("notify.reacted")}",

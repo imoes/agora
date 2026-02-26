@@ -638,8 +638,9 @@ extension AppState: WebSocketClientDelegate {
             }
             messages[idx].reactions = reactions
 
-            // Toast for reactions from others
-            if userId != currentUser?.id {
+            // Toast only when someone reacts to one of my messages
+            let messageSenderId = data["message_sender_id"] as? String ?? messages[idx].senderId
+            if userId != currentUser?.id && messageSenderId == currentUser?.id {
                 showToast(
                     title: "\(displayName) \(T("notify.reacted")) \(emoji)",
                     body: T("notify.reaction_body")

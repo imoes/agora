@@ -13,6 +13,7 @@ from app.services.chat_db import (
     add_message,
     add_reaction,
     delete_message,
+    get_message_by_id,
     get_messages,
     get_reactions,
     get_reactions_for_messages,
@@ -258,15 +259,25 @@ async def create_reaction(
     added = await add_reaction(str(channel_id), message_id, str(current_user.id), data.emoji)
 
     if added:
-        # Create feed event for reaction
-        await create_feed_events(
-            db,
-            channel_id,
-            current_user.id,
-            event_type="reaction",
-            preview_text=f"{data.emoji} Reaktion",
-            message_id=message_id,
-        )
+        message = await get_message_by_id(str(channel_id), message_id)
+        target_user_id = None
+        message_sender_id = None
+        if message and message.get("sender_id"):
+            message_sender_id = str(message["sender_id"])
+            if message_sender_id != str(current_user.id):
+                target_user_id = uuid.UUID(message_sender_id)
+
+        # Create feed event for reaction only for owner of the reacted message
+        if target_user_id:
+            await create_feed_events(
+                db,
+                channel_id,
+                current_user.id,
+                event_type="reaction",
+                preview_text=f"{data.emoji} Reaktion",
+                message_id=message_id,
+                target_user_id=target_user_id,
+            )
         await db.commit()
 
         # Broadcast to channel via WebSocket
@@ -279,6 +290,7 @@ async def create_reaction(
                 "display_name": current_user.display_name,
                 "emoji": data.emoji,
                 "action": "add",
+                "message_sender_id": message_sender_id,
             },
         )
 

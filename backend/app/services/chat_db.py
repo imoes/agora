@@ -138,6 +138,18 @@ async def update_message(channel_id: str, message_id: str, content: str) -> dict
         return dict(row) if row else None
 
 
+async def get_message_by_id(channel_id: str, message_id: str) -> dict | None:
+    path = _db_path(channel_id)
+    if not os.path.exists(path):
+        return None
+
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (message_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
 async def delete_message(channel_id: str, message_id: str) -> bool:
     path = _db_path(channel_id)
     async with aiosqlite.connect(path) as db:

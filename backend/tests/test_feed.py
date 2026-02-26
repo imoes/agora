@@ -230,3 +230,44 @@ async def test_unread_count_endpoint(client: AsyncClient):
         headers=auth_headers(auth2["access_token"]),
     )
     assert resp.json()["unread_count"] == 7
+
+
+@pytest.mark.asyncio
+async def test_reaction_feed_only_for_message_owner(client: AsyncClient):
+    owner = await register_user(client, username="rf-owner", email="rf-owner@agora.local")
+    reactor = await register_user(client, username="rf-reactor", email="rf-reactor@agora.local")
+    other = await register_user(client, username="rf-other", email="rf-other@agora.local")
+
+    ch_resp = await client.post(
+        "/api/channels/",
+        json={
+            "name": "Reaction Feed",
+            "channel_type": "group",
+            "member_ids": [reactor["user"]["id"], other["user"]["id"]],
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+    channel_id = ch_resp.json()["id"]
+
+    msg_resp = await client.post(
+        f"/api/channels/{channel_id}/messages/",
+        json={"content": "Meine Nachricht"},
+        headers=auth_headers(owner["access_token"]),
+    )
+    msg_id = msg_resp.json()["id"]
+
+    reaction_resp = await client.post(
+        f"/api/channels/{channel_id}/messages/{msg_id}/reactions",
+        json={"emoji": "🔥"},
+        headers=auth_headers(reactor["access_token"]),
+    )
+    assert reaction_resp.status_code == 200
+
+    owner_feed = await client.get("/api/feed/", headers=auth_headers(owner["access_token"]))
+    reactor_feed = await client.get("/api/feed/", headers=auth_headers(reactor["access_token"]))
+    other_feed = await client.get("/api/feed/", headers=auth_headers(other["access_token"]))
+
+    owner_events = owner_feed.json()["events"]
+    assert any(e["event_type"] == "reaction" and e["message_id"] == msg_id for e in owner_events)
+    assert all(e["event_type"] != "reaction" for e in reactor_feed.json()["events"])
+    assert all(e["event_type"] != "reaction" for e in other_feed.json()["events"])
