@@ -48,6 +48,7 @@ Agora is a self-hosted collaboration platform with chat, video conferencing, fil
 - **Windows Desktop App** - Native .NET/WPF client for Windows
 - **Linux Desktop App** - Native GTK3 client for Linux (X Server)
 - **macOS Desktop App** - Native Swift/SwiftUI client for macOS
+- **Android App** - Native WebView wrapper for the mobile web experience
 
 ---
 
@@ -222,9 +223,10 @@ agora/
 │   │   ├── resources/        # Desktop entry, icons
 │   │   └── Makefile
 │   └── agora-mac/            # SwiftUI macOS application
-│       ├── Sources/AgoraMac/ # Swift source files
-│       ├── Package.swift     # Swift Package Manager config
-│       └── Makefile
+├── android-app/              # Native Android WebView application
+│   ├── app/                  # Android app module (Kotlin + WebView)
+│   ├── build.gradle.kts      # Root Android build config
+│   └── settings.gradle.kts   # Android modules configuration
 ├── nginx/
 │   ├── Dockerfile            # Nginx with self-signed certs
 │   └── nginx.conf            # Reverse proxy config
