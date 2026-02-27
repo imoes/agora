@@ -230,3 +230,19 @@ class TestAddMissingColumns:
             ))).fetchone()
             assert row[0] is None
             assert row[1] is None
+
+
+@pytest.mark.asyncio
+async def test_missing_optional_tables_do_not_raise(engine):
+    """_add_missing_columns should tolerate schemas without channel_members/calendar tables."""
+    async with engine.begin() as conn:
+        await conn.execute(text(_OLD_CHANNELS_DDL))
+        await conn.execute(text(_OLD_USERS_DDL))
+
+        await conn.run_sync(_add_missing_columns)
+
+        channel_cols = await conn.run_sync(lambda c: _get_column_names(c, "channels"))
+        user_cols = await conn.run_sync(lambda c: _get_column_names(c, "users"))
+
+        assert "is_hidden" in channel_cols
+        assert "notification_sound_path" in user_cols

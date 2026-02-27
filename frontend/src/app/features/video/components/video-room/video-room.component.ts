@@ -92,7 +92,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
                   <span>Du</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="handRaised">{{ getRaiseOrderForUser(currentUserId) }}</span>
                 <div class="video-label">Du
                   <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -107,7 +107,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
                   <span>{{ p.displayName }}</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="p.handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="p.handRaised">{{ getRaiseOrderForUser(p.userId) }}</span>
                 <div class="video-label">{{ p.displayName }}
                   <mat-icon *ngIf="!p.audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -129,7 +129,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
                   <span>Du</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="handRaised">{{ getRaiseOrderForUser(currentUserId) }}</span>
                 <div class="video-label">Du
                   <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -144,7 +144,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ tile.participant!.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
                   <span>{{ tile.participant!.displayName }}</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="tile.participant!.handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="tile.participant!.handRaised">{{ getRaiseOrderForUser(tile.participant!.userId) }}</span>
                 <div class="video-label">{{ tile.participant!.displayName }}
                   <mat-icon *ngIf="!tile.participant!.audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -199,6 +199,24 @@ import { AuthService } from '@core/services/auth.service';
           <button mat-icon-button (click)="sendChatMessage()" [disabled]="!chatText.trim()">
             <mat-icon>send</mat-icon>
           </button>
+        </div>
+      </div>
+
+      <!-- Notes Sidebar -->
+      <div class="notes-sidebar" *ngIf="showNotesPanel">
+        <div class="notes-sidebar-header">
+          <mat-icon>edit_note</mat-icon>
+          <span>Besprechungsnotizen</span>
+          <button mat-icon-button (click)="showNotesPanel = false">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <textarea
+          [(ngModel)]="videoNotes"
+          (ngModelChange)="onNotesChanged($event)"
+          placeholder="Schreibe hier gemeinsame Notizen zum Call..."></textarea>
+        <div class="notes-sidebar-meta">
+          <span *ngIf="notesLastEditedBy">Zuletzt bearbeitet von {{ notesLastEditedBy }}</span>
         </div>
       </div>
 
@@ -288,8 +306,10 @@ import { AuthService } from '@core/services/auth.service';
         <button mat-fab
                 [color]="handRaised ? 'accent' : undefined"
                 (click)="toggleHandRaise()"
-                [matTooltip]="handRaised ? 'Hand senken' : 'Hand heben'">
+                [matTooltip]="handRaised ? 'Hand senken' : 'Hand heben'"
+                class="hand-raise-fab">
           <mat-icon>{{ handRaised ? 'back_hand' : 'back_hand' }}</mat-icon>
+          <span class="hand-order-fab-badge" *ngIf="getHandRaiseBadgeLabel() as badge">{{ badge }}</span>
         </button>
         <button mat-fab
                 [color]="isScreenSharing ? 'accent' : undefined"
@@ -302,6 +322,10 @@ import { AuthService } from '@core/services/auth.service';
                 class="chat-fab-btn">
           <mat-icon>chat</mat-icon>
           <span class="chat-badge" *ngIf="unreadChatCount > 0">{{ unreadChatCount > 99 ? '99+' : unreadChatCount }}</span>
+        </button>
+        <button mat-fab (click)="toggleNotesPanel()" matTooltip="Notizbuch"
+                [color]="showNotesPanel ? 'accent' : undefined">
+          <mat-icon>edit_note</mat-icon>
         </button>
         <button mat-fab (click)="toggleInvitePanel()" matTooltip="Benutzer anrufen"
                 [color]="showInvitePanel ? 'accent' : undefined">
@@ -696,6 +720,56 @@ import { AuthService } from '@core/services/auth.service';
     .chat-sidebar-input input:focus { border-color: #6264a7; }
     .chat-sidebar-input button { color: #6264a7; }
     .chat-sidebar-input button[disabled] { color: #555; }
+
+    .notes-sidebar {
+      position: absolute;
+      right: 16px;
+      top: 64px;
+      bottom: 88px;
+      width: min(420px, 92vw);
+      background: #232323;
+      border: 1px solid #333;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 20;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .notes-sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #2b2b2b;
+      border-bottom: 1px solid #383838;
+      color: #ddd;
+      font-weight: 600;
+    }
+    .notes-sidebar-header span { flex: 1; }
+    .notes-sidebar-header button { color: #aaa; }
+    .notes-sidebar textarea {
+      flex: 1;
+      width: 100%;
+      resize: none;
+      border: none;
+      outline: none;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #f0f0f0;
+      background: #1f1f1f;
+    }
+    .notes-sidebar textarea::placeholder { color: #8a8a8a; }
+    .notes-sidebar-meta {
+      min-height: 32px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #9ea2a8;
+      border-top: 1px solid #383838;
+      background: #252525;
+    }
     /* Chat badge */
     .chat-fab-btn {
       position: relative;
@@ -743,20 +817,45 @@ import { AuthService } from '@core/services/auth.service';
     .video-tile.speaking {
       box-shadow: 0 0 0 3px #6264a7, 0 0 16px rgba(98, 100, 167, 0.5);
     }
-    /* Hand raised badge */
+    /* Hand raised order badges */
     .hand-raised-badge {
       position: absolute;
       top: 8px;
       right: 8px;
-      font-size: 28px;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: rgba(98, 100, 167, 0.95);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
       z-index: 2;
-      animation: hand-wave 1s ease-in-out 3;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+      border: 1px solid rgba(255,255,255,0.35);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
     }
-    @keyframes hand-wave {
-      0%, 100% { transform: rotate(0deg); }
-      25% { transform: rotate(20deg); }
-      75% { transform: rotate(-15deg); }
+    .hand-raise-fab {
+      position: relative;
+    }
+    .hand-order-fab-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #ff7043;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid rgba(255,255,255,0.35);
     }
     /* Pagination */
     .pagination-bar {
@@ -835,6 +934,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   // Hand raise
   handRaised = false;
+  raisedHandOrder: string[] = [];
 
   // Pagination
   readonly TILES_PER_PAGE = 9;
@@ -851,7 +951,11 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   // Chat sidebar
   showChatPanel = false;
+  showNotesPanel = false;
   chatMessages: any[] = [];
+  videoNotes = '';
+  notesLastEditedBy = '';
+  private isApplyingRemoteNotes = false;
   chatText = '';
   unreadChatCount = 0;
   private chatWsSubscription?: Subscription;
@@ -887,6 +991,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
 
     this.loadChannelMembers();
+    this.loadVideoNotes();
 
     // User search with debounce
     this.subscriptions.push(
@@ -952,10 +1057,23 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
       })
     );
 
+    // Shared call notebook updates
+    this.subscriptions.push(
+      this.wsService.globalMessages$.subscribe((msg) => {
+        if (msg.type === 'video_notes_update' && msg._channelId === this.channelId) {
+          this.isApplyingRemoteNotes = true;
+          this.videoNotes = msg.notes || '';
+          this.notesLastEditedBy = msg.display_name || '';
+          this.isApplyingRemoteNotes = false;
+        }
+      })
+    );
+
     // Subscribe to hand raises
     this.subscriptions.push(
       this.webrtcService.handRaised$.subscribe((raised) => {
         this.handRaised = raised.has(this.currentUserId);
+        this.syncRaisedHandOrder(raised);
       })
     );
 
@@ -1108,6 +1226,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   toggleInvitePanel(): void {
     this.showInvitePanel = !this.showInvitePanel;
     if (this.showInvitePanel) {
+      this.showNotesPanel = false;
       this.userSearchQuery = '';
       this.searchResults = [];
       this.updateCallableMembers();
@@ -1135,6 +1254,37 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.snackBar.open('Anruf abgebrochen', 'OK', { duration: 2000 });
   }
 
+  toggleNotesPanel(): void {
+    this.showNotesPanel = !this.showNotesPanel;
+    if (this.showNotesPanel) {
+      this.showChatPanel = false;
+      this.showInvitePanel = false;
+      this.loadVideoNotes();
+    }
+  }
+
+  private loadVideoNotes(): void {
+    this.apiService.getVideoNotes(this.channelId).subscribe({
+      next: (resp) => {
+        this.isApplyingRemoteNotes = true;
+        this.videoNotes = resp?.notes || '';
+        this.isApplyingRemoteNotes = false;
+      },
+      error: () => {},
+    });
+  }
+
+  onNotesChanged(notes: string): void {
+    if (this.isApplyingRemoteNotes) return;
+    const clipped = (notes || '').slice(0, 10000);
+    if (clipped !== this.videoNotes) {
+      this.videoNotes = clipped;
+    }
+    this.notesLastEditedBy = 'Dir';
+    this.wsService.send(this.channelId, { type: 'video_notes_update', notes: clipped });
+    this.apiService.updateVideoNotes(this.channelId, clipped).subscribe({ error: () => {} });
+  }
+
   // --- Chat sidebar ---
 
   toggleChatPanel(): void {
@@ -1142,6 +1292,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (this.showChatPanel) {
       this.unreadChatCount = 0;
       this.showInvitePanel = false;
+      this.showNotesPanel = false;
       if (!this.chatWsSubscription) {
         this.connectChatWs();
       }
@@ -1204,6 +1355,29 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   toggleHandRaise(): void {
     this.handRaised = !this.handRaised;
     this.webrtcService.toggleHandRaise(this.handRaised);
+  }
+
+
+  private syncRaisedHandOrder(raised: Set<string>): void {
+    this.raisedHandOrder = this.raisedHandOrder.filter((uid) => raised.has(uid));
+    for (const uid of raised) {
+      if (!this.raisedHandOrder.includes(uid)) {
+        this.raisedHandOrder.push(uid);
+      }
+    }
+  }
+
+  getRaiseOrderForUser(userId: string): number | null {
+    if (!userId) return null;
+    const idx = this.raisedHandOrder.indexOf(userId);
+    return idx >= 0 ? idx + 1 : null;
+  }
+
+  getHandRaiseBadgeLabel(): string | null {
+    if (this.raisedHandOrder.length === 0) return null;
+    const ownOrder = this.getRaiseOrderForUser(this.currentUserId);
+    if (ownOrder) return String(ownOrder);
+    return String(this.raisedHandOrder.length);
   }
 
   // --- Pagination ---

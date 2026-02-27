@@ -1040,7 +1040,11 @@ def _parse_dt(value: str | datetime | None) -> datetime | None:
             return value.replace(tzinfo=timezone.utc)
         return value
     try:
-        dt = datetime.fromisoformat(str(value))
+        raw = str(value).strip()
+        # Python 3.10's fromisoformat does not accept trailing 'Z'
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        dt = datetime.fromisoformat(raw)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt

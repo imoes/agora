@@ -9,7 +9,15 @@ from app.config import settings
 from app.database import async_session
 from app.models.channel import ChannelMember
 from app.models.user import User
-from app.services.chat_db import add_message, init_chat_db, update_message, delete_message, add_reaction, remove_reaction
+from app.services.chat_db import (
+    add_message,
+    add_reaction,
+    delete_message,
+    get_message_by_id,
+    init_chat_db,
+    remove_reaction,
+    update_message,
+)
 from app.services.feed import create_feed_events
 from app.services.mentions import extract_mentions, resolve_mentions
 from app.websocket.manager import manager
@@ -247,19 +255,29 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                 action = data.get("action", "add")
 
                 if emoji and message_id:
+                    message_sender_id = None
                     if action == "add":
                         added = await add_reaction(channel_id, message_id, user_id, emoji)
                         if added:
-                            async with async_session() as db:
-                                await create_feed_events(
-                                    db,
-                                    uuid.UUID(channel_id),
-                                    user.id,
-                                    event_type="reaction",
-                                    preview_text=f"{emoji} Reaktion",
-                                    message_id=message_id,
-                                )
-                                await db.commit()
+                            message = await get_message_by_id(channel_id, message_id)
+                            target_user_id = None
+                            if message and message.get("sender_id"):
+                                message_sender_id = str(message["sender_id"])
+                                if message_sender_id != user_id:
+                                    target_user_id = uuid.UUID(message_sender_id)
+
+                            if target_user_id:
+                                async with async_session() as db:
+                                    await create_feed_events(
+                                        db,
+                                        uuid.UUID(channel_id),
+                                        user.id,
+                                        event_type="reaction",
+                                        preview_text=f"{emoji} Reaktion",
+                                        message_id=message_id,
+                                        target_user_id=target_user_id,
+                                    )
+                                    await db.commit()
                     else:
                         await remove_reaction(channel_id, message_id, user_id, emoji)
 
@@ -272,6 +290,7 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                             "display_name": user.display_name,
                             "emoji": emoji,
                             "action": action,
+                            "message_sender_id": message_sender_id,
                         },
                     )
 
@@ -460,6 +479,19 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                         "type": "screen_share_stop",
                         "user_id": user_id,
                     },
+                )
+
+            elif msg_type == "video_notes_update":
+                notes = str(data.get("notes", ""))[:10000]
+                await manager.send_to_channel(
+                    channel_id,
+                    {
+                        "type": "video_notes_update",
+                        "notes": notes,
+                        "user_id": user_id,
+                        "display_name": user.display_name,
+                    },
+                    exclude_user=user_id,
                 )
 
     except WebSocketDisconnect:

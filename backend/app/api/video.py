@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.channel import ChannelMember
 from app.models.user import User
-from app.schemas.user import UserOut
 from app.services.auth import get_current_user
 from app.services.janus import janus_client
 
@@ -17,22 +16,26 @@ router = APIRouter(prefix="/api/video", tags=["video"])
 active_rooms: dict[str, dict] = {}
 
 
+async def _ensure_membership(db: AsyncSession, channel_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    membership = await db.execute(
+        select(ChannelMember).where(
+            and_(
+                ChannelMember.channel_id == channel_id,
+                ChannelMember.user_id == user_id,
+            )
+        )
+    )
+    if not membership.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Not a channel member")
+
+
 @router.post("/rooms")
 async def create_room(
     channel_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    membership = await db.execute(
-        select(ChannelMember).where(
-            and_(
-                ChannelMember.channel_id == channel_id,
-                ChannelMember.user_id == current_user.id,
-            )
-        )
-    )
-    if not membership.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Not a channel member")
+    await _ensure_membership(db, channel_id, current_user.id)
 
     channel_str = str(channel_id)
 
@@ -49,6 +52,7 @@ async def create_room(
             "janus_url": "ws://localhost:7088",
             "created_by": str(current_user.id),
             "participants": [],
+            "notes": "",
         }
         active_rooms[channel_str] = room_info
         return room_info
@@ -62,6 +66,7 @@ async def create_room(
             "signaling": "websocket",
             "created_by": str(current_user.id),
             "participants": [],
+            "notes": "",
             "note": "Janus unavailable, using P2P WebRTC signaling",
         }
         active_rooms[channel_str] = room_info
@@ -105,16 +110,7 @@ async def join_room(
 
     # Auto-create room if it doesn't exist yet
     if channel_str not in active_rooms:
-        membership = await db.execute(
-            select(ChannelMember).where(
-                and_(
-                    ChannelMember.channel_id == channel_id,
-                    ChannelMember.user_id == current_user.id,
-                )
-            )
-        )
-        if not membership.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="Not a channel member")
+        await _ensure_membership(db, channel_id, current_user.id)
 
         room_id = abs(hash(channel_str)) % 1000000
         active_rooms[channel_str] = {
@@ -124,6 +120,7 @@ async def join_room(
             "signaling": "websocket",
             "created_by": str(current_user.id),
             "participants": [],
+            "notes": "",
             "note": "Janus unavailable, using P2P WebRTC signaling",
         }
 
@@ -154,3 +151,43 @@ async def leave_room(
         return {"status": "room_closed"}
 
     return active_rooms[channel_str]
+
+
+@router.get("/rooms/{channel_id}/notes")
+async def get_room_notes(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_membership(db, channel_id, current_user.id)
+    channel_str = str(channel_id)
+    room = active_rooms.get(channel_str)
+    return {"notes": (room or {}).get("notes", "")}
+
+
+@router.put("/rooms/{channel_id}/notes")
+async def update_room_notes(
+    channel_id: uuid.UUID,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_membership(db, channel_id, current_user.id)
+    channel_str = str(channel_id)
+    notes = str(data.get("notes", ""))[:10000]
+
+    if channel_str not in active_rooms:
+        active_rooms[channel_str] = {
+            "room_id": abs(hash(channel_str)) % 1000000,
+            "channel_id": channel_str,
+            "janus_url": None,
+            "signaling": "websocket",
+            "created_by": str(current_user.id),
+            "participants": [],
+            "notes": notes,
+            "note": "Janus unavailable, using P2P WebRTC signaling",
+        }
+    else:
+        active_rooms[channel_str]["notes"] = notes
+
+    return {"status": "ok", "notes": notes}

@@ -244,6 +244,63 @@ describe('WebRTCService', () => {
     });
   });
 
+
+  describe('hand raise', () => {
+    it('should add and remove remote raised hands in order', async () => {
+      const snapshots: string[][] = [];
+      service.handRaised$.subscribe((raised) => snapshots.push(Array.from(raised.values())));
+
+      await service.handleSignaling({
+        type: 'hand_raise',
+        user_id: 'user-2',
+        display_name: 'User 2',
+        raised: true,
+      });
+      await service.handleSignaling({
+        type: 'hand_raise',
+        user_id: 'user-3',
+        display_name: 'User 3',
+        raised: true,
+      });
+      await service.handleSignaling({
+        type: 'hand_raise',
+        user_id: 'user-2',
+        display_name: 'User 2',
+        raised: false,
+      });
+
+      expect(snapshots.at(-1)).toEqual(['user-3']);
+      expect(snapshots.some((s) => JSON.stringify(s) === JSON.stringify(['user-2', 'user-3']))).toBe(true);
+    });
+
+    it('should ignore own hand_raise signaling message', async () => {
+      let latest: string[] = [];
+      service.handRaised$.subscribe((raised) => {
+        latest = Array.from(raised.values());
+      });
+
+      await service.handleSignaling({
+        type: 'hand_raise',
+        user_id: 'user-1',
+        display_name: 'Me',
+        raised: true,
+      });
+
+      expect(latest).toEqual([]);
+    });
+
+    it('toggleHandRaise should update stream and send websocket event', async () => {
+      await service.startCall('ch-hand');
+      wsSendMock.mockClear();
+
+      service.toggleHandRaise(true);
+      service.toggleHandRaise(false);
+
+      expect(wsSendMock).toHaveBeenCalledWith('ch-hand', { type: 'hand_raise', raised: true });
+      expect(wsSendMock).toHaveBeenCalledWith('ch-hand', { type: 'hand_raise', raised: false });
+    });
+  });
+
   /* --------- toggleAudio / toggleVideo --------- */
 
   describe('toggleAudio', () => {

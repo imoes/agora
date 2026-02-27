@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.services import calendar_sync
+from app.api.calendar import _parse_dt
 from tests.conftest import auth_headers, register_user
 
 
@@ -593,3 +594,10 @@ class TestCalendarIntegration:
         assert len(events) == 1
         assert events[0]["title"] == "Team Meeting"
         assert events[0]["external_id"] == "test-event-123"
+
+
+def test_parse_dt_accepts_z_suffix():
+    dt = _parse_dt("2026-02-14T10:00:00Z")
+    assert dt is not None
+    assert dt.tzinfo is not None
+    assert dt.utcoffset() == timedelta(0)

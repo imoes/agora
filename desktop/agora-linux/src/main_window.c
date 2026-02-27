@@ -2652,16 +2652,19 @@ static void on_ws_message(SoupWebsocketConnection *conn, gint type,
             ? json_object_get_string_member(root, "action") : "";
         const char *user_id = json_object_has_member(root, "user_id")
             ? json_object_get_string_member(root, "user_id") : NULL;
+        const char *message_sender_id = json_object_has_member(root, "message_sender_id")
+            ? json_object_get_string_member(root, "message_sender_id") : NULL;
 
         /* Reload messages to show updated reactions */
         if (win->current_channel_id)
             load_messages(win, win->current_channel_id);
 
-        /* Show notification for reactions from others */
+        /* Show notification only for reactions on own messages */
         AgoraApp *app = AGORA_APP(gtk_window_get_application(GTK_WINDOW(win)));
         AgoraSession *session = agora_app_get_session(app);
         if (g_strcmp0(action, "add") == 0 && user_id && session->user_id &&
-            g_strcmp0(user_id, session->user_id) != 0) {
+            g_strcmp0(user_id, session->user_id) != 0 &&
+            message_sender_id && g_strcmp0(message_sender_id, session->user_id) == 0) {
             char *notif_title = g_strdup_printf("%s %s", display_name, T("notify.reacted"));
             char *notif_body = g_strdup_printf("%s %s", emoji, T("notify.reaction_body"));
             show_notification(notif_title, notif_body);

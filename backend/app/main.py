@@ -18,22 +18,24 @@ def _add_missing_columns(connection):
     any columns that are defined in the models but missing in the DB.
     """
     inspector = sa_inspect(connection)
+    table_names = set(inspector.get_table_names())
 
-    channel_cols = {c["name"] for c in inspector.get_columns("channels")}
-    if "scheduled_at" not in channel_cols:
-        connection.execute(text(
-            "ALTER TABLE channels ADD COLUMN scheduled_at TIMESTAMP"
-        ))
-    if "is_hidden" not in channel_cols:
-        connection.execute(text(
-            "ALTER TABLE channels ADD COLUMN is_hidden BOOLEAN DEFAULT false"
-        ))
-    if "custom_name" not in channel_cols:
-        connection.execute(text(
-            "ALTER TABLE channels ADD COLUMN custom_name BOOLEAN DEFAULT false"
-        ))
+    if "channels" in table_names:
+        channel_cols = {c["name"] for c in inspector.get_columns("channels")}
+        if "scheduled_at" not in channel_cols:
+            connection.execute(text(
+                "ALTER TABLE channels ADD COLUMN scheduled_at TIMESTAMP"
+            ))
+        if "is_hidden" not in channel_cols:
+            connection.execute(text(
+                "ALTER TABLE channels ADD COLUMN is_hidden BOOLEAN DEFAULT false"
+            ))
+        if "custom_name" not in channel_cols:
+            connection.execute(text(
+                "ALTER TABLE channels ADD COLUMN custom_name BOOLEAN DEFAULT false"
+            ))
 
-    if "calendar_integrations" in inspector.get_table_names():
+    if "calendar_integrations" in table_names:
         cal_cols = {c["name"] for c in inspector.get_columns("calendar_integrations")}
         if "google_email" not in cal_cols:
             connection.execute(text(
@@ -56,8 +58,8 @@ def _add_missing_columns(connection):
                 "ALTER TABLE calendar_integrations ADD COLUMN google_token_expiry TIMESTAMP"
             ))
 
-    # Widen calendar_events.location from 200 to 500 chars
-    if "calendar_events" in inspector.get_table_names():
+    # Widen calendar_events.location from 200 to 500 chars (non-SQLite)
+    if connection.dialect.name != "sqlite" and "calendar_events" in table_names:
         cal_event_cols = {c["name"]: c for c in inspector.get_columns("calendar_events")}
         if "location" in cal_event_cols:
             connection.execute(text(
@@ -65,44 +67,46 @@ def _add_missing_columns(connection):
             ))
 
     # Ensure event_attendees.status column exists
-    if "event_attendees" in inspector.get_table_names():
+    if "event_attendees" in table_names:
         att_cols = {c["name"] for c in inspector.get_columns("event_attendees")}
         if "status" not in att_cols:
             connection.execute(text(
                 "ALTER TABLE event_attendees ADD COLUMN status VARCHAR(20) DEFAULT 'pending' NOT NULL"
             ))
 
-    user_cols = {c["name"] for c in inspector.get_columns("users")}
-    if "is_admin" not in user_cols:
-        connection.execute(text(
-            "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT false"
-        ))
-    if "auth_source" not in user_cols:
-        connection.execute(text(
-            "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local'"
-        ))
-    if "is_guest" not in user_cols:
-        connection.execute(text(
-            "ALTER TABLE users ADD COLUMN is_guest BOOLEAN DEFAULT false"
-        ))
-    if "language" not in user_cols:
-        connection.execute(text(
-            "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT ''"
-        ))
-    if "notification_sound_path" not in user_cols:
-        connection.execute(text(
-            "ALTER TABLE users ADD COLUMN notification_sound_path VARCHAR(512)"
-        ))
+    if "users" in table_names:
+        user_cols = {c["name"] for c in inspector.get_columns("users")}
+        if "is_admin" not in user_cols:
+            connection.execute(text(
+                "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT false"
+            ))
+        if "auth_source" not in user_cols:
+            connection.execute(text(
+                "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local'"
+            ))
+        if "is_guest" not in user_cols:
+            connection.execute(text(
+                "ALTER TABLE users ADD COLUMN is_guest BOOLEAN DEFAULT false"
+            ))
+        if "language" not in user_cols:
+            connection.execute(text(
+                "ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT ''"
+            ))
+        if "notification_sound_path" not in user_cols:
+            connection.execute(text(
+                "ALTER TABLE users ADD COLUMN notification_sound_path VARCHAR(512)"
+            ))
 
-    cm_cols = {c["name"] for c in inspector.get_columns("channel_members")}
-    if "last_read_message_id" not in cm_cols:
-        connection.execute(text(
-            "ALTER TABLE channel_members ADD COLUMN last_read_message_id VARCHAR(36)"
-        ))
-    if "is_subscribed" not in cm_cols:
-        connection.execute(text(
-            "ALTER TABLE channel_members ADD COLUMN is_subscribed BOOLEAN DEFAULT true NOT NULL"
-        ))
+    if "channel_members" in table_names:
+        cm_cols = {c["name"] for c in inspector.get_columns("channel_members")}
+        if "last_read_message_id" not in cm_cols:
+            connection.execute(text(
+                "ALTER TABLE channel_members ADD COLUMN last_read_message_id VARCHAR(36)"
+            ))
+        if "is_subscribed" not in cm_cols:
+            connection.execute(text(
+                "ALTER TABLE channel_members ADD COLUMN is_subscribed BOOLEAN DEFAULT true NOT NULL"
+            ))
 
 
 @asynccontextmanager
