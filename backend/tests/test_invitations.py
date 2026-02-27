@@ -289,13 +289,16 @@ def test_ics_generation():
 
     assert isinstance(ics_bytes, bytes)
     ics_text = ics_bytes.decode("utf-8")
-    assert "BEGIN:VCALENDAR" in ics_text
-    assert "BEGIN:VEVENT" in ics_text
-    assert "Test-Chat" in ics_text
-    assert "Max Mustermann" in ics_text
-    assert "http://localhost:4200/invite/abc123" in ics_text
-    assert "Bitte beitreten!" in ics_text
-    assert "END:VCALENDAR" in ics_text
+    # Unfold folded ICS lines: CRLF + single space/tab continuation
+    unfolded = ics_text.replace("\r\n ", "").replace("\r\n\t", "")
+
+    assert "BEGIN:VCALENDAR" in unfolded
+    assert "BEGIN:VEVENT" in unfolded
+    assert "Test-Chat" in unfolded
+    assert "Max Mustermann" in unfolded
+    assert "http://localhost:4200/invite/abc123" in unfolded
+    assert "Bitte beitreten!" in unfolded
+    assert "END:VCALENDAR" in unfolded
 
 
 def test_ics_without_message():
