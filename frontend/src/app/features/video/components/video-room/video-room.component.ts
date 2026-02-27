@@ -92,7 +92,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
                   <span>Du</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="handRaised">{{ getRaiseOrderForUser(currentUserId) }}</span>
                 <div class="video-label">Du
                   <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -107,7 +107,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ p.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
                   <span>{{ p.displayName }}</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="p.handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="p.handRaised">{{ getRaiseOrderForUser(p.userId) }}</span>
                 <div class="video-label">{{ p.displayName }}
                   <mat-icon *ngIf="!p.audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -129,7 +129,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ audioEnabled ? 'mic' : 'mic_off' }}</mat-icon>
                   <span>Du</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="handRaised">{{ getRaiseOrderForUser(currentUserId) }}</span>
                 <div class="video-label">Du
                   <mat-icon *ngIf="!audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -144,7 +144,7 @@ import { AuthService } from '@core/services/auth.service';
                   <mat-icon>{{ tile.participant!.audioEnabled ? 'person' : 'mic_off' }}</mat-icon>
                   <span>{{ tile.participant!.displayName }}</span>
                 </div>
-                <span class="hand-raised-badge" *ngIf="tile.participant!.handRaised">&#x1F91A;</span>
+                <span class="hand-raised-badge" *ngIf="tile.participant!.handRaised">{{ getRaiseOrderForUser(tile.participant!.userId) }}</span>
                 <div class="video-label">{{ tile.participant!.displayName }}
                   <mat-icon *ngIf="!tile.participant!.audioEnabled" class="mute-icon">mic_off</mat-icon>
                 </div>
@@ -306,8 +306,10 @@ import { AuthService } from '@core/services/auth.service';
         <button mat-fab
                 [color]="handRaised ? 'accent' : undefined"
                 (click)="toggleHandRaise()"
-                [matTooltip]="handRaised ? 'Hand senken' : 'Hand heben'">
+                [matTooltip]="handRaised ? 'Hand senken' : 'Hand heben'"
+                class="hand-raise-fab">
           <mat-icon>{{ handRaised ? 'back_hand' : 'back_hand' }}</mat-icon>
+          <span class="hand-order-fab-badge" *ngIf="getHandRaiseBadgeLabel() as badge">{{ badge }}</span>
         </button>
         <button mat-fab
                 [color]="isScreenSharing ? 'accent' : undefined"
@@ -815,20 +817,45 @@ import { AuthService } from '@core/services/auth.service';
     .video-tile.speaking {
       box-shadow: 0 0 0 3px #6264a7, 0 0 16px rgba(98, 100, 167, 0.5);
     }
-    /* Hand raised badge */
+    /* Hand raised order badges */
     .hand-raised-badge {
       position: absolute;
       top: 8px;
       right: 8px;
-      font-size: 28px;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: rgba(98, 100, 167, 0.95);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
       z-index: 2;
-      animation: hand-wave 1s ease-in-out 3;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+      border: 1px solid rgba(255,255,255,0.35);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
     }
-    @keyframes hand-wave {
-      0%, 100% { transform: rotate(0deg); }
-      25% { transform: rotate(20deg); }
-      75% { transform: rotate(-15deg); }
+    .hand-raise-fab {
+      position: relative;
+    }
+    .hand-order-fab-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #ff7043;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid rgba(255,255,255,0.35);
     }
     /* Pagination */
     .pagination-bar {
@@ -907,6 +934,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   // Hand raise
   handRaised = false;
+  raisedHandOrder: string[] = [];
 
   // Pagination
   readonly TILES_PER_PAGE = 9;
@@ -1045,6 +1073,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.subscriptions.push(
       this.webrtcService.handRaised$.subscribe((raised) => {
         this.handRaised = raised.has(this.currentUserId);
+        this.syncRaisedHandOrder(raised);
       })
     );
 
@@ -1326,6 +1355,29 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   toggleHandRaise(): void {
     this.handRaised = !this.handRaised;
     this.webrtcService.toggleHandRaise(this.handRaised);
+  }
+
+
+  private syncRaisedHandOrder(raised: Set<string>): void {
+    this.raisedHandOrder = this.raisedHandOrder.filter((uid) => raised.has(uid));
+    for (const uid of raised) {
+      if (!this.raisedHandOrder.includes(uid)) {
+        this.raisedHandOrder.push(uid);
+      }
+    }
+  }
+
+  getRaiseOrderForUser(userId: string): number | null {
+    if (!userId) return null;
+    const idx = this.raisedHandOrder.indexOf(userId);
+    return idx >= 0 ? idx + 1 : null;
+  }
+
+  getHandRaiseBadgeLabel(): string | null {
+    if (this.raisedHandOrder.length === 0) return null;
+    const ownOrder = this.getRaiseOrderForUser(this.currentUserId);
+    if (ownOrder) return String(ownOrder);
+    return String(this.raisedHandOrder.length);
   }
 
   // --- Pagination ---
