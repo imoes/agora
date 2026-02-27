@@ -1,22 +1,22 @@
 # Agora Android App
 
-Diese Android-App stellt alle Features der mobilen Agora-Webseite bereit, indem sie das bestehende responsive Web-Frontend in einer nativen WebView kapselt.
+This Android app provides all features of the mobile Agora website by wrapping the existing responsive web frontend in a native WebView.
 
-## Start
+## Getting Started
 
-1. URL im `MainActivity.kt` setzen (`AGORA_URL`).
-2. In Android Studio `android-app/` öffnen.
-3. App auf Emulator oder Gerät starten.
+1. Set the URL in `MainActivity.kt` (`AGORA_URL`).
+2. Open `android-app/` in Android Studio.
+3. Run the app on an emulator or physical device.
 
-## Benachrichtigungen
+## Notifications
 
-- Native Telefon-Benachrichtigungen sind aktiviert.
-- Für Android 13+ fragt die App beim Start die Berechtigung `POST_NOTIFICATIONS` an.
-- Die WebView patcht die Browser-`Notification`-API und leitet Titel/Text an Android weiter.
-- Hinweis: Dies sind lokale native Notifications aus der laufenden WebView (kein FCM/Server-Push im Hintergrund).
+- Native phone notifications are enabled.
+- On Android 13+, the app requests the `POST_NOTIFICATIONS` permission on startup.
+- The WebView patches the browser `Notification` API and forwards title/body text to Android notifications.
+- Note: these are local native notifications from the running WebView process (no FCM/server push in the background).
 
-## Hinweise
+## Notes
 
-- Kamera/Mikrofon/WebRTC-Berechtigungen werden an die Seite durchgereicht.
-- Pull-to-refresh ist integriert.
-- Navigation zurück nutzt die WebView-History.
+- Camera/microphone/WebRTC permissions are forwarded to the page.
+- Pull-to-refresh is included.
+- Back navigation uses WebView history.
