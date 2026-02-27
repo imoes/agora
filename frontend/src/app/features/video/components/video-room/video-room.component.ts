@@ -202,6 +202,24 @@ import { AuthService } from '@core/services/auth.service';
         </div>
       </div>
 
+      <!-- Notes Sidebar -->
+      <div class="notes-sidebar" *ngIf="showNotesPanel">
+        <div class="notes-sidebar-header">
+          <mat-icon>edit_note</mat-icon>
+          <span>Besprechungsnotizen</span>
+          <button mat-icon-button (click)="showNotesPanel = false">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <textarea
+          [(ngModel)]="videoNotes"
+          (ngModelChange)="onNotesChanged($event)"
+          placeholder="Schreibe hier gemeinsame Notizen zum Call..."></textarea>
+        <div class="notes-sidebar-meta">
+          <span *ngIf="notesLastEditedBy">Zuletzt bearbeitet von {{ notesLastEditedBy }}</span>
+        </div>
+      </div>
+
       <!-- Invite Panel -->
       <div class="invite-panel" *ngIf="showInvitePanel">
         <div class="invite-panel-header">
@@ -302,6 +320,10 @@ import { AuthService } from '@core/services/auth.service';
                 class="chat-fab-btn">
           <mat-icon>chat</mat-icon>
           <span class="chat-badge" *ngIf="unreadChatCount > 0">{{ unreadChatCount > 99 ? '99+' : unreadChatCount }}</span>
+        </button>
+        <button mat-fab (click)="toggleNotesPanel()" matTooltip="Notizbuch"
+                [color]="showNotesPanel ? 'accent' : undefined">
+          <mat-icon>edit_note</mat-icon>
         </button>
         <button mat-fab (click)="toggleInvitePanel()" matTooltip="Benutzer anrufen"
                 [color]="showInvitePanel ? 'accent' : undefined">
@@ -696,6 +718,56 @@ import { AuthService } from '@core/services/auth.service';
     .chat-sidebar-input input:focus { border-color: #6264a7; }
     .chat-sidebar-input button { color: #6264a7; }
     .chat-sidebar-input button[disabled] { color: #555; }
+
+    .notes-sidebar {
+      position: absolute;
+      right: 16px;
+      top: 64px;
+      bottom: 88px;
+      width: min(420px, 92vw);
+      background: #232323;
+      border: 1px solid #333;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 20;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .notes-sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #2b2b2b;
+      border-bottom: 1px solid #383838;
+      color: #ddd;
+      font-weight: 600;
+    }
+    .notes-sidebar-header span { flex: 1; }
+    .notes-sidebar-header button { color: #aaa; }
+    .notes-sidebar textarea {
+      flex: 1;
+      width: 100%;
+      resize: none;
+      border: none;
+      outline: none;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #f0f0f0;
+      background: #1f1f1f;
+    }
+    .notes-sidebar textarea::placeholder { color: #8a8a8a; }
+    .notes-sidebar-meta {
+      min-height: 32px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #9ea2a8;
+      border-top: 1px solid #383838;
+      background: #252525;
+    }
     /* Chat badge */
     .chat-fab-btn {
       position: relative;
@@ -851,7 +923,11 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   // Chat sidebar
   showChatPanel = false;
+  showNotesPanel = false;
   chatMessages: any[] = [];
+  videoNotes = '';
+  notesLastEditedBy = '';
+  private isApplyingRemoteNotes = false;
   chatText = '';
   unreadChatCount = 0;
   private chatWsSubscription?: Subscription;
@@ -887,6 +963,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
 
     this.loadChannelMembers();
+    this.loadVideoNotes();
 
     // User search with debounce
     this.subscriptions.push(
@@ -949,6 +1026,18 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.rebuildTiles();
         this.pendingStreamAttach = true;
         this.cdr.detectChanges();
+      })
+    );
+
+    // Shared call notebook updates
+    this.subscriptions.push(
+      this.wsService.globalMessages$.subscribe((msg) => {
+        if (msg.type === 'video_notes_update' && msg._channelId === this.channelId) {
+          this.isApplyingRemoteNotes = true;
+          this.videoNotes = msg.notes || '';
+          this.notesLastEditedBy = msg.display_name || '';
+          this.isApplyingRemoteNotes = false;
+        }
       })
     );
 
@@ -1108,6 +1197,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
   toggleInvitePanel(): void {
     this.showInvitePanel = !this.showInvitePanel;
     if (this.showInvitePanel) {
+      this.showNotesPanel = false;
       this.userSearchQuery = '';
       this.searchResults = [];
       this.updateCallableMembers();
@@ -1135,6 +1225,37 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.snackBar.open('Anruf abgebrochen', 'OK', { duration: 2000 });
   }
 
+  toggleNotesPanel(): void {
+    this.showNotesPanel = !this.showNotesPanel;
+    if (this.showNotesPanel) {
+      this.showChatPanel = false;
+      this.showInvitePanel = false;
+      this.loadVideoNotes();
+    }
+  }
+
+  private loadVideoNotes(): void {
+    this.apiService.getVideoNotes(this.channelId).subscribe({
+      next: (resp) => {
+        this.isApplyingRemoteNotes = true;
+        this.videoNotes = resp?.notes || '';
+        this.isApplyingRemoteNotes = false;
+      },
+      error: () => {},
+    });
+  }
+
+  onNotesChanged(notes: string): void {
+    if (this.isApplyingRemoteNotes) return;
+    const clipped = (notes || '').slice(0, 10000);
+    if (clipped !== this.videoNotes) {
+      this.videoNotes = clipped;
+    }
+    this.notesLastEditedBy = 'Dir';
+    this.wsService.send(this.channelId, { type: 'video_notes_update', notes: clipped });
+    this.apiService.updateVideoNotes(this.channelId, clipped).subscribe({ error: () => {} });
+  }
+
   // --- Chat sidebar ---
 
   toggleChatPanel(): void {
@@ -1142,6 +1263,7 @@ export class VideoRoomComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (this.showChatPanel) {
       this.unreadChatCount = 0;
       this.showInvitePanel = false;
+      this.showNotesPanel = false;
       if (!this.chatWsSubscription) {
         this.connectChatWs();
       }

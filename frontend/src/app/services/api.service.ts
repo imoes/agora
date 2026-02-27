@@ -196,6 +196,14 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/video/rooms/${channelId}/leave`, null);
   }
 
+  getVideoNotes(channelId: string): Observable<{ notes: string }> {
+    return this.http.get<{ notes: string }>(`${this.baseUrl}/video/rooms/${channelId}/notes`);
+  }
+
+  updateVideoNotes(channelId: string, notes: string): Observable<{ status: string; notes: string }> {
+    return this.http.put<{ status: string; notes: string }>(`${this.baseUrl}/video/rooms/${channelId}/notes`, { notes });
+  }
+
   // Channel members
   addChannelMember(channelId: string, userId: string): Observable<any> {
     return this.http.post(`${this.baseUrl}/channels/${channelId}/members/${userId}`, null);

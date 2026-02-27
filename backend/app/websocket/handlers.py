@@ -481,6 +481,19 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
                     },
                 )
 
+            elif msg_type == "video_notes_update":
+                notes = str(data.get("notes", ""))[:10000]
+                await manager.send_to_channel(
+                    channel_id,
+                    {
+                        "type": "video_notes_update",
+                        "notes": notes,
+                        "user_id": user_id,
+                        "display_name": user.display_name,
+                    },
+                    exclude_user=user_id,
+                )
+
     except WebSocketDisconnect:
         # Clean up any active call participation
         duration_secs = manager.leave_call(channel_id, user_id)
