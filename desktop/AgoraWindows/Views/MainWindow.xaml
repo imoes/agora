@@ -250,7 +250,8 @@
                                 <DataTemplate>
                                     <Border Margin="4,2" Padding="12,8" Background="White"
                                             CornerRadius="4" BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1">
+                                            BorderThickness="1" Cursor="Hand"
+                                            MouseLeftButtonUp="CalendarEventCard_Click">
                                         <StackPanel>
                                             <TextBlock Text="{Binding Title}" FontSize="13"
                                                        FontWeight="SemiBold"
@@ -521,7 +522,8 @@
                                     <DataTemplate>
                                         <Border Margin="0,0,0,8" Padding="14,12" Background="White"
                                                 CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
-                                                BorderThickness="1">
+                                                BorderThickness="1" Cursor="Hand"
+                                                MouseLeftButtonUp="CalendarEventCard_Click">
                                             <Border.Effect>
                                                 <DropShadowEffect BlurRadius="4" Opacity="0.08" ShadowDepth="1" />
                                             </Border.Effect>

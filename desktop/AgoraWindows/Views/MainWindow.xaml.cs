@@ -684,12 +684,12 @@ function insertText(text) {
                     var channelId = ev.TryGetProperty("channel_id", out var ch) && ch.ValueKind != JsonValueKind.Null ? ch.GetString() : null;
 
                     var start = DateTime.Parse(startTime).ToLocalTime();
+                    var endDt = endTime != null ? DateTime.Parse(endTime).ToLocalTime() : start;
+                    if (endDt < DateTime.Now) continue;
+
                     var timeRange = allDay ? "Ganztaegig" : start.ToString("HH:mm");
                     if (!allDay && endTime != null)
-                    {
-                        var endDt = DateTime.Parse(endTime).ToLocalTime();
                         timeRange += " - " + endDt.ToString("HH:mm");
-                    }
 
                     var item = new CalendarEventItem
                     {
@@ -699,6 +699,7 @@ function insertText(text) {
                         Location = location,
                         ChannelId = channelId,
                         StartDateTime = start,
+                        EndDateTime = endDt,
                         AllDay = allDay
                     };
 
@@ -812,17 +813,28 @@ function insertText(text) {
 
     private async void CalendarEventJoin_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is string channelId && !string.IsNullOrEmpty(channelId))
+        if (sender is Button btn && btn.Tag is string channelId)
+            await JoinCalendarEventAsync(channelId);
+    }
+
+
+    private async System.Threading.Tasks.Task JoinCalendarEventAsync(string? channelId)
+    {
+        if (string.IsNullOrEmpty(channelId)) return;
+        try
         {
-            try
-            {
-                await _api.CreateVideoRoomAsync(channelId);
-                var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
-                var url = $"{baseUrl}/video/{channelId}";
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-            }
-            catch { }
+            await _api.CreateVideoRoomAsync(channelId);
+            var baseUrl = _api.BaseUrl.TrimEnd('/').Replace("/api", "");
+            var url = $"{baseUrl}/video/{channelId}";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
+        catch { }
+    }
+
+    private async void CalendarEventCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Border border && border.DataContext is CalendarEventItem item)
+            await JoinCalendarEventAsync(item.ChannelId);
     }
 
     // === New Event Creation ===
@@ -893,7 +905,8 @@ function insertText(text) {
                 location = string.IsNullOrEmpty(NewEventLocation.Text) ? (string?)null : NewEventLocation.Text,
                 start_time = startDt.ToUniversalTime().ToString("o"),
                 end_time = endDt.ToUniversalTime().ToString("o"),
-                all_day = allDay
+                all_day = allDay,
+                create_video_call = true
             });
 
             NewEventOverlay.Visibility = Visibility.Collapsed;
@@ -3718,5 +3731,6 @@ public class CalendarEventItem
     public string? Location { get; set; }
     public string? ChannelId { get; set; }
     public DateTime StartDateTime { get; set; }
+    public DateTime EndDateTime { get; set; }
     public bool AllDay { get; set; }
 }

@@ -1351,6 +1351,8 @@ static void on_calendar_new_event_clicked(GtkButton *btn, gpointer data)
             json_builder_add_string_value(builder, end_iso);
             json_builder_set_member_name(builder, "all_day");
             json_builder_add_boolean_value(builder, allday);
+            json_builder_set_member_name(builder, "create_video_call");
+            json_builder_add_boolean_value(builder, TRUE);
             json_builder_end_object(builder);
 
             JsonGenerator *gen = json_generator_new();
