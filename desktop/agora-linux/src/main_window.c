@@ -143,6 +143,7 @@ static void show_team_detail(AgoraMainWindow *win, const char *team_id, const ch
 static void load_team_detail_channels(AgoraMainWindow *win);
 static void load_team_detail_members(AgoraMainWindow *win);
 static void load_team_detail_files(AgoraMainWindow *win);
+static void load_teams(AgoraMainWindow *win);
 
 /* Safely clear all children from a GtkListBox, avoiding dangling
    cursor/selection pointers that cause GTK_IS_WIDGET assertions. */
