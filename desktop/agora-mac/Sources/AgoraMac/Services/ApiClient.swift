@@ -112,6 +112,11 @@ class ApiClient {
         return try await get("/api/channels/?team_id=\(teamId)")
     }
 
+    func toggleChannelSubscription(channelId: String) async throws -> Bool {
+        let response: ChannelSubscriptionResponse = try await post("/api/channels/\(channelId)/subscribe", body: EmptyBody())
+        return response.isSubscribed
+    }
+
     func createTeam(name: String, description: String?) async throws -> Team {
         var body: [String: String] = ["name": name]
         if let description = description { body["description"] = description }
@@ -351,4 +356,12 @@ enum ApiError: LocalizedError {
 }
 
 struct EmptyResponse: Decodable {}
+
+struct ChannelSubscriptionResponse: Decodable {
+    let isSubscribed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case isSubscribed = "is_subscribed"
+    }
+}
 struct EmptyBody: Encodable {}
