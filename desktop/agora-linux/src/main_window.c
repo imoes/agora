@@ -275,6 +275,9 @@ static const char *app_css =
     /* Teams sidebar tree style */
     ".team-tree-row { padding: 4px 8px 4px 16px; }"
     ".team-tree-channel { padding: 3px 8px 3px 32px; }"
+    ".team-settings-btn { background-image: none; background-color: transparent; border: none; "
+    "  color: #9e9e9e; min-width: 28px; min-height: 28px; padding: 2px 4px; box-shadow: none; }"
+    ".team-settings-btn:hover { color: #ffffff; background-color: alpha(white, 0.08); }"
 ;
 
 /* --- Leave channel --- */
@@ -620,6 +623,13 @@ static void load_teams(AgoraMainWindow *win)
         gint64 member_count = json_object_has_member(team, "member_count")
             ? json_object_get_int_member(team, "member_count") : 0;
 
+        /* Row: [Expander with team info + channels] [Settings] */
+        GtkWidget *team_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_widget_set_margin_start(team_row, 8);
+        gtk_widget_set_margin_end(team_row, 8);
+        gtk_widget_set_margin_top(team_row, 2);
+        gtk_widget_set_margin_bottom(team_row, 2);
+
         /* Header: [Avatar 28px] [Team Name + member count] */
         GtkWidget *header_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
 
@@ -650,22 +660,20 @@ static void load_teams(AgoraMainWindow *win)
 
         gtk_box_pack_start(GTK_BOX(header_box), text_col, TRUE, TRUE, 0);
 
+        /* Expander with team header */
+        GtkWidget *expander = gtk_expander_new(NULL);
+        gtk_expander_set_label_widget(GTK_EXPANDER(expander), header_box);
+        gtk_box_pack_start(GTK_BOX(team_row), expander, TRUE, TRUE, 0);
+
         /* Settings button to open team detail view */
         GtkWidget *settings_btn = gtk_button_new_with_label("\xE2\x9A\x99"); /* ⚙ */
         gtk_widget_set_valign(settings_btn, GTK_ALIGN_CENTER);
         gtk_widget_set_tooltip_text(settings_btn, T("teams.team_settings"));
+        gtk_style_context_add_class(gtk_widget_get_style_context(settings_btn), "team-settings-btn");
         g_object_set_data_full(G_OBJECT(settings_btn), "team-id", g_strdup(id), g_free);
         g_object_set_data_full(G_OBJECT(settings_btn), "team-name", g_strdup(name), g_free);
         g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_team_settings_clicked), win);
-        gtk_box_pack_end(GTK_BOX(header_box), settings_btn, FALSE, FALSE, 0);
-
-        /* Expander with team header */
-        GtkWidget *expander = gtk_expander_new(NULL);
-        gtk_expander_set_label_widget(GTK_EXPANDER(expander), header_box);
-        gtk_widget_set_margin_start(expander, 8);
-        gtk_widget_set_margin_end(expander, 8);
-        gtk_widget_set_margin_top(expander, 2);
-        gtk_widget_set_margin_bottom(expander, 2);
+        gtk_box_pack_end(GTK_BOX(team_row), settings_btn, FALSE, FALSE, 0);
 
         /* Channel list inside the expander */
         GtkWidget *ch_list = gtk_list_box_new();
@@ -683,7 +691,7 @@ static void load_teams(AgoraMainWindow *win)
 
         g_signal_connect(expander, "notify::expanded", G_CALLBACK(on_team_expander_toggled), win);
 
-        gtk_box_pack_start(GTK_BOX(win->team_tree_box), expander, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(win->team_tree_box), team_row, FALSE, FALSE, 0);
         g_print("[Teams] Added team: %s (%s)\n", name, id);
     }
 
@@ -3745,6 +3753,7 @@ static void on_new_team_channel_clicked(GtkButton *btn, gpointer data)
             if (err) g_error_free(err);
 
             load_teams(win);
+            load_team_detail_channels(win);
         }
     }
 
