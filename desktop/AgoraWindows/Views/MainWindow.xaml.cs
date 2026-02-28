@@ -2303,7 +2303,7 @@ function insertText(text) {
         // Insert in reverse order to maintain indices
         for (int i = toInsert.Count - 1; i >= 0; i--)
         {
-            messages.Insert(toInsert[i].index + i, toInsert[i].separator);
+            messages.Insert(toInsert[i].index, toInsert[i].separator);
         }
     }
 
