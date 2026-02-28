@@ -141,6 +141,7 @@ static void on_video_call_clicked(GtkButton *btn, gpointer data);
 static void ws_send_json(AgoraMainWindow *win, const char *json_str);
 static void show_team_detail(AgoraMainWindow *win, const char *team_id, const char *team_name);
 static void load_team_detail_channels(AgoraMainWindow *win);
+static void on_team_channel_subscription_clicked(GtkButton *btn, gpointer data);
 static void load_team_detail_members(AgoraMainWindow *win);
 static void load_team_detail_files(AgoraMainWindow *win);
 static void load_teams(AgoraMainWindow *win);
@@ -730,15 +731,27 @@ static void load_teams(AgoraMainWindow *win)
         gtk_expander_set_label_widget(GTK_EXPANDER(expander), header_box);
         gtk_box_pack_start(GTK_BOX(team_row), expander, TRUE, TRUE, 0);
 
+        GtkWidget *team_actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+        gtk_widget_set_valign(team_actions, GTK_ALIGN_CENTER);
+
+        /* Add-channel button next to team settings */
+        GtkWidget *new_channel_btn = gtk_button_new_with_label("+");
+        gtk_widget_set_tooltip_text(new_channel_btn, T("teams.new_channel"));
+        gtk_style_context_add_class(gtk_widget_get_style_context(new_channel_btn), "team-settings-btn");
+        g_object_set_data_full(G_OBJECT(new_channel_btn), "team-id", g_strdup(id), g_free);
+        g_signal_connect(new_channel_btn, "clicked", G_CALLBACK(on_team_row_new_channel_clicked), win);
+        gtk_box_pack_start(GTK_BOX(team_actions), new_channel_btn, FALSE, FALSE, 0);
+
         /* Settings button to open team detail view */
         GtkWidget *settings_btn = gtk_button_new_with_label("\xE2\x9A\x99"); /* ⚙ */
-        gtk_widget_set_valign(settings_btn, GTK_ALIGN_CENTER);
         gtk_widget_set_tooltip_text(settings_btn, T("teams.team_settings"));
         gtk_style_context_add_class(gtk_widget_get_style_context(settings_btn), "team-settings-btn");
         g_object_set_data_full(G_OBJECT(settings_btn), "team-id", g_strdup(id), g_free);
         g_object_set_data_full(G_OBJECT(settings_btn), "team-name", g_strdup(name), g_free);
         g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_team_settings_clicked), win);
-        gtk_box_pack_end(GTK_BOX(team_row), settings_btn, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(team_actions), settings_btn, FALSE, FALSE, 0);
+
+        gtk_box_pack_end(GTK_BOX(team_row), team_actions, FALSE, FALSE, 0);
 
         /* Channel list inside the expander */
         GtkWidget *ch_list = gtk_list_box_new();
@@ -3275,6 +3288,32 @@ static void on_team_add_member_clicked(GtkButton *btn, gpointer data)
     gtk_widget_hide(w->team_member_search_box);
 }
 
+static void on_team_channel_subscription_clicked(GtkButton *btn, gpointer data)
+{
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *channel_id = g_object_get_data(G_OBJECT(btn), "channel-id");
+    if (!channel_id) return;
+
+    char *path = g_strdup_printf("/api/channels/%s/subscribe", channel_id);
+    GError *err = NULL;
+    JsonNode *res = agora_api_client_post(win->api, path, "{}", &err);
+    g_free(path);
+    if (!res) {
+        if (err) g_error_free(err);
+        return;
+    }
+
+    JsonObject *obj = json_node_get_object(res);
+    gboolean is_subscribed = json_object_has_member(obj, "is_subscribed")
+        ? json_object_get_boolean_member(obj, "is_subscribed") : TRUE;
+
+    gtk_button_set_label(btn, is_subscribed ? "\xF0\x9F\x94\x94" : "\xF0\x9F\x94\x95");
+    gtk_widget_set_tooltip_text(GTK_WIDGET(btn),
+        is_subscribed ? T("teams.unsubscribe") : T("teams.subscribe"));
+
+    json_node_unref(res);
+}
+
 static void load_team_detail_channels(AgoraMainWindow *win)
 {
     if (!win->current_team_id) return;
@@ -3330,6 +3369,18 @@ static void load_team_detail_channels(AgoraMainWindow *win)
         gtk_box_pack_start(GTK_BOX(text_col), mc_lbl, FALSE, FALSE, 0);
 
         gtk_box_pack_start(GTK_BOX(row_box), text_col, TRUE, TRUE, 0);
+
+        gboolean is_subscribed = json_object_has_member(ch, "is_subscribed")
+            ? json_object_get_boolean_member(ch, "is_subscribed") : TRUE;
+        GtkWidget *subscription_btn = gtk_button_new_with_label(
+            is_subscribed ? "\xF0\x9F\x94\x94" : "\xF0\x9F\x94\x95");
+        gtk_widget_set_tooltip_text(subscription_btn,
+            is_subscribed ? T("teams.unsubscribe") : T("teams.subscribe"));
+        gtk_style_context_add_class(gtk_widget_get_style_context(subscription_btn), "team-settings-btn");
+        gtk_widget_set_valign(subscription_btn, GTK_ALIGN_CENTER);
+        g_object_set_data_full(G_OBJECT(subscription_btn), "channel-id", g_strdup(id), g_free);
+        g_signal_connect(subscription_btn, "clicked", G_CALLBACK(on_team_channel_subscription_clicked), win);
+        gtk_box_pack_end(GTK_BOX(row_box), subscription_btn, FALSE, FALSE, 0);
 
         GtkWidget *row = gtk_list_box_row_new();
         g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);

@@ -102,6 +102,17 @@ struct TeamChannelsTabView: View {
 
                         Spacer()
 
+                        Button(action: {
+                            appState.toggleTeamChannelSubscription(channelId: channel.id)
+                        }) {
+                            Image(systemName: channel.isSubscribed ? "bell.fill" : "bell.slash")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(channel.isSubscribed ? .accentColor : .secondary)
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.plain)
+                        .help(channel.isSubscribed ? T("teams.unsubscribe") : T("teams.subscribe"))
+
                         if channel.unreadCount > 0 {
                             Text("\(channel.unreadCount)")
                                 .font(.system(size: 11, weight: .bold))

@@ -236,6 +236,15 @@ public class ApiClient : IDisposable
                ?? new List<Channel>();
     }
 
+    public async Task<bool> ToggleChannelSubscriptionAsync(string channelId)
+    {
+        var response = await _http.PostAsync($"/api/channels/{channelId}/subscribe", null);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<Dictionary<string, bool>>()
+                     ?? throw new Exception("Invalid subscription response");
+        return result.GetValueOrDefault("is_subscribed", true);
+    }
+
     public async Task<Team> CreateTeamAsync(string name, string? description = null)
     {
         var response = await _http.PostAsJsonAsync("/api/teams/", new { name, description });

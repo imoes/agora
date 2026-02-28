@@ -1447,9 +1447,39 @@ function insertText(text) {
                     panel.Children.Insert(0, badge);
                 }
 
-                row.Child = panel;
+                var subscriptionBtn = new Button
+                {
+                    Content = ch.IsSubscribed ? "🔔" : "🔕",
+                    ToolTip = ch.IsSubscribed ? Translations.T("teams.unsubscribe") : Translations.T("teams.subscribe"),
+                    Width = 30,
+                    Height = 24,
+                    FontSize = 12,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    Background = Brushes.Transparent,
+                    BorderBrush = Brushes.Transparent,
+                    Cursor = Cursors.Hand,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                DockPanel.SetDock(subscriptionBtn, Dock.Right);
+                panel.Children.Insert(0, subscriptionBtn);
 
                 var channelCapture = ch;
+                subscriptionBtn.Click += async (_, e) =>
+                {
+                    e.Handled = true;
+                    try
+                    {
+                        var isSubscribed = await _api.ToggleChannelSubscriptionAsync(channelCapture.Id);
+                        channelCapture.IsSubscribed = isSubscribed;
+                        subscriptionBtn.Content = isSubscribed ? "🔔" : "🔕";
+                        subscriptionBtn.ToolTip = isSubscribed ? Translations.T("teams.unsubscribe") : Translations.T("teams.subscribe");
+                        ShowToast(isSubscribed ? Translations.T("teams.subscribed") : Translations.T("teams.unsubscribed"), channelCapture.Name);
+                    }
+                    catch { }
+                };
+
+                row.Child = panel;
+
                 row.MouseLeftButtonUp += async (_, _) =>
                 {
                     TeamDetailView.Visibility = Visibility.Collapsed;
