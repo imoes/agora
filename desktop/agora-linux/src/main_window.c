@@ -556,6 +556,18 @@ static void load_team_channels_into_expander(AgoraMainWindow *win, const char *t
             gtk_box_pack_end(GTK_BOX(row_box), badge, FALSE, FALSE, 0);
         }
 
+        gboolean is_subscribed = json_object_has_member(ch, "is_subscribed")
+            ? json_object_get_boolean_member(ch, "is_subscribed") : TRUE;
+        GtkWidget *subscription_btn = gtk_button_new_with_label(
+            is_subscribed ? "\xF0\x9F\x94\x94" : "\xF0\x9F\x94\x95");
+        gtk_widget_set_tooltip_text(subscription_btn,
+            is_subscribed ? T("teams.unsubscribe") : T("teams.subscribe"));
+        gtk_style_context_add_class(gtk_widget_get_style_context(subscription_btn), "team-settings-btn");
+        gtk_widget_set_valign(subscription_btn, GTK_ALIGN_CENTER);
+        g_object_set_data_full(G_OBJECT(subscription_btn), "channel-id", g_strdup(id), g_free);
+        g_signal_connect(subscription_btn, "clicked", G_CALLBACK(on_team_channel_subscription_clicked), win);
+        gtk_box_pack_end(GTK_BOX(row_box), subscription_btn, FALSE, FALSE, 0);
+
         GtkWidget *row = gtk_list_box_row_new();
         g_object_set_data_full(G_OBJECT(row), "channel-id", g_strdup(id), g_free);
         g_object_set_data_full(G_OBJECT(row), "channel-name", g_strdup(name), g_free);
