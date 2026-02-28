@@ -250,7 +250,8 @@
                                 <DataTemplate>
                                     <Border Margin="4,2" Padding="12,8" Background="White"
                                             CornerRadius="4" BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1">
+                                            BorderThickness="1" Cursor="Hand"
+                                            MouseLeftButtonUp="CalendarEventCard_Click">
                                         <StackPanel>
                                             <TextBlock Text="{Binding Title}" FontSize="13"
                                                        FontWeight="SemiBold"
@@ -385,12 +386,12 @@
                             <!-- Unread / All toggle -->
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,0,12,0"
                                         VerticalAlignment="Center">
-                                <RadioButton x:Name="FeedFilterAll" Content="Alle" IsChecked="True"
+                                <RadioButton x:Name="FeedFilterAll" Content="Alle"
                                              GroupName="FeedFilter" Margin="0,0,4,0"
                                              Click="FeedFilterAll_Click"
                                              Style="{StaticResource {x:Type ToggleButton}}"
                                              Padding="12,4" FontSize="12" Cursor="Hand" />
-                                <RadioButton x:Name="FeedFilterUnread" Content="Ungelesen"
+                                <RadioButton x:Name="FeedFilterUnread" Content="Ungelesen" IsChecked="True"
                                              GroupName="FeedFilter" Margin="4,0,0,0"
                                              Click="FeedFilterUnread_Click"
                                              Style="{StaticResource {x:Type ToggleButton}}"
@@ -400,56 +401,59 @@
                                        Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
                         </DockPanel>
                     </Border>
-                    <!-- Feed grid (3 columns) -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12">
+                    <!-- Feed list (Frontend-like single column) -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Background="White">
                         <ItemsControl x:Name="FeedMainList">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="3" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Margin="6" Padding="14,12" Background="White"
-                                            CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1" Cursor="Hand"
+                                    <Border Padding="12,10" Background="White" Cursor="Hand"
                                             MouseLeftButtonUp="FeedItem_Click"
                                             Tag="{Binding ChannelId}">
-                                        <Border.Effect>
-                                            <DropShadowEffect BlurRadius="4" Opacity="0.08" ShadowDepth="1" />
-                                        </Border.Effect>
-                                        <StackPanel>
-                                            <DockPanel>
-                                                <Ellipse Width="8" Height="8" Margin="0,0,8,0"
-                                                         VerticalAlignment="Center"
-                                                         Fill="{StaticResource PrimaryBrush}"
-                                                         Visibility="{Binding IsReadInverted, Converter={x:Static local:Converters.BoolToVisibility}}" />
-                                                <!-- Actor avatar -->
-                                                <Border Width="28" Height="28" CornerRadius="14"
-                                                        Margin="0,0,8,0"
-                                                        Background="{Binding ActorName, Converter={x:Static local:Converters.NameToAvatarColor}}">
-                                                    <TextBlock Text="{Binding ActorName, Converter={x:Static local:Converters.FirstChar}}"
-                                                               FontSize="12" FontWeight="SemiBold" Foreground="White"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <TextBlock Text="{Binding ActorName}" FontSize="13"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </DockPanel>
-                                            <TextBlock Text="{Binding Message}" FontSize="12"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                       TextWrapping="Wrap" MaxHeight="60"
-                                                       Margin="0,6,0,0" />
-                                            <DockPanel Margin="0,8,0,0">
-                                                <TextBlock FontSize="11" Foreground="{StaticResource PrimaryBrush}">
-                                                    <Run Text="in " /><Run Text="{Binding ChannelName}" />
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#FFF0F0F0" />
+                                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                                <Setter Property="Margin" Value="0" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsReadInverted}" Value="True">
+                                                        <Setter Property="Background" Value="#FFF0F0FF" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                        <Setter Property="BorderThickness" Value="3,0,0,1" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Width="36" Height="36" CornerRadius="18"
+                                                    Margin="0,0,10,0" VerticalAlignment="Top"
+                                                    Background="{Binding ActorName, Converter={x:Static local:Converters.NameToAvatarColor}}">
+                                                <TextBlock Text="{Binding ActorName, Converter={x:Static local:Converters.FirstChar}}"
+                                                           FontSize="13" FontWeight="SemiBold" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis">
+                                                    <Run Text="{Binding ActorName}" FontWeight="SemiBold" />
+                                                    <Run Text=" in " Foreground="{StaticResource TextSecondaryBrush}" />
+                                                    <Run Text="{Binding ChannelName}" Foreground="{StaticResource TextSecondaryBrush}" />
                                                 </TextBlock>
-                                                <TextBlock Text="{Binding FormattedTime}" FontSize="10"
+                                                <TextBlock Text="{Binding Message}" FontSize="12"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
-                                                           HorizontalAlignment="Right" />
-                                            </DockPanel>
-                                        </StackPanel>
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,2,0,0" />
+                                            </StackPanel>
+
+                                            <TextBlock Grid.Column="2" Text="{Binding FormattedTime}" FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       VerticalAlignment="Top" Margin="8,0,0,0" />
+                                        </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -518,7 +522,8 @@
                                     <DataTemplate>
                                         <Border Margin="0,0,0,8" Padding="14,12" Background="White"
                                                 CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
-                                                BorderThickness="1">
+                                                BorderThickness="1" Cursor="Hand"
+                                                MouseLeftButtonUp="CalendarEventCard_Click">
                                             <Border.Effect>
                                                 <DropShadowEffect BlurRadius="4" Opacity="0.08" ShadowDepth="1" />
                                             </Border.Effect>
