@@ -153,6 +153,30 @@ class AppState: ObservableObject {
         }
     }
 
+    func toggleTeamChannelSubscription(channelId: String) {
+        guard let api = api else { return }
+        Task {
+            do {
+                let isSubscribed = try await api.toggleChannelSubscription(channelId: channelId)
+                await MainActor.run {
+                    if let idx = self.teamDetailChannels.firstIndex(where: { $0.id == channelId }) {
+                        self.teamDetailChannels[idx].isSubscribed = isSubscribed
+                        let title = isSubscribed ? T("teams.subscribed") : T("teams.unsubscribed")
+                        self.showToast(title: title, body: self.teamDetailChannels[idx].name)
+                    }
+                    if let teamId = self.selectedTeamForDetail?.id,
+                       var channels = self.teamChannelsMap[teamId],
+                       let idx = channels.firstIndex(where: { $0.id == channelId }) {
+                        channels[idx].isSubscribed = isSubscribed
+                        self.teamChannelsMap[teamId] = channels
+                    }
+                }
+            } catch {
+                print("Failed to toggle channel subscription: \(error)")
+            }
+        }
+    }
+
     func loadTeamDetailMembers(teamId: String) {
         guard let api = api else { return }
         Task {
