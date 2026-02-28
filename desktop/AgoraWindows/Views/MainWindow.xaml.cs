@@ -1209,9 +1209,39 @@ function insertText(text) {
                         DockPanel.SetDock(badge, Dock.Right);
                         chPanel.Children.Insert(0, badge);
                     }
+
+                    var subscriptionBtn = new Button
+                    {
+                        Content = ch.IsSubscribed ? "🔔" : "🔕",
+                        ToolTip = ch.IsSubscribed ? Translations.T("teams.unsubscribe") : Translations.T("teams.subscribe"),
+                        Width = 26,
+                        Height = 22,
+                        FontSize = 11,
+                        Margin = new Thickness(6, 0, 0, 0),
+                        Background = Brushes.Transparent,
+                        BorderThickness = new Thickness(0),
+                        Cursor = Cursors.Hand,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    DockPanel.SetDock(subscriptionBtn, Dock.Right);
+                    chPanel.Children.Insert(0, subscriptionBtn);
+
                     chRow.Child = chPanel;
 
                     var channelCapture = ch;
+                    subscriptionBtn.Click += async (_, e) =>
+                    {
+                        e.Handled = true;
+                        try
+                        {
+                            var isSubscribed = await _api.ToggleChannelSubscriptionAsync(channelCapture.Id);
+                            channelCapture.IsSubscribed = isSubscribed;
+                            subscriptionBtn.Content = isSubscribed ? "🔔" : "🔕";
+                            subscriptionBtn.ToolTip = isSubscribed ? Translations.T("teams.unsubscribe") : Translations.T("teams.subscribe");
+                            ShowToast(isSubscribed ? Translations.T("teams.subscribed") : Translations.T("teams.unsubscribed"), channelCapture.Name);
+                        }
+                        catch { }
+                    };
                     chRow.MouseLeftButtonUp += async (_, _) =>
                     {
                         ChannelList.SelectedIndex = -1;
@@ -1447,9 +1477,39 @@ function insertText(text) {
                     panel.Children.Insert(0, badge);
                 }
 
-                row.Child = panel;
+                var subscriptionBtn = new Button
+                {
+                    Content = ch.IsSubscribed ? "🔔" : "🔕",
+                    ToolTip = ch.IsSubscribed ? Translations.T("teams.unsubscribe") : Translations.T("teams.subscribe"),
+                    Width = 30,
+                    Height = 24,
+                    FontSize = 12,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    Background = Brushes.Transparent,
+                    BorderBrush = Brushes.Transparent,
+                    Cursor = Cursors.Hand,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                DockPanel.SetDock(subscriptionBtn, Dock.Right);
+                panel.Children.Insert(0, subscriptionBtn);
 
                 var channelCapture = ch;
+                subscriptionBtn.Click += async (_, e) =>
+                {
+                    e.Handled = true;
+                    try
+                    {
+                        var isSubscribed = await _api.ToggleChannelSubscriptionAsync(channelCapture.Id);
+                        channelCapture.IsSubscribed = isSubscribed;
+                        subscriptionBtn.Content = isSubscribed ? "🔔" : "🔕";
+                        subscriptionBtn.ToolTip = isSubscribed ? Translations.T("teams.unsubscribe") : Translations.T("teams.subscribe");
+                        ShowToast(isSubscribed ? Translations.T("teams.subscribed") : Translations.T("teams.unsubscribed"), channelCapture.Name);
+                    }
+                    catch { }
+                };
+
+                row.Child = panel;
+
                 row.MouseLeftButtonUp += async (_, _) =>
                 {
                     TeamDetailView.Visibility = Visibility.Collapsed;
@@ -2243,7 +2303,7 @@ function insertText(text) {
         // Insert in reverse order to maintain indices
         for (int i = toInsert.Count - 1; i >= 0; i--)
         {
-            messages.Insert(toInsert[i].index + i, toInsert[i].separator);
+            messages.Insert(toInsert[i].index, toInsert[i].separator);
         }
     }
 

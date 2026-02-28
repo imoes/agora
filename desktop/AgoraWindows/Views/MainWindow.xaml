@@ -1020,14 +1020,10 @@
                                                              Visibility="{Binding IsRichMessage, Converter={x:Static local:Converters.BoolToVisibility}}" />
 
                                                 <!-- Inline image -->
-                                                <Border Margin="0,4,0,0" CornerRadius="6"
+                                                <Border Margin="0,4,0,0" CornerRadius="6" ClipToBounds="True"
                                                         Visibility="{Binding HasImage, Converter={x:Static local:Converters.BoolToVisibility}}"
                                                         Cursor="Hand" MouseLeftButtonUp="FileAttachment_Click"
                                                         Tag="{Binding FileReferenceId}">
-                                                    <Border.Clip>
-                                                        <RectangleGeometry RadiusX="6" RadiusY="6"
-                                                                           Rect="0,0,300,300" />
-                                                    </Border.Clip>
                                                     <Image Source="{Binding ImageSource}" MaxWidth="300" MaxHeight="300"
                                                            Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
                                                 </Border>
