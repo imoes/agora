@@ -791,7 +791,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   eventEnd = '';
   eventLocation = '';
   eventAllDay = false;
-  eventCreateVideoCall = false;
+  eventCreateVideoCall = true;
   eventAttendees: string[] = [];
   attendeeNames: { [email: string]: string } = {};
   attendeeQuery = '';
@@ -1097,7 +1097,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
     this.eventEnd = this.toLocalDatetime(endTime);
     this.eventLocation = '';
     this.eventAllDay = false;
-    this.eventCreateVideoCall = false;
+    this.eventCreateVideoCall = true;
     this.eventAttendees = [];
     this.attendeeNames = {};
     this.attendeeQuery = '';
