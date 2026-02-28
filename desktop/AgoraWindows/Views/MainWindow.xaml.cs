@@ -208,6 +208,9 @@ public partial class MainWindow : Window
         FeedMainList.ItemsSource = _feedEvents;
         CalendarList.ItemsSource = _calendarEvents;
 
+        FeedFilterUnread.IsChecked = true;
+        FeedFilterAll.IsChecked = false;
+
         InitLanguageComboBox();
 
         Loaded += async (_, _) =>
@@ -575,7 +578,7 @@ function insertText(text) {
 
     // === Feed ===
 
-    private bool _feedUnreadOnly = false;
+    private bool _feedUnreadOnly = true;
     private int _feedUnreadCount = 0;
 
     private async System.Threading.Tasks.Task LoadFeedAsync()
