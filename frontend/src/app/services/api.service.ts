@@ -140,7 +140,8 @@ export class ApiService {
   }
 
   getFileDownloadUrl(refId: string): string {
-    return `${this.baseUrl}/files/download/${refId}`;
+    const token = localStorage.getItem('access_token') || '';
+    return `${this.baseUrl}/files/download/${refId}?token=${encodeURIComponent(token)}`;
   }
 
   getFileInlineUrl(refId: string): string {

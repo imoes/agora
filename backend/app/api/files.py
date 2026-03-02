@@ -52,7 +52,7 @@ async def upload_file(
 async def download_file(
     ref_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token_or_query),
 ):
     result = await get_file_path(db, ref_id)
     if not result:

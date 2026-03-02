@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ChatView: View {
     @ObservedObject var appState: AppState
@@ -45,6 +46,9 @@ struct ChatView: View {
                                 isOwnMessage: message.senderId == appState.currentUser?.id,
                                 onReaction: { emoji in
                                     addReaction(messageId: message.id, emoji: emoji)
+                                },
+                                onDownloadFile: {
+                                    downloadFile(message: message)
                                 }
                             )
                             .id(message.id)
@@ -113,6 +117,25 @@ struct ChatView: View {
         appState.channelWS?.sendReaction(emoji: emoji, messageId: messageId, action: "add")
     }
 
+    private func downloadFile(message: Message) {
+        guard let fileRefId = message.fileReferenceId, let api = appState.api else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = message.fileDisplayName.isEmpty ? "download" : message.fileDisplayName
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+
+        Task {
+            do {
+                let data = try await api.downloadFile(path: "/api/files/download/\(fileRefId)")
+                try data.write(to: saveURL)
+            } catch {
+                print("Failed to download file: \(error)")
+            }
+        }
+    }
+
     private func scrollToBottom(proxy: ScrollViewProxy) {
         if let lastMessage = appState.messages.last {
             withAnimation(.easeOut(duration: 0.2)) {
@@ -151,6 +174,7 @@ struct MessageBubbleView: View {
     let message: Message
     let isOwnMessage: Bool
     let onReaction: (String) -> Void
+    let onDownloadFile: () -> Void
 
     @State private var isHovered = false
 
@@ -231,11 +255,18 @@ struct MessageBubbleView: View {
                     .foregroundColor(.secondary)
                     .padding(.leading, 36)
             } else if message.messageType == "file" {
-                HStack(spacing: 4) {
+                HStack(spacing: 8) {
                     Image(systemName: "doc.fill")
                         .foregroundColor(.accentColor)
-                    Text(T("chat.file_sent"))
+                    Text(message.fileDisplayName.isEmpty ? T("chat.file_sent") : message.fileDisplayName)
                         .font(.system(size: 13))
+                        .lineLimit(1)
+                    Button(action: onDownloadFile) {
+                        Label(T("chat.download_file"), systemImage: "arrow.down.circle")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.plain)
+                    .help(T("chat.download_file"))
                 }
                 .padding(.leading, 36)
             } else {
