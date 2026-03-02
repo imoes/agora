@@ -1771,6 +1771,45 @@ function insertText(text) {
                 });
                 panel.Children.Add(infoCol);
 
+                var downloadBtn = new Button
+                {
+                    Content = "\uE896",
+                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 14,
+                    ToolTip = Translations.T("chat.download_file"),
+                    Width = 28,
+                    Height = 28,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    Cursor = Cursors.Hand,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                downloadBtn.Click += async (_, __) =>
+                {
+                    try
+                    {
+                        var data = await _api.DownloadFileAsync(file.Id);
+                        var dlg = new SaveFileDialog
+                        {
+                            Title = Translations.T("file.save"),
+                            FileName = !string.IsNullOrWhiteSpace(file.OriginalFilename)
+                                ? file.OriginalFilename
+                                : "download"
+                        };
+                        if (dlg.ShowDialog() == true)
+                        {
+                            await File.WriteAllBytesAsync(dlg.FileName, data);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"{Translations.T("common.error")}: {ex.Message}");
+                    }
+                };
+                DockPanel.SetDock(downloadBtn, Dock.Right);
+                panel.Children.Add(downloadBtn);
+
                 row.Child = panel;
                 TeamDetailFilesList.Children.Add(row);
             }
@@ -2947,10 +2986,11 @@ function insertText(text) {
         {
             var data = await _api.DownloadFileAsync(fileRefId);
 
+            var suggestedName = (fe.DataContext as Message)?.GetFileName();
             var dlg = new SaveFileDialog
             {
                 Title = Translations.T("file.save"),
-                FileName = "download"
+                FileName = !string.IsNullOrWhiteSpace(suggestedName) ? suggestedName : "download"
             };
             if (dlg.ShowDialog() == true)
             {

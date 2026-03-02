@@ -145,6 +145,7 @@ static void on_team_channel_subscription_clicked(GtkButton *btn, gpointer data);
 static void load_team_detail_members(AgoraMainWindow *win);
 static void load_team_detail_files(AgoraMainWindow *win);
 static void load_teams(AgoraMainWindow *win);
+static void on_file_download_clicked(GtkButton *btn, gpointer data);
 
 /* Safely clear all children from a GtkListBox, avoiding dangling
    cursor/selection pointers that cause GTK_IS_WIDGET assertions. */
@@ -1680,6 +1681,147 @@ static gboolean is_image_content(const char *content)
     return is_img;
 }
 
+static char *extract_file_name_from_content(const char *content)
+{
+    if (!content || *content == '\0') return g_strdup("download");
+
+    const char *line_end = strchr(content, '\n');
+    gsize first_line_len = line_end ? (gsize)(line_end - content) : strlen(content);
+    char *first_line = g_strndup(content, first_line_len);
+    g_strstrip(first_line);
+
+    char *result = NULL;
+    if (g_str_has_prefix(first_line, "Datei: ")) {
+        result = g_strdup(first_line + 7);
+        g_strstrip(result);
+    } else {
+        result = g_strdup(first_line);
+    }
+
+    g_free(first_line);
+
+    if (!result || *result == '\0') {
+        g_free(result);
+        return g_strdup("download");
+    }
+    return result;
+}
+
+static gboolean download_file_reference_to_path(AgoraMainWindow *win,
+                                                const char *file_ref_id,
+                                                const char *dest_path,
+                                                GError **error)
+{
+    if (!win || !win->api || !file_ref_id || !dest_path) return FALSE;
+
+    char *url = g_strdup_printf("%s/api/files/download/%s",
+                                win->api->base_url, file_ref_id);
+    SoupSession *session = soup_session_new();
+    SoupMessage *msg = soup_message_new("GET", url);
+    g_free(url);
+
+    if (!msg) {
+        g_object_unref(session);
+        g_set_error(error, g_quark_from_static_string("agora"), 0,
+                    "Failed to create download request");
+        return FALSE;
+    }
+
+    if (win->api->token) {
+        char *auth = g_strdup_printf("Bearer %s", win->api->token);
+        soup_message_headers_replace(soup_message_get_request_headers(msg),
+                                     "Authorization", auth);
+        g_free(auth);
+    }
+
+    g_signal_connect(msg, "accept-certificate", G_CALLBACK(accept_cert_cb), NULL);
+    GInputStream *stream = soup_session_send(session, msg, NULL, error);
+    if (!stream) {
+        g_object_unref(msg);
+        g_object_unref(session);
+        return FALSE;
+    }
+
+    guint status = soup_message_get_status(msg);
+    if (status != 200) {
+        g_set_error(error, g_quark_from_static_string("agora"), (int)status,
+                    "HTTP %u: %s", status, soup_message_get_reason_phrase(msg));
+        g_object_unref(stream);
+        g_object_unref(msg);
+        g_object_unref(session);
+        return FALSE;
+    }
+
+    GFile *out_file = g_file_new_for_path(dest_path);
+    GFileOutputStream *out = g_file_replace(out_file, NULL, FALSE,
+                                            G_FILE_CREATE_NONE, NULL, error);
+    if (!out) {
+        g_object_unref(out_file);
+        g_object_unref(stream);
+        g_object_unref(msg);
+        g_object_unref(session);
+        return FALSE;
+    }
+
+    gboolean ok = TRUE;
+    guint8 buf[8192];
+    gssize n;
+    while ((n = g_input_stream_read(stream, buf, sizeof(buf), NULL, error)) > 0) {
+        gsize written = 0;
+        if (!g_output_stream_write_all(G_OUTPUT_STREAM(out), buf, (gsize)n,
+                                       &written, NULL, error)) {
+            ok = FALSE;
+            break;
+        }
+    }
+    if (n < 0) ok = FALSE;
+    if (ok && !g_output_stream_close(G_OUTPUT_STREAM(out), NULL, error)) ok = FALSE;
+
+    g_object_unref(out);
+    g_object_unref(out_file);
+    g_object_unref(stream);
+    g_object_unref(msg);
+    g_object_unref(session);
+    return ok;
+}
+
+static void on_file_download_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AgoraMainWindow *win = AGORA_MAIN_WINDOW(data);
+    const char *file_ref_id = g_object_get_data(G_OBJECT(btn), "file-ref-id");
+    const char *suggested_name = g_object_get_data(G_OBJECT(btn), "file-name");
+    if (!win || !file_ref_id) return;
+
+    GtkWidget *dialog = gtk_file_chooser_dialog_new(
+        T("file.save"), GTK_WINDOW(win), GTK_FILE_CHOOSER_ACTION_SAVE,
+        "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Save", GTK_RESPONSE_ACCEPT,
+        NULL);
+
+    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog),
+                                      (suggested_name && *suggested_name) ? suggested_name : "download");
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        if (filename) {
+            GError *err = NULL;
+            if (!download_file_reference_to_path(win, file_ref_id, filename, &err)) {
+                GtkWidget *md = gtk_message_dialog_new(GTK_WINDOW(win), GTK_DIALOG_MODAL,
+                    GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+                    "%s: %s", T("common.error"), err ? err->message : "download failed");
+                gtk_dialog_run(GTK_DIALOG(md));
+                gtk_widget_destroy(md);
+            }
+            if (err) g_error_free(err);
+            g_free(filename);
+        }
+    }
+
+    gtk_widget_destroy(dialog);
+}
+
 /* --- Avatar drawing (Teams-style colored circle with initials) --- */
 
 static const double avatar_palette[][3] = {
@@ -2480,6 +2622,26 @@ static GtkWidget *create_message_bubble(AgoraMainWindow *win, JsonObject *msg,
             gtk_box_pack_start(GTK_BOX(content_box), img, FALSE, FALSE, 2);
             g_object_unref(pixbuf);
         }
+    } else if (file_ref_id && msg_type && g_strcmp0(msg_type, "file") == 0) {
+        GtkWidget *file_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_widget_set_halign(file_row, GTK_ALIGN_START);
+
+        char *filename = extract_file_name_from_content(content);
+        GtkWidget *file_lbl = gtk_label_new(filename);
+        gtk_label_set_selectable(GTK_LABEL(file_lbl), TRUE);
+        gtk_label_set_ellipsize(GTK_LABEL(file_lbl), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_halign(file_lbl, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(file_row), file_lbl, FALSE, FALSE, 0);
+
+        GtkWidget *download_btn = gtk_button_new_with_label("\xE2\xAC\x87"); /* ⬇ */
+        gtk_widget_set_tooltip_text(download_btn, T("chat.download_file"));
+        g_object_set_data_full(G_OBJECT(download_btn), "file-ref-id", g_strdup(file_ref_id), g_free);
+        g_object_set_data_full(G_OBJECT(download_btn), "file-name", g_strdup(filename), g_free);
+        g_signal_connect(download_btn, "clicked", G_CALLBACK(on_file_download_clicked), win);
+        gtk_box_pack_start(GTK_BOX(file_row), download_btn, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(content_box), file_row, FALSE, FALSE, 0);
+        g_free(filename);
     } else {
         GtkWidget *content_lbl = gtk_label_new(content ? content : "");
         gtk_widget_set_halign(content_lbl, GTK_ALIGN_START);
@@ -3632,6 +3794,8 @@ static void load_team_detail_files(AgoraMainWindow *win)
 
     for (guint i = 0; i < len; i++) {
         JsonObject *f = json_array_get_object_element(arr, i);
+        const char *ref_id = json_object_has_member(f, "id")
+            ? json_object_get_string_member(f, "id") : NULL;
         const char *filename = json_object_has_member(f, "original_filename")
             ? json_object_get_string_member(f, "original_filename") : "file";
         const char *created = json_object_has_member(f, "created_at")
@@ -3686,6 +3850,16 @@ static void load_team_detail_files(AgoraMainWindow *win)
         gtk_box_pack_start(GTK_BOX(info_col), meta_lbl, FALSE, FALSE, 0);
 
         gtk_box_pack_start(GTK_BOX(row_box), info_col, TRUE, TRUE, 0);
+
+        if (ref_id && *ref_id) {
+            GtkWidget *download_btn = gtk_button_new_with_label("\xE2\xAC\x87"); /* ⬇ */
+            gtk_widget_set_tooltip_text(download_btn, T("chat.download_file"));
+            gtk_widget_set_valign(download_btn, GTK_ALIGN_CENTER);
+            g_object_set_data_full(G_OBJECT(download_btn), "file-ref-id", g_strdup(ref_id), g_free);
+            g_object_set_data_full(G_OBJECT(download_btn), "file-name", g_strdup(filename), g_free);
+            g_signal_connect(download_btn, "clicked", G_CALLBACK(on_file_download_clicked), win);
+            gtk_box_pack_end(GTK_BOX(row_box), download_btn, FALSE, FALSE, 0);
+        }
 
         GtkWidget *row = gtk_list_box_row_new();
         gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);

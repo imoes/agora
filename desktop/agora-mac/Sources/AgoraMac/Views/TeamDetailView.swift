@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct TeamDetailView: View {
     @ObservedObject var appState: AppState
@@ -258,23 +259,53 @@ struct TeamFilesTabView: View {
                         .frame(width: 24)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(file["filename"] as? String ?? "Unknown")
+                        let fileName = file["original_filename"] as? String ?? "Unknown"
+                        Text(fileName)
                             .font(.system(size: 13))
                             .lineLimit(1)
 
-                        let size = file["file_size"] as? Int ?? 0
+                        let fileObj = file["file"] as? [String: Any]
+                        let size = fileObj?["file_size"] as? Int ?? 0
                         let sizeStr = size > 1_000_000
                             ? String(format: "%.1f MB", Double(size) / 1_000_000.0)
                             : String(format: "%.1f KB", Double(size) / 1_000.0)
-                        let uploaded = file["uploaded_at"] as? String ?? ""
+                        let uploaded = file["created_at"] as? String ?? ""
                         Text("\(sizeStr) · \(uploaded)")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
 
                     Spacer()
+
+                    if let refId = file["id"] as? String {
+                        Button(action: { downloadTeamFile(refId: refId, filename: fileName) }) {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 16))
+                        }
+                        .buttonStyle(.plain)
+                        .help(T("chat.download_file"))
+                    }
                 }
                 .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func downloadTeamFile(refId: String, filename: String) {
+        guard let api = appState.api else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename.isEmpty ? "download" : filename
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+
+        Task {
+            do {
+                let data = try await api.downloadFile(path: "/api/files/download/\(refId)")
+                try data.write(to: saveURL)
+            } catch {
+                print("Failed to download team file: \(error)")
             }
         }
     }
