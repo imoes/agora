@@ -79,6 +79,16 @@ struct Message: Codable, Identifiable, Equatable {
         return dateFormatter.string(from: date)
     }
 
+
+
+    var fileDisplayName: String {
+        let firstLine = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+        if firstLine.hasPrefix("Datei: ") {
+            return String(firstLine.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var reactionsDisplay: [(emoji: String, count: Int, userIds: [String])] {
         guard let reactions = reactions else { return [] }
         let grouped = Dictionary(grouping: reactions, by: { $0.emoji })
