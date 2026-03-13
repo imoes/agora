@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from datetime import datetime, timezone
@@ -35,6 +36,24 @@ CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
 """
 
 
+_init_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_init_lock(channel_id: str) -> asyncio.Lock:
+    lock = _init_locks.get(channel_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _init_locks[channel_id] = lock
+    return lock
+
+
+async def _configure_connection(db: aiosqlite.Connection) -> None:
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA synchronous=NORMAL")
+    await db.execute("PRAGMA foreign_keys=ON")
+    await db.execute("PRAGMA busy_timeout=5000")
+
+
 def _db_path(channel_id: str) -> str:
     return os.path.join(settings.chat_db_dir, f"{channel_id}.db")
 
@@ -42,22 +61,24 @@ def _db_path(channel_id: str) -> str:
 async def init_chat_db(channel_id: str) -> None:
     os.makedirs(settings.chat_db_dir, exist_ok=True)
     path = _db_path(channel_id)
-    async with aiosqlite.connect(path) as db:
-        await db.executescript(CHAT_SCHEMA)
-        # Migrate existing databases: add reply columns if missing
-        try:
-            await db.execute("ALTER TABLE messages ADD COLUMN reply_to_id TEXT")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE messages ADD COLUMN reply_to_content TEXT")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE messages ADD COLUMN reply_to_sender TEXT")
-        except Exception:
-            pass
-        await db.commit()
+    async with _get_init_lock(channel_id):
+        async with aiosqlite.connect(path) as db:
+            await _configure_connection(db)
+            await db.executescript(CHAT_SCHEMA)
+            # Migrate existing databases: add reply columns if missing
+            try:
+                await db.execute("ALTER TABLE messages ADD COLUMN reply_to_id TEXT")
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE messages ADD COLUMN reply_to_content TEXT")
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE messages ADD COLUMN reply_to_sender TEXT")
+            except Exception:
+                pass
+            await db.commit()
 
 
 async def add_message(
@@ -75,6 +96,7 @@ async def add_message(
     path = _db_path(channel_id)
 
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         await db.execute(
             """INSERT INTO messages (id, sender_id, content, message_type, file_reference_id, created_at, reply_to_id, reply_to_content, reply_to_sender)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -106,6 +128,7 @@ async def get_messages(
         return []
 
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         db.row_factory = aiosqlite.Row
         if before:
             cursor = await db.execute(
@@ -127,6 +150,7 @@ async def update_message(channel_id: str, message_id: str, content: str) -> dict
     now = datetime.now(timezone.utc).isoformat()
 
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         db.row_factory = aiosqlite.Row
         await db.execute(
             "UPDATE messages SET content = ?, edited_at = ? WHERE id = ?",
@@ -144,6 +168,7 @@ async def get_message_by_id(channel_id: str, message_id: str) -> dict | None:
         return None
 
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (message_id,))
         row = await cursor.fetchone()
@@ -153,6 +178,7 @@ async def get_message_by_id(channel_id: str, message_id: str) -> dict | None:
 async def delete_message(channel_id: str, message_id: str) -> bool:
     path = _db_path(channel_id)
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         cursor = await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
         await db.commit()
         return cursor.rowcount > 0
@@ -163,6 +189,7 @@ async def add_reaction(
 ) -> bool:
     path = _db_path(channel_id)
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         try:
             await db.execute(
                 """INSERT INTO reactions (message_id, user_id, emoji)
@@ -180,6 +207,7 @@ async def remove_reaction(
 ) -> bool:
     path = _db_path(channel_id)
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         cursor = await db.execute(
             "DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
             (message_id, user_id, emoji),
@@ -191,6 +219,7 @@ async def remove_reaction(
 async def get_reactions(channel_id: str, message_id: str) -> list[dict]:
     path = _db_path(channel_id)
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT * FROM reactions WHERE message_id = ?", (message_id,)
@@ -207,6 +236,7 @@ async def get_reactions_for_messages(
     if not os.path.exists(path) or not message_ids:
         return {}
     async with aiosqlite.connect(path) as db:
+        await _configure_connection(db)
         db.row_factory = aiosqlite.Row
         placeholders = ",".join("?" * len(message_ids))
         cursor = await db.execute(
