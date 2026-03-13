@@ -1,4 +1,5 @@
 """Unit-Tests fuer den chat_db Service (SQLite-Operationen)."""
+import asyncio
 import pytest
 
 from app.services.chat_db import (
@@ -214,3 +215,30 @@ async def test_message_with_file_reference(tmp_chat_dir):
 
     messages = await get_messages(channel_id)
     assert messages[0]["file_reference_id"] == "ref-123"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_add_message_same_channel(tmp_chat_dir):
+    channel_id = "ch-concurrent-writes"
+    await init_chat_db(channel_id)
+
+    async def write(i: int):
+        return await add_message(channel_id, f"user-{i}", f"Msg {i}")
+
+    results = await asyncio.gather(*(write(i) for i in range(30)))
+    assert len(results) == 30
+
+    messages = await get_messages(channel_id, limit=100)
+    assert len(messages) == 30
+    assert {m["content"] for m in messages} == {f"Msg {i}" for i in range(30)}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_init_chat_db_same_channel(tmp_chat_dir):
+    channel_id = "ch-concurrent-init"
+
+    await asyncio.gather(*(init_chat_db(channel_id) for _ in range(20)))
+
+    msg = await add_message(channel_id, "user-1", "works")
+    messages = await get_messages(channel_id)
+    assert msg["id"] in {m["id"] for m in messages}
