@@ -133,40 +133,96 @@ interface CalendarEvent {
         </div>
       </div>
 
-      <!-- Mini Calendar -->
-      <div class="mini-calendar">
-        <div class="month-nav">
-          <button mat-icon-button (click)="prevMonth()">
-            <mat-icon>chevron_left</mat-icon>
-          </button>
-          <span class="month-label">{{ monthLabel }}</span>
-          <button mat-icon-button (click)="nextMonth()">
-            <mat-icon>chevron_right</mat-icon>
-          </button>
-          <button class="today-btn" (click)="goToToday()">Heute</button>
-        </div>
-        <div class="weekday-headers">
-          <span *ngFor="let d of weekdays">{{ d }}</span>
-        </div>
-        <div class="days-grid">
-          <div *ngFor="let day of calendarDays"
-               class="day-cell"
-               [class.other-month]="!day.currentMonth"
-               [class.today]="day.today"
-               [class.selected]="day.selected"
-               [class.has-events]="day.hasEvents"
-               (click)="selectDay(day)">
-            {{ day.day }}
+      <div class="calendar-layout">
+        <div class="calendar-left-panel">
+          <!-- Mini Calendar -->
+          <div class="mini-calendar">
+            <div class="month-nav">
+              <button mat-icon-button (click)="prevMonth()">
+                <mat-icon>chevron_left</mat-icon>
+              </button>
+              <span class="month-label">{{ monthLabel }}</span>
+              <button mat-icon-button (click)="nextMonth()">
+                <mat-icon>chevron_right</mat-icon>
+              </button>
+              <button class="today-btn" (click)="goToToday()">Heute</button>
+            </div>
+            <div class="weekday-headers">
+              <span *ngFor="let d of weekdays">{{ d }}</span>
+            </div>
+            <div class="days-grid">
+              <div *ngFor="let day of calendarDays"
+                   class="day-cell"
+                   [class.other-month]="!day.currentMonth"
+                   [class.today]="day.today"
+                   [class.selected]="day.selected"
+                   [class.has-events]="day.hasEvents"
+                   (click)="selectDay(day)">
+                {{ day.day }}
+              </div>
+            </div>
+          </div>
+
+          <div class="new-event-section">
+            <button class="btn btn-primary new-event-btn" (click)="openNewEventForm()">
+              <mat-icon>add</mat-icon>
+              Neuer Termin
+            </button>
+          </div>
+
+          <div class="events-section">
+            <h3 class="events-title">{{ selectedDateLabel }}</h3>
+            <div *ngIf="selectedDayEvents.length === 0" class="no-events">Keine Termine</div>
+            <div *ngFor="let ev of selectedDayEvents" class="event-card" [class.pending-event]="isPendingInvitation(ev)" (click)="isOwnEvent(ev) ? editEvent(ev) : null">
+              <div class="event-time">
+                <span *ngIf="!ev.all_day">{{ formatTime(ev.start_time) }} - {{ formatTime(ev.end_time) }}</span>
+                <span *ngIf="ev.all_day">Ganztaegig</span>
+              </div>
+              <div class="event-title">{{ ev.title }}</div>
+              <div class="event-pending-badge" *ngIf="isPendingInvitation(ev)">
+                <mat-icon class="event-location-icon">schedule</mat-icon>
+                <span>Einladung ausstehend</span>
+                <button class="btn btn-accept btn-inline" (click)="respondInvitation(ev, 'accepted'); $event.stopPropagation()">
+                  <mat-icon>check</mat-icon> Annehmen
+                </button>
+                <button class="btn btn-decline btn-inline" (click)="respondInvitation(ev, 'declined'); $event.stopPropagation()">
+                  <mat-icon>close</mat-icon> Ablehnen
+                </button>
+              </div>
+              <div class="event-location" *ngIf="ev.location">
+                <mat-icon class="event-location-icon">{{ isVideoLink(ev.location) ? 'videocam' : 'place' }}</mat-icon>
+                <a *ngIf="isVideoLink(ev.location)" [routerLink]="getVideoLink(ev.location)" class="video-link">Video-Call beitreten</a>
+                <span *ngIf="!isVideoLink(ev.location)">{{ ev.location }}</span>
+              </div>
+              <div class="event-attendees" *ngIf="ev.attendees && ev.attendees.length > 0">
+                <mat-icon class="event-location-icon">group</mat-icon>
+                <span>{{ ev.attendees.length }} Teilnehmer</span>
+                <span class="attendee-names">{{ formatAttendees(ev.attendees) }}</span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- New Event Button -->
-      <div class="new-event-section">
-        <button class="btn btn-primary new-event-btn" (click)="openNewEventForm()">
-          <mat-icon>add</mat-icon>
-          Neuer Termin
-        </button>
+        <div class="calendar-week-panel">
+          <div class="week-header-row">
+            <div class="week-time-spacer"></div>
+            <div class="week-day-header" *ngFor="let day of weekDays">{{ formatWeekDayHeader(day) }}</div>
+          </div>
+          <div class="week-grid-body">
+            <div class="week-time-axis">
+              <div class="week-time-label" *ngFor="let hour of weekHours">{{ hour }}:00</div>
+            </div>
+            <div class="week-day-column" *ngFor="let day of weekDays">
+              <div class="week-hour-line" *ngFor="let hour of weekHours"></div>
+              <div class="week-event-block" *ngFor="let ev of getTimedEventsForDay(day)"
+                   [style.top.%]="getWeekEventTopPercent(ev)"
+                   [style.height.px]="getWeekEventHeight(ev)">
+                <div class="week-event-time">{{ formatTime(ev.start_time) }}</div>
+                <div class="week-event-title">{{ ev.title }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- New/Edit Event Form -->
@@ -240,51 +296,12 @@ interface CalendarEvent {
         </div>
       </div>
 
-      <!-- Events List for Selected Day -->
-      <div class="events-section">
-        <h3 class="events-title">
-          {{ selectedDateLabel }}
-        </h3>
-        <div *ngIf="selectedDayEvents.length === 0" class="no-events">
-          Keine Termine
-        </div>
-        <div *ngFor="let ev of selectedDayEvents"
-             class="event-card"
-             [class.pending-event]="isPendingInvitation(ev)"
-             (click)="isOwnEvent(ev) ? editEvent(ev) : null">
-          <div class="event-time">
-            <span *ngIf="!ev.all_day">{{ formatTime(ev.start_time) }} - {{ formatTime(ev.end_time) }}</span>
-            <span *ngIf="ev.all_day">Ganztaegig</span>
-          </div>
-          <div class="event-title">{{ ev.title }}</div>
-          <div class="event-pending-badge" *ngIf="isPendingInvitation(ev)">
-            <mat-icon class="event-location-icon">schedule</mat-icon>
-            <span>Einladung ausstehend</span>
-            <button class="btn btn-accept btn-inline" (click)="respondInvitation(ev, 'accepted'); $event.stopPropagation()">
-              <mat-icon>check</mat-icon> Annehmen
-            </button>
-            <button class="btn btn-decline btn-inline" (click)="respondInvitation(ev, 'declined'); $event.stopPropagation()">
-              <mat-icon>close</mat-icon> Ablehnen
-            </button>
-          </div>
-          <div class="event-location" *ngIf="ev.location">
-            <mat-icon class="event-location-icon">{{ isVideoLink(ev.location) ? 'videocam' : 'place' }}</mat-icon>
-            <a *ngIf="isVideoLink(ev.location)" [routerLink]="getVideoLink(ev.location)" class="video-link">Video-Call beitreten</a>
-            <span *ngIf="!isVideoLink(ev.location)">{{ ev.location }}</span>
-          </div>
-          <div class="event-attendees" *ngIf="ev.attendees && ev.attendees.length > 0">
-            <mat-icon class="event-location-icon">group</mat-icon>
-            <span>{{ ev.attendees.length }} Teilnehmer</span>
-            <span class="attendee-names">{{ formatAttendees(ev.attendees) }}</span>
-          </div>
-        </div>
-      </div>
     </div>
   `,
   styles: [`
     .calendar-page {
       padding: 20px;
-      max-width: 800px;
+      max-width: 1320px;
       margin: 0 auto;
       height: 100%;
       overflow-y: auto;
@@ -304,6 +321,74 @@ interface CalendarEvent {
     .cal-header-actions {
       display: flex;
       gap: 4px;
+    }
+    .calendar-layout {
+      display: grid;
+      grid-template-columns: 320px minmax(560px, 1fr);
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 16px;
+    }
+    .calendar-left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .calendar-week-panel {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .week-header-row,
+    .week-grid-body {
+      display: grid;
+      grid-template-columns: 60px repeat(5, 1fr);
+    }
+    .week-header-row {
+      background: #fafafa;
+      border-bottom: 1px solid var(--border);
+    }
+    .week-time-spacer {
+      border-right: 1px solid var(--border);
+    }
+    .week-day-header {
+      text-align: center;
+      padding: 10px 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border-right: 1px solid var(--border);
+    }
+    .week-day-header:last-child { border-right: none; }
+    .week-time-axis { border-right: 1px solid var(--border); }
+    .week-time-label,
+    .week-hour-line { height: 43px; border-bottom: 1px solid #f2f2f2; }
+    .week-time-label {
+      font-size: 11px;
+      color: #777;
+      padding-right: 8px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+    }
+    .week-day-column { position: relative; border-right: 1px solid var(--border); }
+    .week-day-column:last-child { border-right: none; }
+    .week-event-block {
+      position: absolute;
+      left: 6px;
+      right: 6px;
+      background: #eef3ff;
+      border-left: 3px solid var(--primary);
+      border-radius: 4px;
+      padding: 4px 6px;
+      overflow: hidden;
+    }
+    .week-event-time { font-size: 10px; color: var(--primary); font-weight: 600; }
+    .week-event-title {
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* Settings */
@@ -760,6 +845,12 @@ interface CalendarEvent {
     .video-link:hover {
       text-decoration: underline;
     }
+    @media (max-width: 1100px) {
+      .calendar-layout { grid-template-columns: 1fr; }
+      .calendar-week-panel { overflow-x: auto; }
+      .week-header-row,
+      .week-grid-body { min-width: 760px; }
+    }
     .hint {
       display: block;
       font-size: 11px;
@@ -777,6 +868,7 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
   calendarDays: CalendarDay[] = [];
   weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   monthLabel = '';
+  weekHours = Array.from({ length: 13 }, (_, i) => i + 7);
 
   // Events
   events: CalendarEvent[] = [];
@@ -1065,6 +1157,53 @@ export class CalendarViewComponent implements OnInit, OnDestroy {
 
   formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  get weekDays(): Date[] {
+    const start = this.getWeekStart(this.selectedDate);
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  }
+
+  formatWeekDayHeader(day: Date): string {
+    return day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  }
+
+  getTimedEventsForDay(day: Date): CalendarEvent[] {
+    const dayStart = new Date(day);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    return this.events.filter((ev) => {
+      if (ev.all_day) return false;
+      const start = new Date(ev.start_time);
+      const end = new Date(ev.end_time);
+      return start < dayEnd && end > dayStart;
+    }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  }
+
+  getWeekEventTopPercent(ev: CalendarEvent): number {
+    const start = new Date(ev.start_time);
+    const minutes = (start.getHours() - 7) * 60 + start.getMinutes();
+    return Math.max(0, Math.min((minutes / (13 * 60)) * 100, 96));
+  }
+
+  getWeekEventHeight(ev: CalendarEvent): number {
+    const start = new Date(ev.start_time).getTime();
+    const end = new Date(ev.end_time).getTime();
+    const minutes = Math.max(30, (end - start) / 60000);
+    return Math.min(240, minutes * (43 / 60));
+  }
+
+  private getWeekStart(date: Date): Date {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDay();
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+    return d;
   }
 
   formatAttendees(attendees: EventAttendee[]): string {
